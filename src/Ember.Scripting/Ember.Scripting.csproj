@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The console router: parse a line, dispatch it to a registered command, return output.
+
+    Deliberately has no MonoGame reference and no target framework tied to Windows. That is
+    what lets a script run headless in a test, and what stops console commands from quietly
+    growing a dependency on a graphics device.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Ember.Scripting</RootNamespace>
+    <AssemblyName>Ember.Scripting</AssemblyName>
+  </PropertyGroup>
+
+</Project>

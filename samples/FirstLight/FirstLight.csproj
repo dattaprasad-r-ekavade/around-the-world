@@ -1,0 +1,33 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The smallest game that can be built on the engine, and the thing to copy when starting one.
+
+    A room, a lamp, walking, four walls to stop at, a line of text, and a screenshot switch, in under
+    two hundred lines. It is meant to be read start to finish before you write anything of your
+    own, and to fail the build the day a change to the engine stops a game from compiling
+    against it.
+  -->
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>FirstLight</RootNamespace>
+    <AssemblyName>FirstLight</AssemblyName>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
+  </ItemGroup>
+
+  <!-- Fonts are read off disk at run time by AttachCanvas, not through the content pipeline. -->
+  <ItemGroup>
+    <None Include="Content\Fonts\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,26 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The engine. Devices, the frame, a first-person view, geometry, procedural textures and
+    sprites, synthesised audio, a 2D canvas, input sampling.
+
+    Windows-only today because it is built on MonoGame's WindowsDX backend and uses WinForms
+    for the window. Moving to DesktopGL is a backend swap, not a rewrite of anything here.
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <UseWindowsForms>true</UseWindowsForms>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Ember</RootNamespace>
+    <AssemblyName>Ember.Engine</AssemblyName>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="MonoGame.Framework.WindowsDX" Version="3.8.5.1" />
+    <PackageReference Include="FontStashSharp.MonoGame" Version="1.5.6" />
+  </ItemGroup>
+
+</Project>
