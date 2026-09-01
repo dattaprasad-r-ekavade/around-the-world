@@ -19,7 +19,7 @@ public sealed class PromptRenderer
         foreach (var chip in state.Chips)
         {
             var (border, ink) = Colours(chip.Role);
-            _ui.Panel(chip.Bounds, UiTheme.PanelSheer, border);
+            _ui.Panel(chip.Bounds, UiTheme.Parchment, border);
 
             if (chip.Fit)
             {
@@ -38,9 +38,9 @@ public sealed class PromptRenderer
 
     private static (Color Border, Color Ink) Colours(PromptRole role) => role switch
     {
-        PromptRole.Talk => (UiTheme.Accent, Color.White),
-        PromptRole.Pocket => (UiTheme.Pocket, Color.White),
+        PromptRole.Talk => (UiTheme.Accent, UiTheme.Body),
+        PromptRole.Pocket => (UiTheme.Pocket, UiTheme.Body),
         PromptRole.Barred => (UiTheme.Barred, UiTheme.BarredText),
-        _ => (UiTheme.Bronze, Color.White)
+        _ => (UiTheme.Bronze, UiTheme.Body)
     };
 }

@@ -32,7 +32,7 @@ public static class UiLayout
     public static Rectangle FullScreen => new(0, 0, Width, Height);
 
     /// <summary>The default single prompt strip, low and centred: "press E to open".</summary>
-    public static Rectangle SinglePrompt => new(388, 596, 504, 42);
+    public static Rectangle SinglePrompt => new(340, 478, 600, 40);
 
     /// <summary>Text inset for a prompt chip. Kept here so every chip insets alike.</summary>
     public static Vector2 PromptText(Rectangle prompt) => new(prompt.X + 16, prompt.Y + 12);

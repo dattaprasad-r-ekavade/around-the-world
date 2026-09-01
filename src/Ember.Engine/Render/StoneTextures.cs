@@ -71,6 +71,10 @@ public static class StoneTextures
     public static Texture2D Earth(GraphicsDevice device)
         => Get(device, "earth", BuildEarth);
 
+    /// <summary>Opaque ripple, for pools and canals. Not transparent water.</summary>
+    public static Texture2D Water(GraphicsDevice device)
+        => Get(device, "water", BuildWater);
+
     /// <summary>Laid fibre with a twist, for the windlass rope.</summary>
     public static Texture2D Rope(GraphicsDevice device)
         => Get(device, "rope", BuildRope);
@@ -413,6 +417,26 @@ public static class StoneTextures
                 pixels[index] = Shift(pixels[index], -darken);
             }
         }
+    }
+
+    private static Color[] BuildWater()
+    {
+        var pixels = new Color[Size * Size];
+        for (var y = 0; y < Size; y++)
+        for (var x = 0; x < Size; x++)
+        {
+            var u = x / (float)Size;
+            var v = y / (float)Size;
+            var wave = MathF.Sin((u * 8f + v * 2.5f) * MathF.Tau) * 0.5f
+                + MathF.Sin((u * 2.5f - v * 10f) * MathF.Tau) * 0.35f;
+            var t = MathHelper.Clamp(0.52f + wave * 0.24f, 0.22f, 0.95f);
+            pixels[y * Size + x] = new Color(
+                (byte)(32 + t * 36),
+                (byte)(88 + t * 72),
+                (byte)(148 + t * 96));
+        }
+
+        return pixels;
     }
 
     private static Color[] BuildGlow()

@@ -1,0 +1,12 @@
+# 10-minute smoke. wait is seconds, not frames.
+wait 0.4
+pos
+goto town 0
+wait 0.6
+pos
+goto dungeon 0
+wait 0.6
+pos
+goto wild
+wait 0.4
+pos

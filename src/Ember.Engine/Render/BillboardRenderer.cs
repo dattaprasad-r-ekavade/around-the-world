@@ -40,7 +40,9 @@ public sealed class BillboardRenderer : IDisposable
         _effect.Projection = projection;
         _effect.World = Matrix.Identity;
 
-        _device.BlendState = BlendState.AlphaBlend;
+        // Opaque cutouts, not alpha blend: blended sprites skip reliable depth writes, so a
+        // tree beside a wall draws on top of the wall when you look or walk diagonally.
+        _device.BlendState = BlendState.Opaque;
         _device.DepthStencilState = DepthStencilState.Default;
         _device.RasterizerState = RasterizerState.CullNone;
         _device.SamplerStates[0] = SamplerState.PointClamp;
@@ -67,6 +69,31 @@ public sealed class BillboardRenderer : IDisposable
         _quad[2] = new VertexPositionTexture(feet + right, new Vector2(1f, 1f));
         _quad[3] = new VertexPositionTexture(feet - right, new Vector2(0f, 1f));
 
+        DrawQuad(texture, tint);
+    }
+
+    /// <summary>
+    /// A painted board fixed in the world — shop signs, fingerposts — not a camera-facing label.
+    /// <paramref name="facingYaw"/> uses the same convention as the camera: 0 faces −Z (north).
+    /// </summary>
+    public void DrawMounted(Texture2D texture, Vector3 centre, float width, float height,
+        float facingYaw, Color tint)
+    {
+        var right = new Vector3(MathF.Cos(facingYaw), 0f, MathF.Sin(facingYaw)) * (width * 0.5f);
+        var up = Vector3.Up * (height * 0.5f);
+        var forward = Vector3.Transform(Vector3.Forward, Matrix.CreateRotationY(-facingYaw));
+        var origin = centre + forward * 0.04f;
+
+        _quad[0] = new VertexPositionTexture(origin + right + up, new Vector2(0f, 0f));
+        _quad[1] = new VertexPositionTexture(origin - right + up, new Vector2(1f, 0f));
+        _quad[2] = new VertexPositionTexture(origin - right - up, new Vector2(1f, 1f));
+        _quad[3] = new VertexPositionTexture(origin + right - up, new Vector2(0f, 1f));
+
+        DrawQuad(texture, tint);
+    }
+
+    private void DrawQuad(Texture2D texture, Color tint)
+    {
         _effect.Texture = texture;
         _effect.DiffuseColor = tint.ToVector3();
         _effect.Alpha = tint.A / 255f;

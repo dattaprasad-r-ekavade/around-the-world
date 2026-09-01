@@ -160,6 +160,7 @@ public sealed class SceneRenderer
             "timber" => StoneTextures.Timber(_device),
             "cloth" => StoneTextures.Cloth(_device),
             "earth" => StoneTextures.Earth(_device),
+            "water" => StoneTextures.Water(_device),
             "rope" => StoneTextures.Rope(_device),
             _ => isSlab
                 ? StoneTextures.Floor(_device, _stone)
@@ -176,6 +177,7 @@ public sealed class SceneRenderer
         var tiling = material switch
         {
             "rope" => 0.24f,
+            "water" => 1.1f,
             "timber" or "cloth" => StoneTileMetres * 0.5f,
             _ => StoneTileMetres
         };

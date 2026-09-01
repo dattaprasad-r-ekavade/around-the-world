@@ -31,6 +31,7 @@ public abstract class EngineHost : Game
 
     protected FontSystem _fontSystem = null!;
     protected FontSystem _headingFontSystem = null!;
+    protected SpriteType? _spriteType;
     protected Texture2D _white = null!;
 
     protected int LogicalWidth => _ui.LogicalWidth;
@@ -195,6 +196,16 @@ public abstract class EngineHost : Game
         _ui.Attach(spriteBatch, _white, _fontSystem, _headingFontSystem);
     }
 
+    /// <summary>8×8 glyph sprites, nearest-neighbour. No TrueType face.</summary>
+    protected void AttachCanvas()
+    {
+        var spriteBatch = new SpriteBatch(GraphicsDevice);
+        _white = new Texture2D(GraphicsDevice, 1, 1);
+        _white.SetData(new[] { Color.White });
+        _spriteType = SpriteType.Bake(GraphicsDevice);
+        _ui.Attach(spriteBatch, _white, _spriteType);
+    }
+
     protected void BeginHostFrame()
     {
         _capture.BeginFrame(GraphicsDevice);
@@ -251,6 +262,7 @@ public abstract class EngineHost : Game
         _capture.Dispose();
         _fontSystem?.Dispose();
         _headingFontSystem?.Dispose();
+        _spriteType?.Dispose();
         _white?.Dispose();
     }
 

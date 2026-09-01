@@ -27,16 +27,17 @@ namespace Ember.Ui;
 /// </summary>
 public sealed class UiCanvas
 {
-    /// <summary>Above this requested size, text is set in the display face rather than the body.</summary>
-    private const float HeadingThreshold = 20f;
+    /// <summary>Implicit titles (22+) still use the display face. Prefer <see cref="Heading"/>.</summary>
+    private const float HeadingThreshold = 22f;
 
     private readonly Dictionary<int, SpriteFontBase> _bodyFonts = new();
     private readonly Dictionary<int, SpriteFontBase> _headingFonts = new();
 
     private SpriteBatch _batch = null!;
     private Texture2D _white = null!;
-    private FontSystem _body = null!;
-    private FontSystem _heading = null!;
+    private FontSystem? _body;
+    private FontSystem? _heading;
+    private SpriteType? _type;
     private Matrix _transform = Matrix.Identity;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
@@ -79,6 +80,17 @@ public sealed class UiCanvas
         _white = white;
         _body = body;
         _heading = heading;
+        _type = null;
+    }
+
+    /// <summary>Sprite glyphs instead of a TrueType face. Point-sampled, integer scale.</summary>
+    public void Attach(SpriteBatch batch, Texture2D white, SpriteType type)
+    {
+        _batch = batch;
+        _white = white;
+        _type = type;
+        _body = null;
+        _heading = null;
     }
 
     /// <summary>
@@ -131,7 +143,8 @@ public sealed class UiCanvas
     }
 
     public void Begin() => _batch.Begin(
-        SpriteSortMode.Deferred, BlendState.AlphaBlend, SamplerState.LinearClamp,
+        SpriteSortMode.Deferred, BlendState.AlphaBlend,
+        _type is null ? SamplerState.LinearClamp : SamplerState.PointClamp,
         DepthStencilState.None, RasterizerState.CullNone, null, _transform);
 
     public void End() => _batch.End();
@@ -170,39 +183,50 @@ public sealed class UiCanvas
         Fill(new Rectangle(bounds.Right - 1, bounds.Y, 1, bounds.Height), color);
     }
 
+    /// <summary>Outer gold and inner hairline, the usual window edge.</summary>
+    public void DoubleBorder(Rectangle bounds, Color outer, Color inner)
+    {
+        Border(bounds, outer);
+        if (bounds.Width < 6 || bounds.Height < 6) return;
+        Border(new Rectangle(bounds.X + 2, bounds.Y + 2, bounds.Width - 4, bounds.Height - 4), inner);
+    }
+
+    public void Rule(int x, int y, int width, Color color) =>
+        Fill(new Rectangle(x, y, Math.Max(1, width), 1), color);
+
     public void Sprite(Texture2D texture, Rectangle destination, Color color) =>
         _batch.Draw(texture, destination, color);
 
     // ------------------------------------------------------------------ text
 
-    public void Text(string value, Vector2 position, float scale, Color color)
-    {
-        var (font, drawScale) = SelectFont(scale);
-        DrawString(font, value, position, drawScale, color);
-    }
+    public void Text(string value, Vector2 position, float scale, Color color) =>
+        Paint(value, position, scale, color, heading: false);
+
+    /// <summary>Display face at any size — menu titles, speaker names, the compass location.</summary>
+    public void Heading(string value, Vector2 position, float scale, Color color) =>
+        Paint(value, position, scale, color, heading: true);
 
     public void TextFit(string value, Vector2 position, float maxWidth, float scale, Color color)
     {
-        var (font, drawScale) = SelectFont(scale);
-        var measuredWidth = font.MeasureString(value).X * drawScale;
-        if (measuredWidth > maxWidth && measuredWidth > 0f)
-            drawScale *= maxWidth / measuredWidth;
-
-        DrawString(font, value, position, drawScale, color);
+        PaintFit(value, position, maxWidth, scale, color, heading: false, centre: false);
     }
 
     public void TextCentred(string value, float centreX, float y, float scale, Color color)
     {
-        var (font, drawScale) = SelectFont(scale);
-        var width = font.MeasureString(value).X * drawScale;
-        DrawString(font, value, new Vector2(centreX - width * 0.5f, y), drawScale, color);
+        var width = MeasureText(value, scale);
+        Paint(value, new Vector2(centreX - width * 0.5f, y), scale, color, heading: false);
+    }
+
+    public void HeadingCentred(string value, float centreX, float y, float scale, Color color)
+    {
+        var width = WidthOf(value, scale, heading: true);
+        Paint(value, new Vector2(centreX - width * 0.5f, y), scale, color, heading: true);
     }
 
     public void TextRight(string value, float right, float y, float scale, Color color)
     {
-        var (font, drawScale) = SelectFont(scale);
-        var width = font.MeasureString(value).X * drawScale;
-        DrawString(font, value, new Vector2(right - width, y), drawScale, color);
+        var width = MeasureText(value, scale);
+        Paint(value, new Vector2(right - width, y), scale, color, heading: false);
     }
 
     public float TextWrapped(string value, Vector2 position, float maxWidth, float scale,
@@ -210,8 +234,9 @@ public sealed class UiCanvas
     {
         if (string.IsNullOrWhiteSpace(value)) return 0f;
 
-        var (font, drawScale) = SelectFont(scale);
-        var lineHeight = scale * 1.34f;
+        var lineHeight = _type is null
+            ? scale * 1.38f
+            : SpriteType.LineHeight(SpriteType.PixelScale(scale, false));
         var words = value.Split(' ', StringSplitOptions.RemoveEmptyEntries);
 
         var line = string.Empty;
@@ -221,7 +246,7 @@ public sealed class UiCanvas
         foreach (var word in words)
         {
             var candidate = line.Length == 0 ? word : $"{line} {word}";
-            if (font.MeasureString(candidate).X * drawScale <= maxWidth)
+            if (MeasureText(candidate, scale) <= maxWidth)
             {
                 line = candidate;
                 continue;
@@ -229,7 +254,7 @@ public sealed class UiCanvas
 
             if (line.Length > 0)
             {
-                DrawString(font, line, new Vector2(position.X, y), drawScale, color);
+                Paint(line, new Vector2(position.X, y), scale, color, heading: false);
                 y += lineHeight;
                 if (++lines >= maxLines) return y - position.Y;
             }
@@ -239,7 +264,7 @@ public sealed class UiCanvas
 
         if (line.Length > 0)
         {
-            DrawString(font, line, new Vector2(position.X, y), drawScale, color);
+            Paint(line, new Vector2(position.X, y), scale, color, heading: false);
             y += lineHeight;
         }
 
@@ -250,18 +275,56 @@ public sealed class UiCanvas
     public void TextFitCentred(string value, float centreX, float y, float maxWidth, float scale,
         Color color)
     {
-        var (font, drawScale) = SelectFont(scale);
-        var measured = font.MeasureString(value).X * drawScale;
-        if (measured > maxWidth && measured > 0f) drawScale *= maxWidth / measured;
-
-        var width = font.MeasureString(value).X * drawScale;
-        DrawString(font, value, new Vector2(centreX - width * 0.5f, y), drawScale, color);
+        PaintFit(value, new Vector2(centreX, y), maxWidth, scale, color, heading: false, centre: true);
     }
 
     /// <summary>How wide a string will be, for anything that has to lay out around it.</summary>
-    public float MeasureText(string value, float scale)
+    public float MeasureText(string value, float scale) => WidthOf(value, scale, heading: false);
+
+    private void Paint(string value, Vector2 position, float scale, Color color, bool heading)
     {
-        var (font, drawScale) = SelectFont(scale);
+        if (_type is { } type)
+        {
+            type.Draw(_batch, value, position, SpriteType.PixelScale(scale, heading), color);
+            return;
+        }
+
+        var (font, drawScale) = SelectFont(scale, heading);
+        DrawString(font, value, position, drawScale, color);
+    }
+
+    private void PaintFit(string value, Vector2 position, float maxWidth, float scale, Color color,
+        bool heading, bool centre)
+    {
+        if (_type is { } type)
+        {
+            var pixel = SpriteType.PixelScale(scale, heading);
+            while (pixel > 1 && type.Measure(value, pixel) > maxWidth)
+                pixel--;
+            var width = type.Measure(value, pixel);
+            var at = centre
+                ? new Vector2(position.X - width * 0.5f, position.Y)
+                : position;
+            type.Draw(_batch, value, at, pixel, color);
+            return;
+        }
+
+        var (font, drawScale) = SelectFont(scale, heading);
+        var measured = font.MeasureString(value).X * drawScale;
+        if (measured > maxWidth && measured > 0f)
+            drawScale *= maxWidth / measured;
+        var x = centre
+            ? position.X - font.MeasureString(value).X * drawScale * 0.5f
+            : position.X;
+        DrawString(font, value, new Vector2(x, position.Y), drawScale, color);
+    }
+
+    private float WidthOf(string value, float scale, bool heading)
+    {
+        if (_type is { } type)
+            return type.Measure(value, SpriteType.PixelScale(scale, heading));
+
+        var (font, drawScale) = SelectFont(scale, heading);
         return font.MeasureString(value).X * drawScale;
     }
 
@@ -273,9 +336,9 @@ public sealed class UiCanvas
     /// transform. Two resamples is why the HUD was soft and thin. Rasterizing at the device
     /// size and drawing at 1/scale lands every glyph 1:1 on the panel.
     /// </summary>
-    private (SpriteFontBase Font, float Scale) SelectFont(float requestedSize)
+    private (SpriteFontBase Font, float Scale) SelectFont(float requestedSize, bool heading)
     {
-        var heading = requestedSize >= HeadingThreshold;
+        heading = heading || requestedSize >= HeadingThreshold;
         var cache = heading ? _headingFonts : _bodyFonts;
 
         // Clamped so an extreme display cannot ask for a 4 px or a 900 px atlas.
@@ -283,7 +346,8 @@ public sealed class UiCanvas
 
         if (!cache.TryGetValue(devicePixels, out var font))
         {
-            font = (heading ? _heading : _body).GetFont(devicePixels);
+            var system = heading ? _heading : _body;
+            font = system!.GetFont(devicePixels);
             cache[devicePixels] = font;
         }
 

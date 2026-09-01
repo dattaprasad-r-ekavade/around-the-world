@@ -6,3 +6,5 @@
 *.suo
 artifacts/
 captures/
+/Play/
+/dist/
