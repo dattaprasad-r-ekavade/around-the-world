@@ -124,6 +124,7 @@ public sealed class CampaignGame : EngineHost
         if (!string.IsNullOrWhiteSpace(bedFault)) _faults.Add(bedFault);
 
         RegisterCommands();
+        EarthLand.Load(Path.Combine(root, "Content", "Earth", "land.bin"));
         BuildWorld(_seed);
 
         var botSeed = int.TryParse(ParseOption(_launchArgs, "--bot-seed"), out var rolled)
@@ -1073,9 +1074,9 @@ public sealed class CampaignGame : EngineHost
     private void HandleMap(KeyboardState keyboard)
     {
         if (_input.Pressed(keyboard, Keys.Up) || _input.Pressed(keyboard, Keys.W))
-            _map.MoveSelection(-1, _world.TownNames.Length);
+            _map.MoveSelection(-1, EarthPlaces.StopCount);
         if (_input.Pressed(keyboard, Keys.Down) || _input.Pressed(keyboard, Keys.S))
-            _map.MoveSelection(1, _world.TownNames.Length);
+            _map.MoveSelection(1, EarthPlaces.StopCount);
 
         if (_input.Clicked(_input.CurrentMouse))
             _map.Click(LogicalMouse(_input.CurrentMouse), _world);
@@ -1120,7 +1121,7 @@ public sealed class CampaignGame : EngineHost
         TakeRoad(hours, dest);
         _map.Open = false;
 
-        if (_mageTravel && toTown >= 0)
+        if (_mageTravel && toTown >= 0 && EarthPlaces.IsHistoric(toTown))
         {
             _mageTravel = false;
             ArriveGuild(toTown);
@@ -1129,10 +1130,12 @@ public sealed class CampaignGame : EngineHost
         }
 
         _mageTravel = false;
-        if (toTown < 0)
+        if (toTown < 0 || EarthPlaces.IsMark(toTown))
         {
             JumpWilderness(dest.X, dest.Z);
-            Toast($"A {hours:0.0} hour road.  {_clock.Stamp}");
+            Toast(toTown < 0
+                ? $"A {hours:0.0} hour road.  {_clock.Stamp}"
+                : $"A {hours:0.0} hour road to the mark called {_world.TownNames[toTown]}.  {_clock.Stamp}");
             return;
         }
 
@@ -2131,6 +2134,12 @@ public sealed class CampaignGame : EngineHost
     private bool EnterTown(int index, bool force = false)
     {
         if (index < 0 || index >= _world.TownCount) return false;
+        if (EarthPlaces.IsMark(index))
+        {
+            var pad = _world.TownPads[index];
+            JumpWilderness(pad.X, pad.Z);
+            return false;
+        }
         if (!force && !CanPassGate()) return false;
         if (_pack.Wanted && !_pack.In(GuildKind.Thieves))
         {

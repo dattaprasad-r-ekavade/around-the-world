@@ -12,22 +12,51 @@ public sealed class HeightNoise
 
     private static float Macro(float cycles) => cycles / WorldScale.WorldMetres;
 
-    public float Continent(float x, float z) =>
-        Fbm(x * Macro(3.4f) + 3.1f, z * Macro(3.4f) - 1.7f, 4);
+    public float Continent(float x, float z)
+    {
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
+        return EarthLand.Field(x, z);
+    }
 
-    public float Moisture(float x, float z) =>
-        0.62f * Fbm(x * Macro(9f) + 19f, z * Macro(9f) + 8f, 4)
-        + 0.38f * Fbm(x * 0.00031f + 19f, z * 0.00031f + 8f, 4);
+    public float Moisture(float x, float z)
+    {
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
+        var n = 0.62f * Fbm(x * Macro(9f) + 19f, z * Macro(9f) + 8f, 4)
+            + 0.38f * Fbm(x * 0.00031f + 19f, z * 0.00031f + 8f, 4);
+        var lon = EarthGlobe.Lon(x);
+        var lat = EarthGlobe.Lat(z);
+        var arid = 0f;
+        if (lat is > 12f and < 36f && lon is > -18f and < 62f) arid = 0.52f;
+        if (lat is > 36f and < 50f && lon is > 75f and < 120f) arid = 0.42f;
+        if (lat is < -18f and > -32f && lon is > 112f and < 150f) arid = 0.48f;
+        if (lat is > 22f and < 42f && lon is > -124f and < -104f) arid = 0.38f;
+        return MathHelper.Clamp(n - arid, 0f, 1f);
+    }
 
     public float Heat(float x, float z)
     {
-        var latitude = 1f - Math.Abs(z / WorldScale.WorldMetres * 2f - 1f);
-        return MathHelper.Clamp(latitude * 0.55f + Fbm(x * Macro(6f), z * Macro(6f), 3) * 0.45f, 0f, 1f);
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
+        var polar = MathF.Abs(EarthGlobe.Lat(z)) / 90f;
+        return MathHelper.Clamp((1f - polar) * 0.62f + Fbm(x * Macro(6f), z * Macro(6f), 3) * 0.38f,
+            0f, 1f);
     }
 
-    public float Relief(float x, float z) =>
-        0.58f * Fbm(x * Macro(16f) - 11f, z * Macro(16f) + 4f, 4)
-        + 0.42f * Fbm(x * 0.00055f - 11f, z * 0.00055f + 4f, 5);
+    public float Relief(float x, float z)
+    {
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
+        var n = 0.58f * Fbm(x * Macro(16f) - 11f, z * Macro(16f) + 4f, 4)
+            + 0.42f * Fbm(x * 0.00055f - 11f, z * 0.00055f + 4f, 5);
+        var lon = EarthGlobe.Lon(x);
+        var lat = EarthGlobe.Lat(z);
+        if (lat is > 26f and < 38f && lon is > 72f and < 96f) n += 0.28f;
+        if (lat is > -40f and < 8f && lon is > -80f and < -64f) n += 0.22f;
+        if (lat is > 30f and < 48f && lon is > 6f and < 16f) n += 0.16f;
+        return MathHelper.Clamp(n, 0f, 1f);
+    }
 
     public BiomeKind BiomeAt(float x, float z)
     {
@@ -50,6 +79,8 @@ public sealed class HeightNoise
 
     public float Height(float x, float z)
     {
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
         var n = Fbm(x * 0.0016f, z * 0.0016f, 5);
         var ridge = 1f - MathF.Abs(Fbm(x * 0.00085f + 40f, z * 0.00085f - 17f, 4) * 2f - 1f);
         var biome = BiomeAt(x, z);

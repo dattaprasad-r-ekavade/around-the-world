@@ -41,12 +41,12 @@ public sealed class PadHash
         for (var cz = minZ; cz <= maxZ; cz++)
         for (var cx = minX; cx <= maxX; cx++)
         {
-            if (!_cells.TryGetValue((cx, cz), out var list)) continue;
+            if (!_cells.TryGetValue(WrapCell(cx, cz), out var list)) continue;
             foreach (var index in list)
             {
                 var pad = _pads[index];
-                var dx = pad.X - x;
-                var dz = pad.Z - z;
+                var dx = EarthGlobe.Delta(x, pad.X);
+                var dz = EarthGlobe.Delta(z, pad.Z);
                 if (dx * dx + dz * dz <= r2)
                     into.Add(index);
             }
@@ -63,12 +63,12 @@ public sealed class PadHash
         for (var cz = minZ; cz <= maxZ; cz++)
         for (var cx = minX; cx <= maxX; cx++)
         {
-            if (!_cells.TryGetValue((cx, cz), out var list)) continue;
+            if (!_cells.TryGetValue(WrapCell(cx, cz), out var list)) continue;
             foreach (var index in list)
             {
                 var pad = _pads[index];
-                var dx = pad.X - x;
-                var dz = pad.Z - z;
+                var dx = EarthGlobe.Delta(x, pad.X);
+                var dz = EarthGlobe.Delta(z, pad.Z);
                 if (dx * dx + dz * dz <= r2) return true;
             }
         }
@@ -77,5 +77,16 @@ public sealed class PadHash
     }
 
     private static (int, int) CellOf(float x, float z) =>
-        ((int)MathF.Floor(x / Cell), (int)MathF.Floor(z / Cell));
+        WrapCell((int)MathF.Floor(EarthGlobe.Wrap(x) / Cell),
+            (int)MathF.Floor(EarthGlobe.Wrap(z) / Cell));
+
+    private static (int, int) WrapCell(int cx, int cz)
+    {
+        var n = Math.Max(1, (int)(WorldScale.WorldMetres / Cell));
+        cx %= n;
+        if (cx < 0) cx += n;
+        cz %= n;
+        if (cz < 0) cz += n;
+        return (cx, cz);
+    }
 }

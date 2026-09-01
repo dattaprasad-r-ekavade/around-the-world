@@ -332,29 +332,31 @@ public sealed class WorldHeights
 
     public float Sample(float x, float z)
     {
-        x = Math.Clamp(x, 0f, WorldScale.WorldMetres);
-        z = Math.Clamp(z, 0f, WorldScale.WorldMetres);
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
         var spacing = WorldScale.VertexSpacing;
         var gx = x / spacing;
         var gz = z / spacing;
-        var x0 = Math.Clamp((int)MathF.Floor(gx), 0, _maxIndex - 1);
-        var z0 = Math.Clamp((int)MathF.Floor(gz), 0, _maxIndex - 1);
-        var tx = Math.Clamp(gx - x0, 0f, 1f);
-        var tz = Math.Clamp(gz - z0, 0f, 1f);
+        var count = _maxIndex + 1;
+        var x0 = ((int)MathF.Floor(gx) % count + count) % count;
+        var z0 = ((int)MathF.Floor(gz) % count + count) % count;
+        var tx = gx - MathF.Floor(gx);
+        var tz = gz - MathF.Floor(gz);
         if (tx <= 0.0001f && tz <= 0.0001f)
             return Vertex(x0, z0);
 
         var h00 = Vertex(x0, z0);
-        var h10 = Vertex(x0 + 1, z0);
-        var h01 = Vertex(x0, z0 + 1);
-        var h11 = Vertex(x0 + 1, z0 + 1);
+        var h10 = Vertex((x0 + 1) % count, z0);
+        var h01 = Vertex(x0, (z0 + 1) % count);
+        var h11 = Vertex((x0 + 1) % count, (z0 + 1) % count);
         return MathHelper.Lerp(MathHelper.Lerp(h00, h10, tx), MathHelper.Lerp(h01, h11, tx), tz);
     }
 
     private float Vertex(int ix, int iz)
     {
-        ix = Math.Clamp(ix, 0, _maxIndex);
-        iz = Math.Clamp(iz, 0, _maxIndex);
+        var count = _maxIndex + 1;
+        ix = ((ix % count) + count) % count;
+        iz = ((iz % count) + count) % count;
         return Raw(ix * WorldScale.VertexSpacing, iz * WorldScale.VertexSpacing);
     }
 
@@ -365,8 +367,8 @@ public sealed class WorldHeights
         foreach (var index in _scratch)
         {
             var pad = _pads.Pads[index];
-            var dx = x - pad.X;
-            var dz = z - pad.Z;
+            var dx = EarthGlobe.Delta(x, pad.X);
+            var dz = EarthGlobe.Delta(z, pad.Z);
             var d2 = dx * dx + dz * dz;
             var t = 1f - MathHelper.Clamp(MathF.Sqrt(d2) / _padRadius, 0f, 1f);
             if (t > 0f)

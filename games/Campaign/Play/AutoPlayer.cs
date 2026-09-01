@@ -460,7 +460,7 @@ public sealed class AutoPlayer
     private bool Chance(double p) => _rng.NextDouble() < p;
 
     public static float YawTo(Vector3 from, Vector3 to) =>
-        MathF.Atan2(to.X - from.X, -(to.Z - from.Z));
+        MathF.Atan2(EarthGlobe.Delta(from.X, to.X), -EarthGlobe.Delta(from.Z, to.Z));
 
     public static float AngleDelta(float from, float to)
     {
@@ -476,9 +476,7 @@ public sealed class AutoPlayer
         var bestD = float.MaxValue;
         for (var i = 0; i < pads.Length; i++)
         {
-            var dx = pads[i].X - p.X;
-            var dz = pads[i].Z - p.Z;
-            var d = dx * dx + dz * dz;
+            var d = EarthGlobe.DistanceSq(p.X, p.Z, pads[i].X, pads[i].Z);
             if (d >= bestD) continue;
             bestD = d;
             best = i;

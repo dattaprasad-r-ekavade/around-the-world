@@ -49,8 +49,8 @@ public sealed class TravelMap : IDisposable
 
         ui.Panel(UiLayout.FullScreen, UiTheme.Scrim, UiTheme.NoBorder);
         var frame = new Rectangle(20, 16, 1240, 688);
-        HudChrome.Window(ui, frame, "Road",
-            "The country costs hours. Click a town or the land. Enter to go.");
+        HudChrome.Window(ui, frame, "The round earth",
+            "300 BCE. Cities of then, marks of now. Click a name. Enter to go.");
 
         ui.Sprite(_chart, Chart, Color.White);
         ui.Border(Chart, UiTheme.GoldDim);
@@ -58,10 +58,13 @@ public sealed class TravelMap : IDisposable
         for (var i = 0; i < world.TownPads.Length; i++)
         {
             if (world.TownBiomes[i] == BiomeKind.Ocean) continue;
-            if (i != 0 && i % WorldScale.MapCityStride != 0) continue;
+            if (i >= EarthPlaces.StopCount) continue;
             var dot = WorldToChart(world.TownPads[i]);
-            var colour = i == Selected && PendingLand is null ? UiTheme.Gold : Color.White;
-            ui.Fill(new Rectangle(dot.X - 2, dot.Y - 2, 5, 5), colour);
+            var on = i == Selected && PendingLand is null;
+            var mark = EarthPlaces.IsMark(i);
+            var colour = on ? UiTheme.Gold : mark ? UiTheme.Faint : Color.White;
+            var size = mark ? 3 : 5;
+            ui.Fill(new Rectangle(dot.X - size / 2, dot.Y - size / 2, size, size), colour);
         }
 
         if (PendingLand is { } land)
@@ -76,21 +79,23 @@ public sealed class TravelMap : IDisposable
         ui.Panel(List, UiTheme.PanelRaised, UiTheme.BorderDim);
         var start = Math.Max(0, Selected - 12);
         var y = List.Y + 12;
-        for (var i = start; i < world.TownNames.Length && y < List.Bottom - 28; i++)
+        var listed = Math.Min(world.TownNames.Length, EarthPlaces.StopCount);
+        for (var i = start; i < listed && y < List.Bottom - 28; i++)
         {
-            var biome = world.TownBiomes[i];
-            var line = $"{i,4}  {world.TownNames[i]}   {Biomes.Label(biome)}";
+            var place = EarthPlaces.StopAt(i);
+            var line = EarthPlaces.IsMark(i)
+                ? $"{place.Name}   now"
+                : $"{place.Name}   {place.Polity}";
             var colour = i == Selected && PendingLand is null ? UiTheme.Gold : UiTheme.Body;
             ui.Text(line, new Vector2(List.X + 16, y), 14, colour);
             y += 20;
         }
 
-        var km = WorldScale.WorldMetres / 1000f;
         var dest = PendingLand ?? world.TownPads[Math.Clamp(Selected, 0, world.TownPads.Length - 1)];
         var hours = Travel.Hours(player, dest, ship,
             Travel.Coastal(world.Noise, player), Travel.Coastal(world.Noise, dest));
         var trip = Travel.Kilometres(player, dest);
-        ui.Text($"You  {player.X:0}  {player.Z:0}   {km:0} km square   {world.TownCount} towns   {world.DungeonCount} delves",
+        ui.Text($"You  {EarthGlobe.Lon(player.X):0}°  {EarthGlobe.Lat(player.Z):0}°   wrap   {EarthPlaces.CityCount} cities of 300 BCE   {EarthPlaces.MarkCount} marks of now",
             new Vector2(40, 616), 13, UiTheme.Muted);
         if (PendingLand is { } pending)
             ui.Text($"Land mark  {pending.X:0}  {pending.Z:0}   {trip:0} km  ·  {hours:0.0} hours on the road",
@@ -107,7 +112,7 @@ public sealed class TravelMap : IDisposable
             var row = (int)((pointer.Y - (List.Y + 12)) / 20f);
             var start = Math.Max(0, Selected - 12);
             var index = start + row;
-            if (index < 0 || index >= world.TownNames.Length) return false;
+            if (index < 0 || index >= EarthPlaces.StopCount) return false;
             Selected = index;
             PendingLand = null;
             return true;
@@ -118,12 +123,10 @@ public sealed class TravelMap : IDisposable
         var worldPos = ChartToWorld(pointer);
         var best = -1;
         var bestD = float.MaxValue;
-        for (var i = 0; i < world.TownPads.Length; i++)
+        for (var i = 0; i < EarthPlaces.StopCount && i < world.TownPads.Length; i++)
         {
             if (world.TownBiomes[i] == BiomeKind.Ocean) continue;
-            var dx = world.TownPads[i].X - worldPos.X;
-            var dz = world.TownPads[i].Z - worldPos.Z;
-            var d = dx * dx + dz * dz;
+            var d = EarthGlobe.DistanceSq(worldPos.X, worldPos.Z, world.TownPads[i].X, world.TownPads[i].Z);
             if (d >= bestD) continue;
             bestD = d;
             best = i;

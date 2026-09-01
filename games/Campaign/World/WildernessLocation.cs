@@ -68,13 +68,8 @@ public sealed class WildernessLocation : ILocation
 
     public Vector3 Collide(Vector3 origin, Vector3 delta, float radius)
     {
-        var wanted = origin + delta;
-        var limit = WorldScale.WorldMetres - 4f;
-        wanted = new Vector3(
-            Math.Clamp(wanted.X, 4f, limit),
-            wanted.Y,
-            Math.Clamp(wanted.Z, 4f, limit));
-        return _collider.Resolve(origin, wanted - origin, radius);
+        var resolved = _collider.Resolve(origin, delta, radius);
+        return new Vector3(EarthGlobe.Wrap(resolved.X), resolved.Y, EarthGlobe.Wrap(resolved.Z));
     }
 
     public void Draw(SceneRenderer scene, BillboardRenderer billboards, GroundedView view,
@@ -96,7 +91,7 @@ public sealed class WildernessLocation : ILocation
 
         foreach (var index in _nearTowns)
         {
-            if (_townBiomes[index] == BiomeKind.Ocean) continue;
+            if (!LiveTown(index)) continue;
             var town = TownAt(index);
             foreach (var prop in town.Props)
             {
@@ -124,12 +119,22 @@ public sealed class WildernessLocation : ILocation
 
         foreach (var index in _nearTowns)
         {
-            if (_townBiomes[index] == BiomeKind.Ocean) continue;
+            if (!LiveTown(index)) continue;
             var town = TownAt(index);
             var dx = town.Gate.X - view.Position.X;
             var dz = town.Gate.Z - view.Position.Z;
             if (dx * dx + dz * dz > maxDistSq) continue;
             billboards.Draw(sprites.Get("mappin", view.Yaw, 0f), town.Gate, 2.4f, view.Yaw, Color.White);
+        }
+
+        foreach (var index in _nearTowns)
+        {
+            if (!EarthPlaces.IsMark(index) || _townBiomes[index] == BiomeKind.Ocean) continue;
+            var pad = _townPads[index];
+            var dx = pad.X - view.Position.X;
+            var dz = pad.Z - view.Position.Z;
+            if (dx * dx + dz * dz > maxDistSq) continue;
+            billboards.Draw(sprites.Get("mappin", view.Yaw, 0f), pad, 2.2f, view.Yaw, new Color(196, 148, 52));
         }
 
         foreach (var index in _nearMouths)
@@ -143,7 +148,7 @@ public sealed class WildernessLocation : ILocation
 
         foreach (var index in _nearTowns)
         {
-            if (_townBiomes[index] == BiomeKind.Ocean) continue;
+            if (!LiveTown(index)) continue;
             DrawSettlement(scene, view.Position, maxDistSq, TownAt(index), plazas: false);
         }
 
@@ -163,7 +168,7 @@ public sealed class WildernessLocation : ILocation
         _probe.Clear();
         foreach (var index in _nearTowns)
         {
-            if (_townBiomes[index] == BiomeKind.Ocean) continue;
+            if (!LiveTown(index)) continue;
             var town = TownAt(index);
             _probe.Add(new Marker(MarkerKind.EnterTown, town.Gate, 5.4f,
                 $"Enter {_townNames[index]}", index));
@@ -191,7 +196,7 @@ public sealed class WildernessLocation : ILocation
         _solids.Clear();
         foreach (var index in _nearTowns)
         {
-            if (_townBiomes[index] == BiomeKind.Ocean) continue;
+            if (!LiveTown(index)) continue;
             _solids.AddRange(TownAt(index).Buildings);
         }
 
@@ -211,6 +216,9 @@ public sealed class WildernessLocation : ILocation
         TrimTownCache();
     }
 
+    private bool LiveTown(int index)
+        => _townBiomes[index] != BiomeKind.Ocean && !EarthPlaces.IsMark(index);
+
     public Vector3 TownGate(int index) => TownAt(index).Gate;
 
     private Settlement TownAt(int index)
@@ -218,7 +226,7 @@ public sealed class WildernessLocation : ILocation
         if (_townCache.TryGetValue(index, out var town)) return town;
         town = Settlement.Build(index, _townNames[index], _townPads[index],
             _townBiomes[index], _seed + 31 * (index + 2),
-            city: index == 0 || index % WorldScale.MapCityStride == 0);
+            city: index < EarthPlaces.CityCount);
         _townCache[index] = town;
         return town;
     }
@@ -231,8 +239,7 @@ public sealed class WildernessLocation : ILocation
 
         var x = (cx + 0.35f + ((n >> 8) & 255) / 255f * 0.3f) * WorldScale.ChunkMetres;
         var z = (cz + 0.35f + ((n >> 16) & 255) / 255f * 0.3f) * WorldScale.ChunkMetres;
-        if (x < 40f || z < 40f || x > WorldScale.WorldMetres - 40f || z > WorldScale.WorldMetres - 40f)
-            return null;
+        if (x < 0f || z < 0f) return null;
         var biome = _noise.BiomeAt(x, z);
         if (biome is BiomeKind.Ocean or BiomeKind.Mountain) return null;
         if (_heights.PadNear(x, z, 90f)) return null;

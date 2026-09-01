@@ -30,13 +30,15 @@ public static class WorldScale
     public const float WadeDepth = 1.05f;
     public const float TownPadRadius = 70f;
     public const int ChunkRing = 2;
-    public const int TownCount = 8192;
-    public const int DungeonMouthCount = 6144;
+    public const int TownCount = 332;
+    public const int DungeonMouthCount = 180;
+    public const int VillageFill = 256;
+    public const int SiteFill = 160;
     public const int DungeonRoomMin = 8;
     public const int DungeonRoomMax = 12;
     public const int DefaultSeed = 1742;
     public const int MapSize = 512;
-    public const int MapCityStride = 32;
+    public const int MapCityStride = 1;
 
     /// <summary>Rise over run. About 46 degrees; steeper ground is a wall.</summary>
     public const float MaxWalkSlope = 1.05f;

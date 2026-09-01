@@ -8,17 +8,15 @@ public static class Travel
 {
     public static float Hours(Vector3 from, Vector3 dest, bool ship, bool fromCoast, bool toCoast)
     {
-        var dx = dest.X - from.X;
-        var dz = dest.Z - from.Z;
-        var km = MathF.Sqrt(dx * dx + dz * dz) / 1000f;
+        var km = Kilometres(from, dest);
         var kph = ship && (fromCoast || toCoast) ? WorldScale.RoadShipKph : WorldScale.RoadHorseKph;
         return Math.Clamp(km / kph, WorldScale.RoadHoursMin, WorldScale.RoadHoursMax);
     }
 
     public static float Kilometres(Vector3 from, Vector3 dest)
     {
-        var dx = dest.X - from.X;
-        var dz = dest.Z - from.Z;
+        var dx = EarthGlobe.Delta(from.X, dest.X);
+        var dz = EarthGlobe.Delta(from.Z, dest.Z);
         return MathF.Sqrt(dx * dx + dz * dz) / 1000f;
     }
 

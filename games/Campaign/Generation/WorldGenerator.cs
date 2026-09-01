@@ -64,23 +64,45 @@ public static class WorldGenerator
         var noise = new HeightNoise(seed);
         var rng = new Random(seed);
 
-        var pads = PlaceGrid(WorldScale.TownCount, noise, rng, towns: true);
-        var mouths = PlaceGrid(WorldScale.DungeonMouthCount, noise, new Random(seed ^ 0x27d4eb2d),
-            towns: false);
-        RelocateWet(pads, noise, rng, towns: true);
-        RelocateWet(mouths, noise, new Random(seed ^ 0x51ed), towns: false);
+        var historic = EarthPlaces.Cities;
+        var marks = EarthPlaces.Marks;
+        var named = historic.Length + marks.Length;
+        var pads = new Vector3[named + WorldScale.VillageFill];
+        for (var i = 0; i < historic.Length; i++)
+            pads[i] = PlaceExact(noise, historic[i]);
+        for (var i = 0; i < marks.Length; i++)
+            pads[historic.Length + i] = PlaceExact(noise, marks[i]);
+
+        var fill = PlaceGrid(WorldScale.VillageFill, noise, rng, towns: true);
+        for (var i = 0; i < fill.Length; i++)
+            pads[named + i] = fill[i];
+
+        var site = EarthPlaces.Sites;
+        var mouths = new Vector3[site.Length + WorldScale.SiteFill];
+        var holeRng = new Random(seed ^ 0x27d4eb2d);
+        for (var i = 0; i < site.Length; i++)
+            mouths[i] = PlaceExact(noise, site[i]);
+
+        var holes = PlaceGrid(WorldScale.SiteFill, noise, holeRng, towns: false);
+        for (var i = 0; i < holes.Length; i++)
+            mouths[site.Length + i] = holes[i];
+
+        RelocateWet(pads, noise, rng, towns: true, start: named);
+        RelocateWet(mouths, noise, holeRng, towns: false, start: site.Length);
 
         var heights = new WorldHeights(noise, pads, WorldScale.TownPadRadius);
         for (var i = 0; i < pads.Length; i++)
         {
             var pad = pads[i];
-            pads[i] = new Vector3(pad.X, heights.Sample(pad.X, pad.Z), pad.Z);
+            pads[i] = new Vector3(EarthGlobe.Wrap(pad.X), heights.Sample(pad.X, pad.Z),
+                EarthGlobe.Wrap(pad.Z));
         }
 
         for (var i = 0; i < mouths.Length; i++)
         {
             var mouth = mouths[i];
-            mouths[i] = new Vector3(mouth.X, heights.Sample(mouth.X, mouth.Z), mouth.Z);
+            mouths[i] = new Vector3(EarthGlobe.Wrap(mouth.X), heights.Sample(mouth.X, mouth.Z),
+                EarthGlobe.Wrap(mouth.Z));
         }
 
         var townNames = new string[pads.Length];
@@ -88,15 +110,17 @@ public static class WorldGenerator
         for (var i = 0; i < pads.Length; i++)
         {
             townBiomes[i] = noise.BiomeAt(pads[i].X, pads[i].Z);
-            townNames[i] = PlaceNames.Town(i, seed, townBiomes[i]);
+            townNames[i] = i < named
+                ? EarthPlaces.StopAt(i).Name
+                : PlaceNames.Town(i, seed, townBiomes[i]);
         }
 
         var dungeonNames = new string[mouths.Length];
         for (var i = 0; i < mouths.Length; i++)
-            dungeonNames[i] = PlaceNames.Hole(i, seed);
+            dungeonNames[i] = i < site.Length ? site[i].Name : PlaceNames.Hole(i, seed);
 
-        var spawn = pads[0] + new Vector3(0f, 0f, 72f);
-        spawn = new Vector3(spawn.X, 0f, Math.Clamp(spawn.Z, 8f, WorldScale.WorldMetres - 8f));
+        var spawnPad = pads[EarthPlaces.Alexandria];
+        var spawn = new Vector3(EarthGlobe.Wrap(spawnPad.X), 0f, EarthGlobe.Wrap(spawnPad.Z + 72f));
 
         var wilderness = new WildernessLocation(heights, noise, seed, pads, mouths,
             townNames, dungeonNames, townBiomes);
@@ -162,7 +186,8 @@ public static class WorldGenerator
         {
             if (i == 0 && towns)
             {
-                pads[i] = FindBestLand(noise, preferSettled: true);
+                pads[i] = FindLand(noise, WorldScale.WorldMetres * 0.5f, WorldScale.WorldMetres * 0.4f,
+                    towns, rng, 1);
                 continue;
             }
 
@@ -176,9 +201,44 @@ public static class WorldGenerator
         return pads;
     }
 
-    private static void RelocateWet(Vector3[] pads, HeightNoise noise, Random rng, bool towns)
+    /// <summary>Pin a historic site to its coordinates. Only a short coast step if the cell is wet.</summary>
+    private static Vector3 PlaceExact(HeightNoise noise, EarthPlace place)
     {
-        for (var i = 0; i < pads.Length; i++)
+        var at = EarthGlobe.FromLonLat(place.Lon, place.Lat);
+        var x = at.X;
+        var z = at.Z;
+        if (!IsHabitable(noise, x, z))
+        {
+            const float Max = 420f;
+            const float Step = 14f;
+            var found = false;
+            for (var r = Step; r <= Max && !found; r += Step)
+            {
+                var n = Math.Max(8, (int)(r * 0.45f));
+                for (var k = 0; k < n; k++)
+                {
+                    var a = k * MathF.Tau / n;
+                    var cx = EarthGlobe.Wrap(x + MathF.Cos(a) * r);
+                    var cz = EarthGlobe.Wrap(z + MathF.Sin(a) * r);
+                    if (!IsHabitable(noise, cx, cz)) continue;
+                    x = cx;
+                    z = cz;
+                    found = true;
+                    break;
+                }
+            }
+        }
+
+        var y = noise.Height(x, z);
+        if (y < WorldScale.WaterLevel + 1.2f)
+            y = WorldScale.WaterLevel + 1.6f;
+        return new Vector3(x, y, z);
+    }
+
+    private static void RelocateWet(Vector3[] pads, HeightNoise noise, Random rng, bool towns,
+        int start = 0)
+    {
+        for (var i = start; i < pads.Length; i++)
         {
             for (var attempt = 0; attempt < 4 && !IsHabitable(noise, pads[i].X, pads[i].Z); attempt++)
                 pads[i] = FindLand(noise, pads[i].X, pads[i].Z, towns, rng, i + 17 + attempt * 97);
@@ -241,16 +301,15 @@ public static class WorldGenerator
 
     private static Vector3 FindLand(HeightNoise noise, float x, float z, bool town, Random rng, int salt)
     {
-        x = Math.Clamp(x, 400f, WorldScale.WorldMetres - 400f);
-        z = Math.Clamp(z, 400f, WorldScale.WorldMetres - 400f);
+        x = EarthGlobe.Wrap(x);
+        z = EarthGlobe.Wrap(z);
         const float Step = 640f;
-        var inner = WorldScale.WorldMetres - 800f;
         for (var t = 0; t < 720; t++)
         {
             var angle = t * 0.61803399f * MathF.Tau + salt * 0.13f + (float)rng.NextDouble() * 0.2f;
             var radius = (t + (salt % 7)) * Step * 0.12f;
-            var cx = Wrap(x + MathF.Cos(angle) * radius, inner);
-            var cz = Wrap(z + MathF.Sin(angle) * radius, inner);
+            var cx = EarthGlobe.Wrap(x + MathF.Cos(angle) * radius);
+            var cz = EarthGlobe.Wrap(z + MathF.Sin(angle) * radius);
             if (!IsHabitable(noise, cx, cz)) continue;
             var biome = noise.BiomeAt(cx, cz);
             if (town && biome is BiomeKind.Mountain or BiomeKind.Snow && t < 40) continue;
@@ -280,12 +339,5 @@ public static class WorldGenerator
         }
 
         return FindBestLand(noise, preferSettled: town);
-    }
-
-    private static float Wrap(float value, float inner)
-    {
-        var t = (value - 400f) % inner;
-        if (t < 0f) t += inner;
-        return 400f + t;
     }
 }
