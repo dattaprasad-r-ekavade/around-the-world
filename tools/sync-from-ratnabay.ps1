@@ -14,8 +14,14 @@
     every one of that game's panels. They are listed in $Excluded below with the reason, and
     they are excluded so that a future sync cannot quietly drag them back in.
 
-    Anything you have edited on this side will be OVERWRITTEN. Edit here only what you intend
-    to stop syncing; everything else is better fixed in the source repo and pulled across.
+    A file you have edited on this side is NOT overwritten. The script remembers the hash of
+    every file it wrote (tools/.sync-state.json); anything that no longer matches is treated as
+    yours, skipped, and listed at the end. That guard exists because the warning that used to
+    stand here was only a comment, and by the time a second game had been built on this engine
+    there were nine locally edited files a single run would have destroyed without a word.
+
+    -Force overwrites them anyway. Prefer taking the change back to the source repo, where the
+    engine is exercised daily, and pulling it across from there.
 
 .PARAMETER Source
     The Ratna Bay working copy to pull from.
@@ -26,7 +32,10 @@
     this parameter plus renaming two folders and the .csproj files.
 
 .PARAMETER WhatIf
-    List what would be written, and write nothing.
+    List what would be written, and write nothing. Always safe, and the right first move.
+
+.PARAMETER Force
+    Overwrite locally edited files too. Loses work that only exists here.
 
 .EXAMPLE
     .\tools\sync-from-ratnabay.ps1
@@ -37,7 +46,8 @@
 param(
     [string]$Source = 'D:\Projects\Elder Scrolls 6',
     [string]$Root = 'Ember',
-    [switch]$WhatIf
+    [switch]$WhatIf,
+    [switch]$Force
 )
 
 $ErrorActionPreference = 'Stop'
@@ -65,6 +75,47 @@ function Convert-Source {
     $Text.Replace($FromNamespace, $Root)
 }
 
+function Get-TextHash {
+    param([string]$Text)
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($Text)
+        return [System.BitConverter]::ToString($sha.ComputeHash($bytes)).Replace('-', '')
+    }
+    finally { $sha.Dispose() }
+}
+
+# What this script last wrote, per file. Anything that no longer matches is somebody's work.
+$statePath = Join-Path $PSScriptRoot '.sync-state.json'
+$state = @{}
+if (Test-Path $statePath) {
+    $stored = Get-Content -Raw -Encoding UTF8 -Path $statePath | ConvertFrom-Json
+    foreach ($property in $stored.PSObject.Properties) { $state[$property.Name] = $property.Value }
+}
+
+$mine = @()
+
+<#
+    True when the file at $Destination holds changes this script did not write.
+
+    Without a record of what was last written, "different from the source" cannot tell an
+    upstream change from a local one -- so with no state on file, anything that differs is
+    treated as local. That is the cautious way round: the cost of being wrong is one skipped
+    file and a line of output, against losing work with no way to get it back.
+#>
+function Test-LocallyEdited {
+    param([string]$Destination, [string]$Relative, [string]$Incoming)
+
+    if (-not (Test-Path $Destination)) { return $false }
+
+    $current = Get-Content -Raw -Encoding UTF8 -Path $Destination
+    if ($state.ContainsKey($Relative)) {
+        return (Get-TextHash $current) -ne $state[$Relative]
+    }
+
+    return $current -ne $Incoming
+}
+
 $engineSource = Join-Path $Source 'src\RatnaBay.Engine'
 if (-not (Test-Path $engineSource)) { throw "No engine at '$engineSource'. Pass -Source." }
 
@@ -88,8 +139,18 @@ foreach ($file in Get-ChildItem -Path $engineSource -Recurse -Filter *.cs |
     }
 
     $text = Convert-Source -Text (Get-Content -Raw -Encoding UTF8 -Path $file.FullName) -FromNamespace 'RatnaBay.Engine'
+
+    if (-not $Force -and (Test-LocallyEdited $destination $relative $text)) {
+        $mine += $relative
+        continue
+    }
+
     if ($WhatIf) { Write-Host "  would write $relative" }
-    else { Set-Content -Path $destination -Value $text -Encoding utf8 -NoNewline }
+    else {
+        Set-Content -Path $destination -Value $text -Encoding utf8 -NoNewline
+        $state[$relative] = Get-TextHash $text
+    }
+
     $written++
 }
 
@@ -108,9 +169,20 @@ if (Test-Path $router) {
     # file that lives in it, and the first Console.WriteLine you write stops compiling.
     $text = Convert-Source -Text (Get-Content -Raw -Encoding UTF8 -Path $router) -FromNamespace 'RatnaBay.Domain'
     $text = $text.Replace("namespace $Root;", "namespace $Root.Scripting;")
-    if ($WhatIf) { Write-Host '  would write ConsoleRouter.cs' }
-    else { Set-Content -Path $destination -Value $text -Encoding utf8 -NoNewline }
-    $written++
+
+    if (-not $Force -and (Test-LocallyEdited $destination 'ConsoleRouter.cs' $text)) {
+        $mine += 'ConsoleRouter.cs'
+    }
+    elseif ($WhatIf) { Write-Host '  would write ConsoleRouter.cs' }
+    else {
+        Set-Content -Path $destination -Value $text -Encoding utf8 -NoNewline
+        $state['ConsoleRouter.cs'] = Get-TextHash $text
+        $written++
+    }
+}
+
+if (-not $WhatIf) {
+    $state | ConvertTo-Json | Set-Content -Path $statePath -Encoding utf8
 }
 
 Write-Host ''
@@ -118,5 +190,15 @@ Write-Host "  $written file(s) $(if ($WhatIf) { 'would be ' })synced from $Sourc
 Write-Host ''
 Write-Host '  Left behind on purpose:'
 foreach ($line in $skipped) { Write-Host "    $line" }
+
+if ($mine.Count -gt 0) {
+    Write-Host ''
+    Write-Host "  Kept because they are edited here, not upstream ($($mine.Count)):"
+    foreach ($line in $mine) { Write-Host "    $line" }
+    Write-Host ''
+    Write-Host '  Take those changes back to the source repo if they belong to the engine,'
+    Write-Host '  add them to $Excluded if they belong only here, or re-run with -Force to'
+    Write-Host '  throw them away.'
+}
 Write-Host ''
 Write-Host '  Now build: dotnet build Ember.sln'
