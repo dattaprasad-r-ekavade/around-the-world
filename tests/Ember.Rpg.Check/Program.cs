@@ -33,6 +33,17 @@ internal static class Program
             if (loaded.Entities[0].Field("name") != "Rowan")
                 problems.Add("elder_01 field 'name' should be 'Rowan' after a load");
 
+            // The inventory test: an item was added before the save; it must still be there,
+            // still stackable, still named, and still worn after the load.
+            if (loaded.Player.Bag.Count("potion_heal") != 3)
+                problems.Add($"bag should hold 3 potion_heal after a load, holds {loaded.Player.Bag.Count("potion_heal")}");
+            if (loaded.Player.Bag.Count("sword_iron") != 1)
+                problems.Add("bag should hold 1 sword_iron after a load");
+            if (loaded.Player.Equip.Get("mainhand") != "sword_iron")
+                problems.Add("mainhand should still hold sword_iron after a load");
+            if (loaded.ItemDefs.Get("potion_heal") is not { Name: "Healing Potion", Stackable: true, Slot: null })
+                problems.Add("potion_heal definition should survive the load unchanged");
+
             if (problems.Count == 0)
             {
                 Console.WriteLine("[OK] save then load equals original");
@@ -49,18 +60,31 @@ internal static class Program
         }
     }
 
-    private static SaveState Original() => new()
+    private static SaveState Original()
     {
-        Entities = new[]
+        var state = new SaveState
         {
-            EntityRecord.Create("elder_01", "npc")
-                .WithField("name", "Rowan")
-                .WithField("hp", "12"),
-            EntityRecord.Create("gate_01", "prop")
-                .WithField("state", "shut")
-        },
-        Flags = Flags()
-    };
+            Entities = new[]
+            {
+                EntityRecord.Create("elder_01", "npc")
+                    .WithField("name", "Rowan")
+                    .WithField("hp", "12"),
+                EntityRecord.Create("gate_01", "prop")
+                    .WithField("state", "shut")
+            },
+            Flags = Flags()
+        };
+
+        state.ItemDefs.Add(new ItemDef("potion_heal", "Healing Potion", Slot: null, Stackable: true));
+        state.ItemDefs.Add(new ItemDef("sword_iron", "Iron Sword", Slot: "mainhand", Stackable: false));
+
+        // Add, then the save happens around it — this is the sequence the check exists for.
+        state.Player.Bag.Add(state.ItemDefs.Get("potion_heal")!, 3);
+        state.Player.Bag.Add(state.ItemDefs.Get("sword_iron")!);
+        state.Player.Equip.Set("mainhand", "sword_iron");
+
+        return state;
+    }
 
     private static FlagStore Flags()
     {
@@ -116,6 +140,48 @@ internal static class Program
                 problems.Add($"Flag '{name}' is missing");
             else if (!value.Equals(got))
                 problems.Add($"Flag '{name}': {value} != {got}");
+        }
+
+        // Item definitions.
+        if (expected.ItemDefs.Count != actual.ItemDefs.Count)
+            problems.Add($"ItemDef count {expected.ItemDefs.Count} != {actual.ItemDefs.Count}");
+
+        foreach (var (id, def) in expected.ItemDefs.All)
+        {
+            if (!actual.ItemDefs.TryGet(id, out var got))
+                problems.Add($"ItemDef '{id}' is missing");
+            else if (!def.Equals(got))
+                problems.Add($"ItemDef '{id}': {def} != {got}");
+        }
+
+        // The bag, entry for entry — order and counts included.
+        var wantBag = expected.Player.Bag.Entries;
+        var gotBag = actual.Player.Bag.Entries;
+        if (wantBag.Count != gotBag.Count)
+        {
+            problems.Add($"Bag has {gotBag.Count} entries, expected {wantBag.Count}");
+        }
+        else
+        {
+            for (var i = 0; i < wantBag.Count; i++)
+            {
+                if (wantBag[i].ItemId != gotBag[i].ItemId)
+                    problems.Add($"Bag entry {i}: {wantBag[i].ItemId} != {gotBag[i].ItemId}");
+                else if (wantBag[i].Count != gotBag[i].Count)
+                    problems.Add($"Bag entry {i} ({wantBag[i].ItemId}): count {wantBag[i].Count} != {gotBag[i].Count}");
+            }
+        }
+
+        // What is worn.
+        if (expected.Player.Equip.Count != actual.Player.Equip.Count)
+            problems.Add($"Equip has {actual.Player.Equip.Count} slots, expected {expected.Player.Equip.Count}");
+
+        foreach (var (slot, itemId) in expected.Player.Equip.All)
+        {
+            if (!actual.Player.Equip.Has(slot))
+                problems.Add($"Equip slot '{slot}' is missing");
+            else if (actual.Player.Equip.Get(slot) != itemId)
+                problems.Add($"Equip slot '{slot}': {itemId} != {actual.Player.Equip.Get(slot)}");
         }
     }
 }

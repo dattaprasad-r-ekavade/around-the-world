@@ -6,18 +6,25 @@ using System.Text.Json;
 namespace Ember.Rpg;
 
 /// <summary>
-/// A save as data: the entities and the flags, and nothing else.
+/// A save as data: the entities, the flags, the item definitions, and the player's bag and
+/// equipment — and nothing else.
 ///
-/// No inventory, no quests, no dialogue, no maps — those are a game's systems, built out of
-/// these two (and out of the engine) rather than into this file's format. The format only has
-/// to answer: who is here, and what is true right now.
+/// No quests, no dialogue, no maps — those are a game's systems, built out of these (and out
+/// of the engine) rather than into this file's format. The format only has to answer: who is
+/// here, what is true, what exists to hold, and what the player is carrying right now.
 /// </summary>
 public sealed record SaveState
 {
     private static readonly JsonSerializerOptions Json = new()
     {
         WriteIndented = true,
-        Converters = { new FlagStoreJson() }
+        Converters =
+        {
+            new FlagStoreJson(),
+            new ItemCatalogueJson(),
+            new BagJson(),
+            new EquipSlotsJson()
+        }
     };
 
     /// <summary>
@@ -30,6 +37,11 @@ public sealed record SaveState
     public IReadOnlyList<EntityRecord> Entities { get; init; } = Array.Empty<EntityRecord>();
 
     public FlagStore Flags { get; init; } = new();
+
+    /// <summary>Every item kind the bags in this save can hold, so a save describes its own items.</summary>
+    public ItemCatalogue ItemDefs { get; init; } = new();
+
+    public PlayerRecord Player { get; init; } = new();
 
     public string ToJson() => JsonSerializer.Serialize(this, Json);
 
