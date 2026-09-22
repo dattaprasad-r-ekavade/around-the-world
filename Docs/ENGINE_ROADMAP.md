@@ -38,7 +38,7 @@ Start here. Do not build an editor or importer yet.
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 01 | Create `Docs/ENGINE_PROGRESS.md`; record current build and RPG check results. | `dotnet build Ember.sln --nologo` and `dotnet run --project tests/Ember.Rpg.Check` succeed; output is recorded. |
+| [x] | 01 | Create `Docs/ENGINE_PROGRESS.md`; record current build and RPG check results. | `dotnet build Ember.sln --nologo` and `dotnet run --project tests/Ember.Rpg.Check` succeed; output is recorded. |
 | [ ] | 02 | Add a CPU-only engine test project to the solution using one test framework. | One numeric test passes through `dotnet test`; no graphics device/window is needed. |
 | [ ] | 03 | Document metres, Y-up, right-handed coordinates, forward -Z, and MonoGame matrix multiplication order in the progress file. Add one transform-order fixture. | A known rotated/translated point matches a manually calculated expected result. |
 | [ ] | 04 | Add `Scene/Transform.cs`: position, quaternion rotation, scale, and local matrix. | Identity, translation, rotation, and scale fixtures pass. |
@@ -315,12 +315,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: none.
-- Current task: 01.
-- Changed files: this planning document only.
-- Checks run: document structure reviewed; no engine implementation started.
+- Last completed task: 01.
+- Current task: 02.
+- Changed files: `Docs/ENGINE_PROGRESS.md`, this roadmap checkbox and handoff.
+- Checks run: `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`.
+- Results: build passed with 0 warnings and 0 errors; RPG check passed.
 - Blockers: none recorded.
-- Next action: run task 01 and record evidence in `Docs/ENGINE_PROGRESS.md`.
+- Next action: run task 02 and add the first CPU-only engine test project.
 
 Suggested request to an implementing AI:
 
