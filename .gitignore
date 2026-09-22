@@ -8,6 +8,6 @@ artifacts/
 captures/
 /Play/
 /dist/
-games/Campaign/Content/Earth/ne_land.geojson
-games/Campaign/Content/Earth/land_preview.png
-games/Campaign/Content/Earth/land360.txt
+samples/Campaign/Content/Earth/ne_land.geojson
+samples/Campaign/Content/Earth/land_preview.png
+samples/Campaign/Content/Earth/land360.txt

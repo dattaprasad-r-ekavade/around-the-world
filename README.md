@@ -1,12 +1,26 @@
 # Ember
 
-A small first-person engine for MonoGame, and the building blocks that came with it.
+A small first-person game engine for MonoGame — and the building blocks that came with it.
+
+**This repository is the engine.** Ember lives here and is edited here: `src/Ember.Engine` and
+`src/Ember.Scripting` are owned in this repo, not mirrored from anywhere. The default workflow
+is to open a file under `src/` and change it.
 
 It is not a general-purpose engine and does not want to be. It is the reusable half of a
 shipping game — Ratna Bay, a first-person roguelike — lifted out after the fact, with
 everything that named that game left behind. Every piece here has been run for real: the frame
 loop, the walk, the lighting, the procedural textures and the synthesised audio are the ones a
 finished game uses, not a demo's.
+
+Two things in this repo are games built on the engine, and they are consumers of it, never part
+of it:
+
+- **`samples/FirstLight`** — the contract sample. Under two hundred lines, it defines what a
+  game may assume about the engine, and it fails the build the day a change to the engine stops
+  a game from compiling against it. Read it before writing anything.
+- **`samples/Campaign`** — a real game on the engine (first-slice design in
+  `samples/Campaign/Docs/DESIGN.md`). It references the engine the same way any outside game
+  would; nothing in `src/` may reference it.
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a
 callback, box and model rendering with two lighting paths, procedurally generated wall, floor,
@@ -27,17 +41,33 @@ a rewrite of anything here.)
 
 ```powershell
 dotnet build Ember.sln
+```
 
-# The sample: a room, a lamp, and someone standing in it.
+### Running FirstLight
+
+FirstLight is a windowed WinExe; run its built DLL with `dotnet`:
+
+```powershell
+# A room, a lamp, and someone standing in it.
 dotnet samples\FirstLight\bin\Debug\net9.0-windows\win-x64\FirstLight.dll --windowed
 
 # The same thing, photographed and exited, with no human present.
 dotnet samples\FirstLight\bin\Debug\net9.0-windows\win-x64\FirstLight.dll --screenshot room.png
 ```
 
+(If you built Release, swap `Debug` for `Release` in the path.)
+
 Read `samples/FirstLight/FirstLightGame.cs` start to finish before you write anything. It is
 under two hundred lines and it is the whole contract between the engine and a game. Then copy
 it and start deleting.
+
+### Running Campaign
+
+Campaign is a game, not part of the engine — run it the same way:
+
+```powershell
+dotnet samples\Campaign\bin\Debug\net9.0-windows\win-x64\Campaign.dll --windowed
+```
 
 ---
 
@@ -53,9 +83,13 @@ src/Ember.Engine/       The engine. MonoGame, WinForms, FontStashSharp. Windows.
 
 src/Ember.Scripting/    ConsoleRouter. No MonoGame reference, on purpose.
 
-samples/FirstLight/     The smallest game that can be built on the above.
+samples/FirstLight/     The contract sample: the smallest game that can be built on the above.
 
-tools/                  sync-from-ratnabay.ps1 - re-pull the engine from the source game.
+samples/Campaign/       A game built on the engine. A consumer of src/, never part of it.
+
+tools/                  Optional helpers. sync-from-ratnabay.ps1 re-imports engine sources
+                        from the Ratna Bay working copy; you do not need it — Ember is edited
+                        here. bake_earth_land.py bakes Campaign's terrain data.
 
 Docs/BUILDING_BLOCKS.md What each piece does and how to call it.
 ```
@@ -154,8 +188,8 @@ still works.
 
 ## What is deliberately not here
 
-Seven files that live in the source game's engine project are game screens wearing an engine's
-clothes. They are left behind by `tools/sync-from-ratnabay.ps1` on purpose, not by accident:
+Seven files that live in Ratna Bay's engine project are game screens wearing an engine's
+clothes. They are excluded from `tools/sync-from-ratnabay.ps1` on purpose, not by accident:
 
 | Left behind | Because |
 | --- | --- |
@@ -172,9 +206,9 @@ attempt to make them generic in the source game produced something that fit exac
 anyway.
 
 **Also not here: any game rules.** No inventory, no combat, no saves, no quests, no world
-generation. Those are the source game's domain project and they belong to that game. The engine
-has never referenced them, and a build gate over there asserts it every time:
-`[OK] no domain reference in the engine`.
+generation. Those belong to the game — to `samples/Campaign` or to whatever you write — and the
+engine must never reference them. Campaign consumes the engine; nothing under `src/` may
+reference Campaign.
 
 **Ratna Bay residue that did ship:** `CharacterSprites` has a `Bandit` palette, `ItemSprites`
 knows what a jiva crystal and a vetala look like, and `SoundBank`'s `Sfx` enum names a `Cast`.
@@ -224,10 +258,14 @@ enemy look like a rendering fault.
 
 ---
 
-## Keeping up with the source game
+## Optional: pulling from Ratna Bay
 
-The engine is still exercised daily in Ratna Bay, which is where most fixes will happen. Rather
-than fork and drift:
+Ember is owned in this repo. Edit `src/Ember.Engine` and `src/Ember.Scripting` here; nothing
+in the build runs a sync, and you never need one.
+
+If a fix you want was made in the Ratna Bay working copy instead, you can re-import it with
+the optional script. It keeps its hash guard (`tools/.sync-state.json`): a file you have
+edited here is skipped and listed, never overwritten, unless you pass `-Force`.
 
 ```powershell
 .\tools\sync-from-ratnabay.ps1 -WhatIf    # show what would be written, write nothing
@@ -235,10 +273,10 @@ than fork and drift:
 dotnet build Ember.sln
 ```
 
-It copies an allow-list, not a folder, and prints what it left behind and why. **Anything you
-have edited under `src/Ember.Engine` is overwritten**, except the files on the exclusion list —
-so if you want to own a file here permanently, add it to that list with a reason, the way
-`Ui/UiLayout.cs` already is.
+It copies an allow-list, not a folder, and prints what it excluded and why. **With `-Force`,
+anything you have edited under `src/Ember.Engine` is overwritten**, except the files on the
+exclusion list — so if you want to own a file here permanently, add it to that list with a
+reason, the way `Ui/UiLayout.cs` already is.
 
 Renaming the framework is `-Root MyName` plus renaming two folders and their `.csproj` files.
 

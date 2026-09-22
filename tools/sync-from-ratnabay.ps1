@@ -1,12 +1,16 @@
 <#
 .SYNOPSIS
-    Pull the reusable half of Ratna Bay into this framework, renaming as it goes.
+    OPTIONAL: pull the reusable half of Ratna Bay into this framework, renaming as it goes.
 
 .DESCRIPTION
-    The engine was extracted from a shipping game, and that game is still where it gets
-    exercised every day. Rather than fork and drift, this script re-copies the engine sources
-    and rewrites their namespaces, so a fix made while working on Ratna Bay can be brought
-    across in one command instead of by hand.
+    This script is optional. Ember is owned in this repository: the default workflow is to
+    edit src/Ember.Engine and src/Ember.Scripting here, directly. Nothing in the build or the
+    day-to-day loop runs this file, and it should only be used when you deliberately want to
+    re-import a change made in the Ratna Bay working copy rather than write it here first.
+
+    The engine was extracted from a shipping game, and that game may still exercise it every
+    day. Rather than copy by hand, this script re-copies the engine sources and rewrites their
+    namespaces, so a fix made while working on Ratna Bay can be brought across in one command.
 
     It copies an ALLOW LIST, not a folder. That is the important part. Six files that live in
     Ratna Bay's engine project are game screens wearing an engine's clothes -- a main menu that
@@ -16,9 +20,10 @@
 
     A file you have edited on this side is NOT overwritten. The script remembers the hash of
     every file it wrote (tools/.sync-state.json); anything that no longer matches is treated as
-    yours, skipped, and listed at the end. That guard exists because the warning that used to
-    stand here was only a comment, and by the time a second game had been built on this engine
-    there were nine locally edited files a single run would have destroyed without a word.
+    yours, skipped, and listed at the end. That guard stays: even an optional sync must not
+    destroy work that only exists here, and by the time a second game had been built on this
+    engine there were nine locally edited files a single run would have destroyed without a
+    word.
 
     -Force overwrites them anyway. Prefer taking the change back to the source repo, where the
     engine is exercised daily, and pulling it across from there.

@@ -15,7 +15,7 @@ URLS = [
     "https://raw.githubusercontent.com/nvkelso/natural-earth-vector/master/geojson/ne_110m_land.geojson",
 ]
 
-ROOT = Path(r"D:\Projects\engine\games\Campaign\Content\Earth")
+ROOT = Path(r"D:\Projects\engine\samples\Campaign\Content\Earth")
 ROOT.mkdir(parents=True, exist_ok=True)
 
 
