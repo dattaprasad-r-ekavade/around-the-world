@@ -14,14 +14,17 @@ internal static class Program
     private static int Main()
     {
         var original = Original();
+        var problems = new List<string>();
         var path = Path.Combine(Path.GetTempPath(), $"ember-rpg-check-{Guid.NewGuid():N}.json");
 
         try
         {
+            PlayDialogue(original, problems);
+            QuestRoundTrip(original, path, problems);
+
             original.Write(path);
             var loaded = SaveState.Read(path);
 
-            var problems = new List<string>();
             Compare(original, loaded, problems);
 
             if (loaded.Flags.GetBool("met_elder") != true)
@@ -44,6 +47,15 @@ internal static class Program
             if (loaded.ItemDefs.Get("potion_heal") is not { Name: "Healing Potion", Stackable: true, Slot: null })
                 problems.Add("potion_heal definition should survive the load unchanged");
 
+            // The dialogue test, after the round trip: still on the node the pick advanced
+            // to, and the flag the pick wrote is still set.
+            if (loaded.Dialogue.Tree != "elder")
+                problems.Add($"dialogue should still be in the 'elder' tree after a load, is '{loaded.Dialogue.Tree}'");
+            if (loaded.Dialogue.Node != "gate")
+                problems.Add($"dialogue should still be at 'gate' after a load, is '{loaded.Dialogue.Node}'");
+            if (!loaded.Flags.GetBool("gate_topic"))
+                problems.Add("gate_topic should still be set after a load");
+
             if (problems.Count == 0)
             {
                 Console.WriteLine("[OK] save then load equals original");
@@ -58,6 +70,88 @@ internal static class Program
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    /// <summary>
+    /// The dialogue test: load a conversation from JSON, then — given the flags the state
+    /// already carries — take the gated option and let it advance the node and write its
+    /// flag. The state is saved after this, so the load half of the test is Main's.
+    /// </summary>
+    private static void PlayDialogue(SaveState state, List<string> problems)
+    {
+        var tree = DialogueTree.FromJson(ElderDialogue);
+        state.Dialogue.Tree = tree.Id;
+        state.Dialogue.Node = "greet";
+
+        if (tree.Available("greet", new FlagStore()).Count != 1)
+            problems.Add("with no flags set, only the ungated option should be offered");
+
+        var open = tree.Available("greet", state.Flags);
+        if (open.Count != 2)
+        {
+            problems.Add($"with met_elder set, both options should be offered (got {open.Count})");
+            return;
+        }
+
+        // open[1] is the gated option: Next = "gate", Sets = { gate_topic: true }.
+        tree.Pick(state.Dialogue, state.Flags, open[1]);
+
+        if (state.Dialogue.Node != "gate")
+            problems.Add($"picking the gated option should advance to 'gate', not '{state.Dialogue.Node}'");
+        if (!state.Flags.GetBool("gate_topic"))
+            problems.Add("picking the gated option should write the gate_topic flag");
+    }
+
+    /// <summary>
+    /// The quest test: load a quest from JSON, start it, walk its stages as the flags
+    /// arrive, and prove a save taken mid-quest comes back at the same stage — then
+    /// finish it and prove a save taken after completion still reads Complete.
+    /// </summary>
+    private static void QuestRoundTrip(SaveState state, string path, List<string> problems)
+    {
+        var catalogue = QuestCatalogue.FromJson(ElderQuest);
+        if (catalogue.Count != 1 || !catalogue.TryGet("relic", out var quest))
+        {
+            problems.Add("the quest document should load one quest with id 'relic'");
+            return;
+        }
+
+        if (quest.StatusIn(state.Flags) != QuestStatus.NotStarted)
+            problems.Add("relic should be NotStarted before Start");
+
+        quest.Start(state.Flags);
+        if (quest.StatusIn(state.Flags) != QuestStatus.Active)
+            problems.Add("relic should be Active after Start");
+        if (quest.StageIn(state.Flags)?.Id != "fetch")
+            problems.Add("the first stage should be 'fetch'");
+
+        // Mid-quest save: stage one is still open, stage two has not begun.
+        state.Write(path);
+        var mid = SaveState.Read(path);
+        var midStage = quest.StageIn(mid.Flags);
+        if (midStage?.Id != "fetch")
+            problems.Add($"a mid-quest load should still be on stage 'fetch', is '{midStage?.Id}'");
+
+        // Arrive at the first stage's completion flag — the stage advances with no
+        // quest write, because progress is pure derivation.
+        mid.Flags.Set("relic_taken", true);
+        if (quest.StageIn(mid.Flags)?.Id != "deliver")
+            problems.Add("with relic_taken set, the stage should advance to 'deliver'");
+
+        // Finish the quest.
+        mid.Flags.Set("relic_delivered", true);
+        if (quest.StatusIn(mid.Flags) != QuestStatus.Complete)
+            problems.Add("relic should be Complete once both stages are done");
+        if (quest.StageIn(mid.Flags) is not null)
+            problems.Add("StageIn should be null when the quest is Complete");
+
+        // Completed-quest save still reads Complete after a round trip.
+        mid.Write(path);
+        var done = SaveState.Read(path);
+        if (quest.StatusIn(done.Flags) != QuestStatus.Complete)
+            problems.Add("a completed quest should still be Complete after a load");
+        if (!done.Flags.GetBool("quest.relic.started"))
+            problems.Add("the start flag should survive the load");
     }
 
     private static SaveState Original()
@@ -85,6 +179,69 @@ internal static class Program
 
         return state;
     }
+
+    /// <summary>A quest loaded from JSON by the check: two stages, flag-gated completion.</summary>
+    private const string ElderQuest = """
+    {
+      "Quests":
+      [
+        {
+          "Id": "relic",
+          "Title": "The Elder's Relic",
+          "Stages":
+          [
+            {
+              "Id": "fetch",
+              "Journal": "Recover the relic from the old vault.",
+              "DoneWhen": [ { "Flag": "relic_taken", "Bool": true } ]
+            },
+            {
+              "Id": "deliver",
+              "Journal": "Bring the relic back to the elder.",
+              "DoneWhen": [ { "Flag": "relic_delivered", "Bool": true } ]
+            }
+          ]
+        }
+      ]
+    }
+    """;
+
+    /// <summary>A conversation loaded from JSON by the check: one gated option, one flag written.</summary>
+    private const string ElderDialogue = """
+    {
+      "Id": "elder",
+      "Nodes":
+      [
+        {
+          "Id": "greet",
+          "Speaker": "Rowan",
+          "Text": "Well met, wanderer.",
+          "Options":
+          [
+            { "Label": "Who are you?", "Next": "who" },
+            {
+              "Label": "Ask about the gate.",
+              "Next": "gate",
+              "Requires": [ { "Flag": "met_elder", "Bool": true } ],
+              "Sets": { "gate_topic": true }
+            }
+          ]
+        },
+        {
+          "Id": "who",
+          "Speaker": "Rowan",
+          "Text": "Rowan, keeper of this hall.",
+          "Options": [ { "Label": "Farewell.", "Next": null } ]
+        },
+        {
+          "Id": "gate",
+          "Speaker": "Rowan",
+          "Text": "Shut since the winter. Why do you ask?",
+          "Options": [ { "Label": "Farewell.", "Next": null } ]
+        }
+      ]
+    }
+    """;
 
     private static FlagStore Flags()
     {
@@ -183,5 +340,11 @@ internal static class Program
             else if (actual.Player.Equip.Get(slot) != itemId)
                 problems.Add($"Equip slot '{slot}': {itemId} != {actual.Player.Equip.Get(slot)}");
         }
+
+        // Where the conversation has got to.
+        if (expected.Dialogue.Tree != actual.Dialogue.Tree)
+            problems.Add($"Dialogue tree '{expected.Dialogue.Tree}' != '{actual.Dialogue.Tree}'");
+        if (expected.Dialogue.Node != actual.Dialogue.Node)
+            problems.Add($"Dialogue node '{expected.Dialogue.Node}' != '{actual.Dialogue.Node}'");
     }
 }

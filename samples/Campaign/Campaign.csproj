@@ -23,6 +23,7 @@
     <None Include="Content\Fonts\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Audio\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Content\Earth\land.bin" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="Content\Rpg\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="Scripts\**\*" CopyToOutputDirectory="PreserveNewest" />
     <None Include="PlayBot.bat" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>

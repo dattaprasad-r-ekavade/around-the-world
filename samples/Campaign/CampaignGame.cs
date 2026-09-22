@@ -10,6 +10,7 @@ using Microsoft.Xna.Framework.Input;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using SaveState = Ember.Rpg.SaveState;
 
 namespace Campaign;
 
@@ -57,6 +58,7 @@ public sealed class CampaignGame : EngineHost
     private readonly SpellmakerScreen _spellUi = new();
     private readonly JournalScreen _journal = new();
     private readonly Hero _hero = new();
+    private SaveState _rpg = new();
     private int _talkId;
     private bool _autoMap;
     private float _spellLight;
@@ -110,6 +112,7 @@ public sealed class CampaignGame : EngineHost
         _prompts = new PromptRenderer(_ui);
 
         var root = AppContext.BaseDirectory;
+        RpgContent.Load();
         AttachCanvas();
 
         AttachScene(_faults);
@@ -170,6 +173,7 @@ public sealed class CampaignGame : EngineHost
     private void BuildWorld(int seed)
     {
         _seed = seed;
+        _rpg = new SaveState();
         _mounted = false;
         _wagonRide = false;
         _wasSwimming = false;
@@ -429,6 +433,32 @@ public sealed class CampaignGame : EngineHost
         {
             _beds.Enabled = args.Switch(0) ?? !_beds.Enabled;
             return _beds.Enabled ? "music on" : "music off";
+        });
+        _console.Register("flag", "flag <name> [value]", "Read or set an RPG flag.", args =>
+        {
+            var name = args.Text(0);
+            if (string.IsNullOrWhiteSpace(name)) return "flag <name> [value]";
+            if (args.Count <= 1)
+                return _rpg.Flags.TryGet(name, out var current) ? current.ToString() : "unset";
+
+            var raw = args.Rest(1).Trim();
+            if (IsFlagBool(raw, out var bit)) _rpg.Flags.Set(name, bit);
+            else if (double.TryParse(raw, System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture, out var number))
+                _rpg.Flags.Set(name, number);
+            else _rpg.Flags.Set(name, raw);
+            MirrorRelicFlags();
+            var shown = _rpg.Flags.TryGet(name, out var set) ? set.ToString() : "unset";
+            return $"{name} = {shown}";
+        });
+        _console.Register("journal", "journal", "Print quest lines derived from the RPG flags.", _ =>
+        {
+            var notes = RpgContent.JournalNotes(_rpg.Flags, Substitute);
+            if (notes.Count == 0) return "journal empty";
+            var lines = new List<string>(notes.Count);
+            foreach (var note in notes)
+                lines.Add($"{(note.Done ? "done" : "open")} {note.Title}: {note.Body}");
+            return string.Join(" | ", lines);
         });
         _console.Register("quit", "quit", "Leave the game.", _ =>
         {
@@ -798,6 +828,7 @@ public sealed class CampaignGame : EngineHost
             _hero.Spells.Add(Spell.Heal);
         var dungeon = Math.Clamp(0, 0, Math.Max(0, _world.DungeonCount - 1));
         QuestBook.EnsureMain(_hero, _world.DungeonNames[dungeon], dungeon);
+        MirrorRelicFlags();
         _create.Open = false;
     }
 
@@ -820,6 +851,116 @@ public sealed class CampaignGame : EngineHost
         var i = _hero.RelicDungeon >= 0 ? _hero.RelicDungeon : 0;
         i = Math.Clamp(i, 0, _world.DungeonCount - 1);
         return _world.DungeonNames[i];
+    }
+
+    /// <summary>Words a console user would type for a boolean flag, including 1 and 0.</summary>
+    private static bool IsFlagBool(string raw, out bool bit)
+    {
+        if (bool.TryParse(raw, out bit)) return true;
+        switch (raw.ToLowerInvariant())
+        {
+            case "1":
+            case "on":
+            case "yes":
+                bit = true;
+                return true;
+            case "0":
+            case "off":
+            case "no":
+                bit = false;
+                return true;
+            default:
+                bit = false;
+                return false;
+        }
+    }
+
+    /// <summary>True while the player holds the Totem: taken, not yet delivered.</summary>
+    private bool HasRelic() =>
+        _rpg.Flags.GetBool("relic_taken") && !_rpg.Flags.GetBool("relic_delivered");
+
+    /// <summary>Keep hero.MainBeat and hero.Relic in step with the RPG flags.</summary>
+    private void MirrorRelicFlags()
+    {
+        if (_rpg.Flags.GetBool("quest.relic.started") && _hero.MainBeat < 1)
+            _hero.MainBeat = 1;
+        if (_rpg.Flags.GetBool("relic_taken") && _hero.MainBeat < 2)
+            _hero.MainBeat = 2;
+        if (_rpg.Flags.GetBool("relic_delivered"))
+            _hero.MainBeat = 3;
+        if (_rpg.Flags.GetBool("quest.relic.started"))
+        {
+            _hero.Topics.Add("totem");
+            _hero.Topics.Add("relic");
+        }
+        if (_rpg.Flags.GetBool("quest.relic.started"))
+        {
+            _hero.Topics.Add("underking");
+            _hero.Topics.Add("numidium");
+        }
+        _hero.Relic = HasRelic();
+    }
+
+    private string Substitute(string text) =>
+        text.Replace("{town}", TalkTown())
+            .Replace("{dungeon}", RelicDungeonName());
+
+    private bool OpenInnTalk()
+    {
+        if (RpgContent.Inn is null) return false;
+        if (_rpg.Dialogue.Tree != RpgContent.Inn.Id || _rpg.Dialogue.Node is null)
+        {
+            _rpg.Dialogue.Tree = RpgContent.Inn.Id;
+            _rpg.Dialogue.Node = "greet";
+        }
+        ShowRpgNode();
+        return true;
+    }
+
+    private void ShowRpgNode()
+    {
+        var tree = RpgContent.Inn;
+        var nodeId = _rpg.Dialogue.Node;
+        var node = tree?.Node(nodeId ?? "");
+        if (tree is null || node is null || nodeId is null)
+        {
+            _talk.Close();
+            return;
+        }
+
+        var open = tree.Available(nodeId, _rpg.Flags);
+        var options = new List<DialogueOption>();
+        for (var i = 0; i < open.Count; i++)
+            options.Add(new DialogueOption(Substitute(open[i].Label), 1000 + i));
+        if (options.Count == 0)
+            options.Add(new DialogueOption("Farewell.", 0));
+
+        _talk.Show(Substitute(node.Speaker), Substitute(node.Text), options.ToArray());
+    }
+
+    private void PickRpgOption(int index)
+    {
+        var tree = RpgContent.Inn;
+        var nodeId = _rpg.Dialogue.Node;
+        if (tree is null || nodeId is null)
+        {
+            _talk.Close();
+            return;
+        }
+
+        var open = tree.Available(nodeId, _rpg.Flags);
+        if (index < 0 || index >= open.Count)
+        {
+            _talk.Close();
+            return;
+        }
+
+        tree.Pick(_rpg.Dialogue, _rpg.Flags, open[index]);
+        MirrorRelicFlags();
+        if (_rpg.Dialogue.Node is null || _rpg.Dialogue.Tree is null)
+            _talk.Close();
+        else
+            ShowRpgNode();
     }
 
     private DialogueOption[] BuildTalkOptions(int talkId)
@@ -854,7 +995,16 @@ public sealed class CampaignGame : EngineHost
 
     private void DeliverTotem(FactionId to)
     {
+        if (!HasRelic())
+        {
+            _talk.Close();
+            Toast("You have no Totem to give.");
+            return;
+        }
+
         var line = QuestBook.Deliver(_hero, to);
+        _rpg.Flags.Set("relic_delivered", true);
+        MirrorRelicFlags();
         SyncHeroFromGuild();
         _talk.Close();
         Sounds?.Play(Sfx.Chime, weight: 0.55f);
@@ -1065,7 +1215,7 @@ public sealed class CampaignGame : EngineHost
 
     private void HandleJournal(KeyboardState keyboard)
     {
-        var n = _hero.Log.Count;
+        var n = RpgContent.JournalNotes(_rpg.Flags, Substitute).Count;
         if (n <= 0) return;
         var pick = PickRows(_journal.Selected, keyboard, n, _journal.ItemRow);
         _journal.Selected = pick.Selection;
@@ -1371,6 +1521,12 @@ public sealed class CampaignGame : EngineHost
 
     private void PickDialogue(int id)
     {
+        if (id >= 1000)
+        {
+            PickRpgOption(id - 1000);
+            return;
+        }
+
         if (id >= 100 && id < 100 + TalkBook.Catalogue.Length)
         {
             var key = TalkBook.Catalogue[id - 100].Key;
@@ -1428,6 +1584,8 @@ public sealed class CampaignGame : EngineHost
                 TryJoin(GuildKind.Thieves);
                 break;
             case 20:
+                _rpg.Flags.Set("quest.relic.started", true);
+                MirrorRelicFlags();
                 _talk.Body = QuestBook.AdvanceInn(_hero, RelicDungeonName());
                 _talk.Options = BuildTalkOptions(_talkId);
                 break;
@@ -1667,6 +1825,8 @@ public sealed class CampaignGame : EngineHost
                     break;
                 }
                 _talkId = marker.Target;
+                if (marker.Target == 1 && OpenInnTalk())
+                    break;
                 _talk.Show(SpeakerName(marker), TalkLine(marker.Target),
                     BuildTalkOptions(marker.Target));
                 break;
@@ -1695,7 +1855,7 @@ public sealed class CampaignGame : EngineHost
                 {
                     new($"Bless me. ({bless} gp)", 4)
                 };
-                if (_hero.Relic)
+                if (HasRelic())
                     temple.Add(new DialogueOption("I bring the Totem.", 23));
                 temple.Add(new DialogueOption("Goodbye.", 0));
                 _talk.Show("Priest of Kynareth", "Kynareth keeps the sky. What do you need?",
@@ -1974,7 +2134,7 @@ public sealed class CampaignGame : EngineHost
     {
         var speaker = SpeakerName(new Marker(MarkerKind.Join, Vector3.Zero, 0f, "", (int)kind));
         var options = new List<DialogueOption>();
-        if (_hero.Relic)
+        if (HasRelic())
         {
             var deliverId = kind switch
             {
@@ -2120,9 +2280,12 @@ public sealed class CampaignGame : EngineHost
         var take = 12 + Math.Abs(_dungeonIndex * 17 + _seed) % 29;
         _pack.Gold += take;
         Sounds?.Play(Sfx.Coin, weight: 0.55f);
-        if (_dungeonIndex == _hero.RelicDungeon && !_hero.Relic)
+        if (_dungeonIndex == _hero.RelicDungeon && !HasRelic())
         {
-            Toast($"{QuestBook.TakeRelic(_hero)}  {take} gp.");
+            var line = QuestBook.TakeRelic(_hero);
+            _rpg.Flags.Set("relic_taken", true);
+            MirrorRelicFlags();
+            Toast($"{line}  {take} gp.");
             return;
         }
 
@@ -3010,7 +3173,10 @@ public sealed class CampaignGame : EngineHost
         if (_script.Count == 0 || _wait > 0f || _runner.IsFading || _restFade > 0.04f) return;
         var line = _script.Dequeue();
         foreach (var output in _console.Execute(line))
+        {
             Log(output.Text);
+            Console.WriteLine(output.Text);
+        }
     }
 
     protected override void Draw(GameTime gameTime)
@@ -3167,7 +3333,7 @@ public sealed class CampaignGame : EngineHost
         _create.Draw(_ui);
         _sheet.Draw(_ui, _hero, _pack);
         _spellUi.Draw(_ui, _hero);
-        _journal.Draw(_ui, _hero);
+        _journal.Draw(_ui, RpgContent.JournalNotes(_rpg.Flags, Substitute));
         _pause.Draw(_ui, _beds.Enabled, _uiScalePreference, _view.MouseSensitivity);
 
         if (_map.Open || _autoMap || OverlayOpen || _consoleInput.Open)
@@ -3508,7 +3674,7 @@ public sealed class CampaignGame : EngineHost
             _ => "room"
         };
         var p = _view.Position;
-        SaveFile.Write(new SaveData
+        var data = new SaveData
         {
             Seed = _seed,
             Day = _clock.Day,
@@ -3588,7 +3754,10 @@ public sealed class CampaignGame : EngineHost
             }).ToArray(),
             AutoCells = SetIds(_hero.AutoCells),
             AutoDungeon = _hero.AutoDungeon
-        });
+        };
+        RpgAdapter.ToRpg(_rpg, data);
+        data.Rpg = _rpg;
+        SaveFile.Write(data);
     }
 
     private bool ReadSave()
@@ -3604,6 +3773,7 @@ public sealed class CampaignGame : EngineHost
         _roomIndex = data.Room;
         ApplyPack(data);
         ApplyHero(data);
+        ApplyRpg(data);
         _create.Open = false;
         var pos = new Vector3(data.X, data.Y, data.Z);
         switch (data.Place)
@@ -3732,6 +3902,30 @@ public sealed class CampaignGame : EngineHost
         if (_hero.Log.Count == 0)
             QuestBook.EnsureMain(_hero, RelicDungeonName(),
                 Math.Clamp(_hero.RelicDungeon, 0, Math.Max(0, _world.DungeonCount - 1)));
+    }
+
+    private void ApplyRpg(SaveData data)
+    {
+        if (data.Rpg is not null)
+        {
+            _rpg = data.Rpg;
+        }
+        else
+        {
+            // Pre-RPG save: rebuild state from the classic fields.
+            _rpg = new SaveState();
+            RpgAdapter.ToRpg(_rpg, data);
+            if (data.MainBeat >= 1 || data.Relic || data.Log is { Length: > 0 })
+                _rpg.Flags.Set("quest.relic.started", true);
+            if (data.Relic || data.MainBeat >= 2)
+                _rpg.Flags.Set("relic_taken", true);
+            if (data.MainBeat >= 3)
+            {
+                _rpg.Flags.Set("relic_taken", true);
+                _rpg.Flags.Set("relic_delivered", true);
+            }
+        }
+        MirrorRelicFlags();
     }
 
     private static void CopyInts(int[] dest, int[]? src)

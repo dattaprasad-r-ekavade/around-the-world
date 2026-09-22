@@ -6,10 +6,8 @@ namespace Campaign;
 /// <summary>
 /// The seam between Campaign's save — gold as an int, OwnedGear as gear indices — and an
 /// Ember.Rpg SaveState: gold as a flag, gear as bag entries over item definitions.
-///
-/// Not called by SaveFile yet; the native format stays the one Campaign writes. This exists
-/// so moving onto the RPG layer's storage later is these two methods, not a mapping invented
-/// under pressure at the time.
+/// SaveFile now carries the full SaveState in SaveData.Rpg; these methods seed a fresh
+/// state from classic fields (first load, or a pre-RPG save file).
 /// </summary>
 public static class RpgAdapter
 {
@@ -18,6 +16,7 @@ public static class RpgAdapter
     {
         save.Flags.Set("gold", data.Gold);
         EnsureDefs(save);
+        save.Player.Bag.Clear();
 
         foreach (var id in data.OwnedGear)
         {

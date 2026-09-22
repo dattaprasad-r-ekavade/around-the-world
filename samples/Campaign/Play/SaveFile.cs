@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Ember.Rpg;
 
 namespace Campaign;
 
@@ -77,6 +78,9 @@ public sealed class SaveData
     public QuestSave[] Log { get; set; } = [];
     public int[] AutoCells { get; set; } = [];
     public int AutoDungeon { get; set; } = -1;
+
+    /// <summary>The Ember.Rpg save state (flags, dialogue, bag). Null on pre-RPG saves.</summary>
+    public SaveState? Rpg { get; set; }
 }
 
 public sealed class SpellSave
@@ -96,11 +100,19 @@ public sealed class QuestSave
 
 public static class SaveFile
 {
-    private static readonly JsonSerializerOptions Json = new()
+    private static readonly JsonSerializerOptions Json = CreateJson();
+
+    private static JsonSerializerOptions CreateJson()
     {
-        WriteIndented = true,
-        PropertyNameCaseInsensitive = true
-    };
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNameCaseInsensitive = true
+        };
+        foreach (var converter in SaveState.JsonOptions.Converters)
+            options.Converters.Add(converter);
+        return options;
+    }
 
     public static string Path => System.IO.Path.Combine(AppContext.BaseDirectory, "campaign.save.json");
 

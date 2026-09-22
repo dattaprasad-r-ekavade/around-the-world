@@ -1,0 +1,57 @@
+{
+  "Id": "inn",
+  "Nodes": [
+    {
+      "Id": "greet",
+      "Speaker": "Innkeep",
+      "Text": "The Hound keeps a bed. What brings you to {town}?",
+      "Options": [
+        {
+          "Label": "I carry a letter about a relic.",
+          "Next": "letter",
+          "Sets": { "quest.relic.started": true }
+        },
+        {
+          "Label": "Where is the vault?",
+          "Next": "vault",
+          "Requires": [ { "Flag": "quest.relic.started", "Bool": true } ]
+        },
+        {
+          "Label": "Tell me about the road.",
+          "Next": "road"
+        },
+        { "Label": "Farewell.", "Next": null }
+      ]
+    },
+    {
+      "Id": "letter",
+      "Speaker": "Innkeep",
+      "Text": "A letter, is it? The old one by the hearth spoke of a Totem sleeping in a vault at {dungeon}. Take it — and mind which hall you give it to.",
+      "Options": [
+        {
+          "Label": "Where is the vault?",
+          "Next": "vault",
+          "Requires": [ { "Flag": "quest.relic.started", "Bool": true } ]
+        },
+        { "Label": "Farewell.", "Next": null }
+      ]
+    },
+    {
+      "Id": "vault",
+      "Speaker": "Innkeep",
+      "Text": "A locked vault in {dungeon}. The watch does not go there. Neither should you, unless you mean to.",
+      "Options": [
+        { "Label": "I will go.", "Next": null },
+        { "Label": "Farewell.", "Next": null }
+      ]
+    },
+    {
+      "Id": "road",
+      "Speaker": "Innkeep",
+      "Text": "The road is long. Hunger walks with you. The gate shuts after dusk.",
+      "Options": [
+        { "Label": "Farewell.", "Next": null }
+      ]
+    }
+  ]
+}

@@ -83,7 +83,7 @@ src/Ember.Engine/       The engine. MonoGame, WinForms, FontStashSharp. Windows.
 
 src/Ember.Scripting/    ConsoleRouter. No MonoGame reference, on purpose.
 
-src/Ember.Rpg/          Entity records, flag store, JSON save/load. Games reference it; Ember.Engine never does. Check: tests/Ember.Rpg.Check.
+src/Ember.Rpg/          Entity records, flags, items, dialogue, and quests. Games reference it; Ember.Engine never does. Check: tests/Ember.Rpg.Check.
 
 samples/FirstLight/     The contract sample: the smallest game that can be built on the above.
 

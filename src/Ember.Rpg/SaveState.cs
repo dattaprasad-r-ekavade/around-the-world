@@ -6,16 +6,21 @@ using System.Text.Json;
 namespace Ember.Rpg;
 
 /// <summary>
-/// A save as data: the entities, the flags, the item definitions, and the player's bag and
-/// equipment — and nothing else.
+/// A save as data: the entities, the flags, the item definitions, the player's bag and
+/// equipment, and where the conversation has got to — and nothing else.
 ///
-/// No quests, no dialogue, no maps — those are a game's systems, built out of these (and out
-/// of the engine) rather than into this file's format. The format only has to answer: who is
-/// here, what is true, what exists to hold, and what the player is carrying right now.
+/// No quests, no dialogue trees, no maps — those are a game's systems or content, built out
+/// of these (and out of the engine) rather than into this file's format. The format only has
+/// to answer: who is here, what is true, what exists to hold, what the player is carrying,
+/// and which node of the talk they are on right now.
 /// </summary>
 public sealed record SaveState
 {
-    private static readonly JsonSerializerOptions Json = new()
+    /// <summary>
+    /// How a save is written and read. Public so a game embedding SaveState in its own file
+    /// (Campaign's SaveFile) can reuse the same converters instead of rediscovering them.
+    /// </summary>
+    public static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
         Converters =
@@ -43,10 +48,13 @@ public sealed record SaveState
 
     public PlayerRecord Player { get; init; } = new();
 
-    public string ToJson() => JsonSerializer.Serialize(this, Json);
+    /// <summary>Which conversation is open and which node is showing; both null when nobody is talking.</summary>
+    public DialogueProgress Dialogue { get; init; } = new();
+
+    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
 
     public static SaveState FromJson(string json) =>
-        JsonSerializer.Deserialize<SaveState>(json, Json)
+        JsonSerializer.Deserialize<SaveState>(json, JsonOptions)
         ?? throw new JsonException("The save was empty.");
 
     public void Write(string path) => File.WriteAllText(path, ToJson());

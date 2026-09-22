@@ -88,6 +88,12 @@ public sealed class Bag
         return true;
     }
 
+    /// <summary>
+    /// Empty the bag. For rewrite paths that rebuild from gear lists on every save — clear,
+    /// then Add, rather than merging into whatever was already there.
+    /// </summary>
+    public void Clear() => _entries.Clear();
+
     /// <summary>Load path only: put an entry back exactly as written — order, count, no stacking policy.</summary>
     internal void Restore(BagEntry entry) => _entries.Add(entry);
 }

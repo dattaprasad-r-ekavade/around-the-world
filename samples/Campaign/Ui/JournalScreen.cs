@@ -1,6 +1,7 @@
 using Ember.Ui;
 using Microsoft.Xna.Framework;
 using System;
+using System.Collections.Generic;
 
 namespace Campaign;
 
@@ -10,14 +11,14 @@ public sealed class JournalScreen
     public bool Open { get; set; }
     public int Selected { get; set; }
 
-    public void Draw(UiCanvas ui, Hero hero)
+    public void Draw(UiCanvas ui, IReadOnlyList<QuestNote> notes)
     {
         if (!Open) return;
         ui.Scrim(UiTheme.Scrim, UiTheme.NoBorder);
         var frame = HudLayout.Journal;
         HudChrome.Window(ui, frame, "Journal", "Tasks you have taken.",
             "Up Down   J close");
-        if (hero.Log.Count == 0)
+        if (notes.Count == 0)
         {
             ui.Text("No tasks. The road is the work.",
                 new Vector2(frame.X + HudChrome.Pad, frame.Y + HudChrome.Header + 8),
@@ -25,13 +26,13 @@ public sealed class JournalScreen
             return;
         }
 
-        for (var i = 0; i < hero.Log.Count; i++)
+        for (var i = 0; i < notes.Count; i++)
         {
-            var note = hero.Log[i];
+            var note = notes[i];
             HudChrome.ListRow(ui, ItemRow(i), i == Selected, note.Done ? $"×  {note.Title}" : note.Title);
         }
 
-        var pick = hero.Log[Math.Clamp(Selected, 0, hero.Log.Count - 1)];
+        var pick = notes[Math.Clamp(Selected, 0, notes.Count - 1)];
         var pane = DetailPane();
         HudChrome.Pane(ui, pane);
         ui.Heading(pick.Title, new Vector2(pane.X + 16, pane.Y + 16), 20, UiTheme.Heading);

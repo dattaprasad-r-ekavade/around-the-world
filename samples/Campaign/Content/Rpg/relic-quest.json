@@ -1,0 +1,20 @@
+{
+  "Quests": [
+    {
+      "Id": "relic",
+      "Title": "The Totem",
+      "Stages": [
+        {
+          "Id": "fetch",
+          "Journal": "Recover the Totem of Tiber Septim from the vault in {dungeon}.",
+          "DoneWhen": [ { "Flag": "relic_taken", "Bool": true } ]
+        },
+        {
+          "Id": "deliver",
+          "Journal": "Bring the Totem to Fighters, Mages, or the Temple.",
+          "DoneWhen": [ { "Flag": "relic_delivered", "Bool": true } ]
+        }
+      ]
+    }
+  ]
+}

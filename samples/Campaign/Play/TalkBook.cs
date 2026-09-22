@@ -2,7 +2,11 @@ using System;
 
 namespace Campaign;
 
-/// <summary>Keyword talk: known topics become options. Rumors teach new words.</summary>
+/// <summary>
+/// Keyword talk: known topics become options. Rumors teach new words.
+/// The inn (talk target 1) is served by the Ember.Rpg dialogue tree in Content/Rpg;
+/// this book still answers bot toasts and non-inn NPCs.
+/// </summary>
 public static class TalkBook
 {
     public static readonly (string Key, string Prompt)[] Catalogue =

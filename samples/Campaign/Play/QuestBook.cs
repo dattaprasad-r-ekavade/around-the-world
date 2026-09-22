@@ -2,7 +2,11 @@ using System;
 
 namespace Campaign;
 
-/// <summary>Main plot plus guild notes. J opens the log.</summary>
+/// <summary>
+/// Main plot plus guild notes, still booking RelicDungeon and world topics on the hero.
+/// The journal itself is drawn from Ember.Rpg quests (see RpgContent.JournalNotes);
+/// hero.Log is kept only so older saves still load.
+/// </summary>
 public static class QuestBook
 {
     public static void EnsureMain(Hero hero, string dungeonName, int dungeonIndex)
