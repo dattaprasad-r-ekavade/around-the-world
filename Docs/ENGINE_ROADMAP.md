@@ -39,11 +39,11 @@ Start here. Do not build an editor or importer yet.
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
 | [x] | 01 | Create `Docs/ENGINE_PROGRESS.md`; record current build and RPG check results. | `dotnet build Ember.sln --nologo` and `dotnet run --project tests/Ember.Rpg.Check` succeed; output is recorded. |
-| [ ] | 02 | Add a CPU-only engine test project to the solution using one test framework. | One numeric test passes through `dotnet test`; no graphics device/window is needed. |
-| [ ] | 03 | Document metres, Y-up, right-handed coordinates, forward -Z, and MonoGame matrix multiplication order in the progress file. Add one transform-order fixture. | A known rotated/translated point matches a manually calculated expected result. |
-| [ ] | 04 | Add `Scene/Transform.cs`: position, quaternion rotation, scale, and local matrix. | Identity, translation, rotation, and scale fixtures pass. |
-| [ ] | 05 | Add a scene object with stable ID, name, enabled flag, and transform; add scene add/remove/find operations. | Duplicate IDs are rejected; removing an object removes it from lookup. |
-| [ ] | 06 | Add parent references and world-transform calculation; reject cycles. | A translated parent moves its child correctly; self-parenting and ancestor cycles fail clearly. |
+| [x] | 02 | Add a CPU-only engine test project to the solution using one test framework. | One numeric test passes through `dotnet test`; no graphics device/window is needed. |
+| [x] | 03 | Document metres, Y-up, right-handed coordinates, forward -Z, and MonoGame matrix multiplication order in the progress file. Add one transform-order fixture. | A known rotated/translated point matches a manually calculated expected result. |
+| [x] | 04 | Add `Scene/Transform.cs`: position, quaternion rotation, scale, and local matrix. | Identity, translation, rotation, and scale fixtures pass. |
+| [x] | 05 | Add a scene object with stable ID, name, enabled flag, and transform; add scene add/remove/find operations. | Duplicate IDs are rejected; removing an object removes it from lookup. |
+| [x] | 06 | Add parent references and world-transform calculation; reject cycles. | A translated parent moves its child correctly; self-parenting and ancestor cycles fail clearly. |
 | [ ] | 07 | Create `samples/CharacterStudio` as a new engine consumer. Draw one cube from a scene object's transform using existing rendering facilities. | Sample builds and a captured image visibly contains the expected cube. |
 | [ ] | 08 | Add an orbit camera independent of `FirstPersonView`. | Drag rotates around the cube; zoom is bounded; framing returns the cube to view. |
 
@@ -315,13 +315,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 01.
-- Current task: 02.
-- Changed files: `Docs/ENGINE_PROGRESS.md`, this roadmap checkbox and handoff.
-- Checks run: `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`.
-- Results: build passed with 0 warnings and 0 errors; RPG check passed.
+- Last completed task: 06.
+- Current task: 07.
+- Changed files: `Ember.sln`, `src/Ember.Engine/Scene/`, `tests/Ember.Engine.Tests/`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
+- Checks run: `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --nologo --no-restore`; `dotnet test Ember.sln --nologo --no-build`; `dotnet build Ember.sln --nologo`.
+- Results: 9 tests passed; solution build passed with 0 warnings and 0 errors.
 - Blockers: none recorded.
-- Next action: run task 02 and add the first CPU-only engine test project.
+- Next action: run task 07 and create CharacterStudio as a separate engine consumer with one scene-driven cube.
 
 Suggested request to an implementing AI:
 
