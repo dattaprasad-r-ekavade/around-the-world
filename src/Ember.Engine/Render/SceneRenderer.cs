@@ -221,9 +221,15 @@ public sealed class SceneRenderer
 
     public void DrawCube(Vector3 position, Vector3 scale, Color color, float rotation)
     {
-        _effect.World = Matrix.CreateScale(scale)
+        DrawCube(Matrix.CreateScale(scale)
             * Matrix.CreateRotationY(rotation)
-            * Matrix.CreateTranslation(position);
+            * Matrix.CreateTranslation(position), color);
+    }
+
+    /// <summary>Draw the reusable cube mesh from an already-composed scene transform.</summary>
+    public void DrawCube(Matrix world, Color color)
+    {
+        _effect.World = world;
         _effect.View = _view;
         _effect.Projection = _projection;
         _effect.DiffuseColor = color.ToVector3();

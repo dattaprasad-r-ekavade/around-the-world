@@ -43,3 +43,22 @@ This file records only the starting health of the repository. It does not claim 
 | `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --nologo --no-restore` | PASS — 9 tests |
 | `dotnet test Ember.sln --nologo --no-build` | PASS — 9 tests |
 | `dotnet build Ember.sln --nologo` | PASS — 0 warnings, 0 errors |
+
+## Tasks 07–12 — CharacterStudio and scene files
+
+- Task 07: added `samples/CharacterStudio`, an outside-style engine consumer that draws a scene object through `SceneGraph.GetWorldMatrix` and the renderer's composed-matrix cube path.
+- Task 08: added `OrbitCamera` with bounded distance, orbit input, target tracking, projection setup, and display-resize support.
+- Tasks 09–10: added version-1 JSON scene persistence with transform/hierarchy fields and validation for versions, IDs, missing parents, cycles, array lengths, nonfinite values, and zero-length rotations.
+- Task 11: added atomic scene replacement through a temporary file; invalid serialization is rejected before the existing destination is touched.
+- Task 12: CharacterStudio accepts `--open <path>` and `--save <path>` and reports load/save errors without taking down the sample.
+
+### Task 07–12 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --nologo` | PASS — 14 tests |
+| `dotnet test Ember.sln --nologo` | PASS — 14 tests |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings, 0 errors; CharacterStudio builds |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio `--screenshot ... --save ... --warmup 1` | PASS — 1280x720 PNG and JSON scene written; captured image visually shows the cube |
+| CharacterStudio `--open ... --screenshot ... --warmup 1` | PASS — saved scene reopened and rendered to PNG |

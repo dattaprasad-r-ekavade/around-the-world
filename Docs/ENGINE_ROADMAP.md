@@ -44,8 +44,8 @@ Start here. Do not build an editor or importer yet.
 | [x] | 04 | Add `Scene/Transform.cs`: position, quaternion rotation, scale, and local matrix. | Identity, translation, rotation, and scale fixtures pass. |
 | [x] | 05 | Add a scene object with stable ID, name, enabled flag, and transform; add scene add/remove/find operations. | Duplicate IDs are rejected; removing an object removes it from lookup. |
 | [x] | 06 | Add parent references and world-transform calculation; reject cycles. | A translated parent moves its child correctly; self-parenting and ancestor cycles fail clearly. |
-| [ ] | 07 | Create `samples/CharacterStudio` as a new engine consumer. Draw one cube from a scene object's transform using existing rendering facilities. | Sample builds and a captured image visibly contains the expected cube. |
-| [ ] | 08 | Add an orbit camera independent of `FirstPersonView`. | Drag rotates around the cube; zoom is bounded; framing returns the cube to view. |
+| [x] | 07 | Create `samples/CharacterStudio` as a new engine consumer. Draw one cube from a scene object's transform using existing rendering facilities. | Sample builds and a captured image visibly contains the expected cube. |
+| [x] | 08 | Add an orbit camera independent of `FirstPersonView`. | Drag rotates around the cube; zoom is bounded; framing returns the cube to view. |
 
 **Stage gate:** a scene object controls the visible cube. Record its screenshot path in the handoff.
 
@@ -53,10 +53,10 @@ Start here. Do not build an editor or importer yet.
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 09 | Add version-1 scene JSON for object IDs, names, transforms, and parents. | Save/load preserves the hierarchy and world transforms. |
-| [ ] | 10 | Validate scene input: duplicate IDs, missing parents, cycles, nonfinite transforms, unsupported versions. | Each malformed fixture gives an actionable error without replacing the current scene. |
-| [ ] | 11 | Add safe scene saving using a temporary file and replacement. | A simulated write failure leaves the previous valid scene readable. |
-| [ ] | 12 | Add open/save commands to CharacterStudio, initially through fixed command-line paths or existing console infrastructure. | Restarting the sample opens the saved cube placement. |
+| [x] | 09 | Add version-1 scene JSON for object IDs, names, transforms, and parents. | Save/load preserves the hierarchy and world transforms. |
+| [x] | 10 | Validate scene input: duplicate IDs, missing parents, cycles, nonfinite transforms, unsupported versions. | Each malformed fixture gives an actionable error without replacing the current scene. |
+| [x] | 11 | Add safe scene saving using a temporary file and replacement. | A simulated write failure leaves the previous valid scene readable. |
+| [x] | 12 | Add open/save commands to CharacterStudio, initially through fixed command-line paths or existing console infrastructure. | Restarting the sample opens the saved cube placement. |
 | [ ] | 13 | Audit `EngineHost` resource ownership and document each created resource and its disposer. | Every host-created graphics/audio resource has one named owner; borrowed resources are distinguished. |
 | [ ] | 14 | Fix host cleanup according to task 13; split by resource group if necessary. | Repeated initialize/unload checks show no owned resources left alive; existing samples build. |
 | [ ] | 15 | Add a scene-owned resource collection for the new sample; do not rewrite all legacy static caches. | Disposal releases each owned resource once, including after partial load failure. |
@@ -315,13 +315,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 06.
-- Current task: 07.
-- Changed files: `Ember.sln`, `src/Ember.Engine/Scene/`, `tests/Ember.Engine.Tests/`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
-- Checks run: `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --nologo --no-restore`; `dotnet test Ember.sln --nologo --no-build`; `dotnet build Ember.sln --nologo`.
-- Results: 9 tests passed; solution build passed with 0 warnings and 0 errors.
+- Last completed task: 12.
+- Current task: 13.
+- Changed files: `Ember.sln`, `src/Ember.Engine/Scene/`, `src/Ember.Engine/Engine/OrbitCamera.cs`, `src/Ember.Engine/Render/SceneRenderer.cs`, `tests/Ember.Engine.Tests/`, `samples/CharacterStudio/`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
+- Checks run: focused engine tests (14 passed); `dotnet build Ember.sln --nologo`; CharacterStudio save/screenshot and open/screenshot runs.
+- Results: 14 tests passed; solution build passed with 0 warnings and 0 errors; both runtime capture workflows passed.
 - Blockers: none recorded.
-- Next action: run task 07 and create CharacterStudio as a separate engine consumer with one scene-driven cube.
+- Next action: run task 13 and audit EngineHost resource ownership before changing cleanup behavior.
 
 Suggested request to an implementing AI:
 
