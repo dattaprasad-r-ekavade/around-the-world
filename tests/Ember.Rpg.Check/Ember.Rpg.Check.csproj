@@ -1,0 +1,24 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    The round-trip check for Ember.Rpg: build a SaveState, write it, read it back, and fail
+    loudly if anything differs. Not a test framework — a console check that exits non-zero.
+
+    Run it from this folder: dotnet run
+    From the repo root: dotnet run -p tests\Ember.Rpg.Check
+  -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Ember.Rpg.Check</RootNamespace>
+    <AssemblyName>Ember.Rpg.Check</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!--
+    Save-shaped RPG data: entity records, a flag store, JSON save/load.
+
+    A sibling to Ember.Scripting, not part of Ember.Engine: no MonoGame, no Windows, nothing
+    the engine could reach for. Games reference it; Ember.Engine must never reference it —
+    rules are a game's business, and this is only the data they are written against.
+
+    The round-trip check lives in tests/Ember.Rpg.Check ("dotnet run" from that folder).
+  -->
+
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>Ember.Rpg</RootNamespace>
+    <AssemblyName>Ember.Rpg</AssemblyName>
+  </PropertyGroup>
+
+</Project>

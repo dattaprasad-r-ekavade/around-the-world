@@ -16,6 +16,7 @@
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
     <ProjectReference Include="..\..\src\Ember.Scripting\Ember.Scripting.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
   </ItemGroup>
 
   <ItemGroup>
