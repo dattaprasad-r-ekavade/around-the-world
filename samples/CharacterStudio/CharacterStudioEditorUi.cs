@@ -16,6 +16,8 @@ namespace CharacterStudio;
 
 internal sealed record CharacterEditorInfo(
     IReadOnlyList<string> ClipNames, string? ClipName, float Time, float Duration, bool IsPlaying);
+internal sealed record SequenceEditorInfo(
+    string Name, float Time, float Duration, bool IsPlaying, bool PreviewEnabled, string? CameraName);
 
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed class CharacterStudioEditorUi : IDisposable
@@ -37,6 +39,10 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Action _interact;
     private readonly Func<float> _getInteractionVolume;
     private readonly Action<float> _setInteractionVolume;
+    private readonly Func<SequenceEditorInfo?> _getSequenceInfo;
+    private readonly Action<bool> _setSequencePlaying;
+    private readonly Action<float> _seekSequence;
+    private readonly Action<bool> _setSequencePreviewEnabled;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -74,7 +80,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
         Action<Guid, float> seekCharacter, Action<Guid, bool> setCharacterPlaying, SceneLighting lighting,
         Func<bool> isPlaying, Action startPlay, Action stopPlay, Action interact,
-        Func<float> getInteractionVolume, Action<float> setInteractionVolume)
+        Func<float> getInteractionVolume, Action<float> setInteractionVolume,
+        Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
+        Action<float> seekSequence, Action<bool> setSequencePreviewEnabled)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -92,6 +100,10 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _interact = interact ?? throw new ArgumentNullException(nameof(interact));
         _getInteractionVolume = getInteractionVolume ?? throw new ArgumentNullException(nameof(getInteractionVolume));
         _setInteractionVolume = setInteractionVolume ?? throw new ArgumentNullException(nameof(setInteractionVolume));
+        _getSequenceInfo = getSequenceInfo ?? throw new ArgumentNullException(nameof(getSequenceInfo));
+        _setSequencePlaying = setSequencePlaying ?? throw new ArgumentNullException(nameof(setSequencePlaying));
+        _seekSequence = seekSequence ?? throw new ArgumentNullException(nameof(seekSequence));
+        _setSequencePreviewEnabled = setSequencePreviewEnabled ?? throw new ArgumentNullException(nameof(setSequencePreviewEnabled));
         _context = ImGui.CreateContext();
         try
         {
@@ -148,6 +160,7 @@ internal sealed class CharacterStudioEditorUi : IDisposable
 
         ImGui.NewFrame();
         DrawPanel(scene);
+        DrawSequencePanel();
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
@@ -333,6 +346,37 @@ internal sealed class CharacterStudioEditorUi : IDisposable
 
         DrawCharacterControls(selected);
         DrawLightingControls();
+        ImGui.End();
+    }
+
+    private void DrawSequencePanel()
+    {
+        var sequence = _getSequenceInfo();
+        if (sequence is null) return;
+
+        ImGui.SetNextWindowPos(new NumericsVector2(800f, 16f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(450f, 150f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Sequence preview", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        ImGui.Text(sequence.Name);
+        if (ImGui.Button(sequence.IsPlaying ? "Pause" : "Play"))
+            _setSequencePlaying(!sequence.IsPlaying);
+        ImGui.SameLine();
+        var previewEnabled = sequence.PreviewEnabled;
+        if (ImGui.Checkbox("Preview sequence", ref previewEnabled))
+            _setSequencePreviewEnabled(previewEnabled);
+
+        var time = Math.Clamp(sequence.Time, 0f, sequence.Duration);
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat("Time (seconds)", ref time, 0f, sequence.Duration, "%.2f"))
+            _seekSequence(time);
+        ImGui.TextDisabled(sequence.CameraName is null
+            ? "No camera cut at this time"
+            : $"Camera cut: {sequence.CameraName}");
         ImGui.End();
     }
 

@@ -31,6 +31,22 @@ public sealed class OrbitCamera
         RebuildView();
     }
 
+    /// <summary>Sets a world-space camera transform for sequence or authored-camera evaluation.</summary>
+    public void SetWorldTransform(Vector3 position, Quaternion rotation)
+    {
+        if (!IsFinite(position) || !IsFinite(rotation))
+            throw new ArgumentException("Camera transform values must be finite.");
+        var lengthSquared = rotation.LengthSquared();
+        if (!float.IsFinite(lengthSquared) || lengthSquared < 0.0000001f)
+            throw new ArgumentException("Camera rotation must be a valid quaternion.", nameof(rotation));
+
+        var world = Matrix.CreateFromQuaternion(Quaternion.Normalize(rotation));
+        var forward = Vector3.Transform(Vector3.Forward, world);
+        var up = Vector3.Transform(Vector3.Up, world);
+        Position = position;
+        View = Matrix.CreateLookAt(position, position + forward, up);
+    }
+
     public void SetProjection(float aspect, float fieldOfViewDegrees = 60f,
         float near = 0.05f, float far = 500f)
     {
@@ -79,4 +95,11 @@ public sealed class OrbitCamera
         Position = Target + offset;
         View = Matrix.CreateLookAt(Position, Target, Vector3.Up);
     }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static bool IsFinite(Quaternion value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y)
+        && float.IsFinite(value.Z) && float.IsFinite(value.W);
 }

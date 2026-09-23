@@ -8,6 +8,7 @@ using Ember.Audio;
 using Ember;
 using Ember.Input;
 using Ember.Scene;
+using Ember.Sequence;
 using Ember.Render;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -29,6 +30,8 @@ public sealed class CharacterStudioGame : EngineHost
         Guid.Parse("fedcba98-7654-3210-fedc-ba9876543210"), "Assets/Fox.glb");
     private static readonly Guid PairPreviewInstanceId = Guid.Parse("fedcba98-7654-3210-fedc-ba9876543211");
     private static readonly Guid HandPreviewAttachmentId = Guid.Parse("fedcba98-7654-3210-fedc-ba9876543212");
+    private static readonly Guid WideCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0001");
+    private static readonly Guid CloseCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0002");
 
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
@@ -49,6 +52,10 @@ public sealed class CharacterStudioGame : EngineHost
     private SceneCommandHistory _playHistory = new();
     private ImportedAudioClip? _playAudioClip;
     private float _interactionVolume = 0.65f;
+    private SceneSequence? _sequence;
+    private SceneSequencePlayer? _sequencePlayer;
+    private bool _sequencePreviewEnabled;
+    private string? _activeSequenceCameraName;
     private AttachmentBoxRenderer? _attachmentRenderer;
     private MouseState _lastMouse;
     private bool _hasMouse;
@@ -155,7 +162,8 @@ public sealed class CharacterStudioGame : EngineHost
                 _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange,
                 GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting,
                 () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
-                () => _interactionVolume, SetInteractionVolume);
+                () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
+                SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -182,6 +190,7 @@ public sealed class CharacterStudioGame : EngineHost
             }
             else
                 _camera.Reset(Vector3.Zero, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
+            BuildSequencePreview();
 
             if (_savePath is not null) SaveScene();
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
@@ -225,20 +234,22 @@ public sealed class CharacterStudioGame : EngineHost
             _hasMouse = true;
         }
 
-        if (!uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
+        if (!_sequencePreviewEnabled && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
         {
             _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y));
         }
 
-        if (!uiCapturesMouse)
+        if (!_sequencePreviewEnabled && !uiCapturesMouse)
             _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
         var preview = _preview?.Current;
         if (preview is not null)
         {
+            _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
             foreach (var state in preview.CharacterInstances.Values)
                 state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+            if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
         }
         base.Update(gameTime);
     }
@@ -278,6 +289,7 @@ public sealed class CharacterStudioGame : EngineHost
     {
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio, far: 1000f);
         _shadowMap?.Resize(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+        if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
     }
 
     protected override void UnloadContent()
@@ -740,6 +752,7 @@ public sealed class CharacterStudioGame : EngineHost
             _playAudioClip = candidateAudio;
             _playHistory = new SceneCommandHistory();
             _editorUi?.SetHistory(_playHistory);
+            BuildSequencePreview();
             _reimportStatus = cleanupError is null
                 ? "Play clone started. E or Interact plays the scene sound; P stops and restores."
                 : $"Play clone started; previous preview cleanup failed: {cleanupError.Message}";
@@ -766,6 +779,7 @@ public sealed class CharacterStudioGame : EngineHost
             _playSession = null;
             _playAudioClip = null;
             _editorUi?.SetHistory(_editorHistory);
+            BuildSequencePreview();
             var errors = new[] { cleanupError, sessionCleanupError }.Where(error => error is not null)
                 .Select(error => error!.Message).ToArray();
             _reimportStatus = errors.Length == 0
@@ -792,6 +806,130 @@ public sealed class CharacterStudioGame : EngineHost
         if (!float.IsFinite(volume) || volume < 0f || volume > 1f) return;
         _interactionVolume = volume;
         if (_playAudioClip is { IsDisposed: false } clip) clip.Volume = volume;
+    }
+
+    private SequenceEditorInfo? GetSequenceEditorInfo()
+    {
+        if (_sequence is null || _sequencePlayer is null) return null;
+        var cameraName = _sequence.SampleCamera(_sequencePlayer.Time).CameraName;
+        return new SequenceEditorInfo(_sequence.Name, _sequencePlayer.Time, _sequence.Duration,
+            _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName);
+    }
+
+    private void SetSequencePlaying(bool playing)
+    {
+        if (_sequencePlayer is null) return;
+        if (playing)
+        {
+            _sequencePlayer.Play();
+            _sequencePreviewEnabled = true;
+        }
+        else
+        {
+            _sequencePlayer.Pause();
+        }
+        ApplySequenceAtCurrentTime();
+    }
+
+    private void SeekSequence(float time)
+    {
+        if (_sequencePlayer is null) return;
+        _sequencePlayer.Seek(time);
+        _sequencePreviewEnabled = true;
+        ApplySequenceAtCurrentTime();
+    }
+
+    private void SetSequencePreviewEnabled(bool enabled)
+    {
+        _sequencePreviewEnabled = enabled;
+        if (enabled)
+        {
+            ApplySequenceAtCurrentTime();
+        }
+        else
+        {
+            _sequencePlayer?.Pause();
+            _activeSequenceCameraName = null;
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+        }
+    }
+
+    private void BuildSequencePreview()
+    {
+        _sequence = null;
+        _sequencePlayer = null;
+        _sequencePreviewEnabled = false;
+        _activeSequenceCameraName = null;
+        if (_preview?.Current is not { } preview) return;
+
+        var characterObject = CurrentScene.Objects.FirstOrDefault(preview.IsSkinnedObject);
+        if (characterObject?.GltfAsset is not { } reference
+            || !preview.Assets.TryGetValue(reference.AssetId, out var asset)
+            || asset.SkinnedCharacter is not { } character) return;
+        var clip = character.Animations.FirstOrDefault(item =>
+            string.Equals(item.Name, "Walk", StringComparison.OrdinalIgnoreCase))
+            ?? character.Animations.FirstOrDefault();
+        if (clip is null) return;
+
+        var duration = MathF.Max(2f, clip.Duration * 2f);
+        var bounds = GetSceneBounds() ?? new Bounds3(characterObject.Transform.Position - Vector3.One,
+            characterObject.Transform.Position + Vector3.One);
+        var center = bounds.Center;
+        var radius = MathF.Max(4f, bounds.Size.Length() * 0.35f);
+        var wideStart = center + new Vector3(0f, radius * 0.22f, radius * 1.55f);
+        var wideEnd = center + new Vector3(-radius * 0.42f, radius * 0.25f, radius * 1.48f);
+        var closeStart = center + new Vector3(radius * 1.15f, radius * 0.32f, radius * 0.62f);
+        var closeEnd = center + new Vector3(radius * 0.98f, radius * 0.28f, -radius * 0.55f);
+        var cameras = new[]
+        {
+            new SequenceCameraTrack(WideCameraTrackId, "Wide", [
+                new SequenceCameraKeyframe(0f, CreateCameraKey(wideStart, center, 48f)),
+                new SequenceCameraKeyframe(duration, CreateCameraKey(wideEnd, center, 48f))
+            ]),
+            new SequenceCameraTrack(CloseCameraTrackId, "Close", [
+                new SequenceCameraKeyframe(0f, CreateCameraKey(closeStart, center, 42f)),
+                new SequenceCameraKeyframe(duration, CreateCameraKey(closeEnd, center, 42f))
+            ])
+        };
+        _sequence = new SceneSequence($"{characterObject.Name} - {clip.Name}", duration,
+            [new CharacterClipTrack(characterObject.Id, clip, loop: true)], cameras,
+            new SequenceCameraCutTrack([
+                new SequenceCameraCutKeyframe(0f, WideCameraTrackId),
+                new SequenceCameraCutKeyframe(duration * 0.5f, CloseCameraTrackId)
+            ]));
+        _sequencePlayer = new SceneSequencePlayer(_sequence);
+    }
+
+    private static SequenceCameraTransform CreateCameraKey(Vector3 position, Vector3 target, float fieldOfView)
+    {
+        var view = Matrix.CreateLookAt(position, target, Vector3.Up);
+        var rotation = Quaternion.CreateFromRotationMatrix(Matrix.Invert(view));
+        return new SequenceCameraTransform(position, rotation, fieldOfView);
+    }
+
+    private void ApplySequenceAtCurrentTime()
+    {
+        if (!_sequencePreviewEnabled || _sequence is null || _sequencePlayer is null
+            || _preview?.Current is not { } preview) return;
+        try
+        {
+            var poses = preview.CharacterInstances.ToDictionary(pair => pair.Key, pair => pair.Value.Pose);
+            var frame = _sequence.Evaluate(_sequencePlayer.Time, CurrentScene, poses);
+            _activeSequenceCameraName = frame.CameraName;
+            if (frame.CameraTransform is { } camera)
+            {
+                _camera.SetWorldTransform(camera.Position, camera.Rotation);
+                _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio,
+                    camera.FieldOfViewDegrees, far: 1000f);
+            }
+        }
+        catch (InvalidOperationException exception)
+        {
+            _sequencePlayer.Pause();
+            _sequencePreviewEnabled = false;
+            _activeSequenceCameraName = null;
+            _reimportStatus = $"Sequence preview stopped: {exception.Message}";
+        }
     }
 
     private void SaveScene()
@@ -842,6 +980,7 @@ public sealed class CharacterStudioGame : EngineHost
             CaptureCharacterSettings();
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(_sceneData), _sceneData));
+            BuildSequencePreview();
             if (cleanupError is null)
             {
                 _reimportStatus = "Scene GLB reimport succeeded. | S: save scene";

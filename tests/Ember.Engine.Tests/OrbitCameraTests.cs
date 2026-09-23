@@ -31,4 +31,21 @@ public sealed class OrbitCameraTests
         camera.Zoom(-10000f);
         Assert.Equal(10f, camera.Distance);
     }
+
+    [Fact]
+    public void WorldTransformBuildsTheExpectedCameraView()
+    {
+        var camera = new OrbitCamera();
+        var position = new Vector3(4f, 3f, 2f);
+        var rotation = Quaternion.CreateFromYawPitchRoll(0.7f, -0.25f, 0.1f);
+        camera.SetWorldTransform(position, rotation);
+
+        var expectedForward = Vector3.Normalize(Vector3.Transform(Vector3.Forward,
+            Matrix.CreateFromQuaternion(rotation)));
+        var actualForward = Vector3.Normalize(Vector3.Transform(Vector3.Forward,
+            Matrix.Invert(camera.View)) - camera.Position);
+
+        Assert.Equal(position, camera.Position);
+        Assert.InRange(Vector3.Distance(expectedForward, actualForward), 0f, 0.0001f);
+    }
 }

@@ -447,6 +447,22 @@ more than the specific art.
 
 ---
 
+## Sequences
+
+`SceneSequence` binds imported character clips to scene-object IDs and samples the sequence at an
+absolute time. It resets each tracked character pose to its rest state before applying the clip, so
+seeking forward and then backward gives the same pose as seeking directly to that earlier time.
+`SceneSequencePlayer` supplies a bounded play/pause/seek clock; seeking does not call compiled scene
+behaviours or gameplay events.
+
+Camera tracks use stable IDs and contain position, rotation, and field-of-view keys. A
+`SequenceCameraCutTrack` selects the active camera by ID, not by the track's position in a list.
+`SceneSequence.SampleCamera(time)` reads only camera/cut data without changing character poses.
+CharacterStudio builds an in-memory sample sequence when the open scene has a skinned character and
+shows Play/Pause, a time slider, and a preview toggle in its sequence panel. Sequence JSON
+persistence and frame export arrive in later roadmap tasks; this editor example is currently
+created from the first character in the scene.
+
 ## Interface
 
 ### `UiCanvas`

@@ -148,9 +148,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 63 | Add a sequence asset with duration and one character clip track. | Evaluating any absolute time produces the same pose regardless of seek history. |
-| [ ] | 64 | Add camera transform keys and camera-cut tracks. | Known times select the expected camera and pose; scene objects retain stable references. |
-| [ ] | 65 | Add sequence play/pause/scrub UI. | Forward/backward scrubbing updates the scene without firing gameplay events. |
+| [x] | 63 | Add a sequence asset with duration and one character clip track. | Evaluating any absolute time produces the same pose regardless of seek history. |
+| [x] | 64 | Add camera transform keys and camera-cut tracks. | Known times select the expected camera and pose; scene objects retain stable references. |
+| [x] | 65 | Add sequence play/pause/scrub UI. | Forward/backward scrubbing updates the scene without firing gameplay events. |
 | [ ] | 66 | Add export to a dedicated render target at a requested resolution. | Export dimensions do not depend on window size; resources are released after capture. |
 | [ ] | 67 | Export numbered PNG frames at `start + frameIndex / fps`; disable live physics during this first capture mode. | Ten seconds at 30 fps exports exactly 300 frames; selected frames match preview sample times. |
 | [ ] | 68 | Add export manifest, progress, cancel, and write-error handling. | Cancellation/errors leave clearly marked incomplete output; successful manifest records asset versions/settings. |
@@ -319,14 +319,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 60–62 — compiled scene-behaviour lifecycle, imported interaction audio, and CharacterStudio play-on-clone/restore.
-- Current task: 63 — add a sequence asset with duration and one character clip track.
-- Current gate: Release C is not yet passed. CharacterStudio proves scene behavior, audio interaction, and clone isolation, but a packaged level still needs movement, collision, jumping, and motion-driven animation together.
-- Changed files for the latest batch: added `SceneBehaviourRuntime`, `ScenePlaySession`, deep scene cloning, `ImportedAudioClip`, an interaction-behaviour example, a generated WAV fixture, CharacterStudio play/stop/interact/volume controls, and CPU lifecycle/audio/clone tests.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (90 passed); RPG save/load check; CharacterStudio reopened the Release A scene and captured 1280×720 successfully; CPU tests confirm start/stop idempotence, interaction routing, mute volume, audio stop/disposal, and authored-scene isolation after moving/deleting clone objects.
-- Results: compiled behavior instances are registered before startup and stopped once when their play session unloads; session-owned audio is stopped and released. CharacterStudio uses **P** or **Play on clone**, **E** or **Interact**, then **P** or **Stop and restore**. Clone edits are discarded at stop.
-- Limitations: automated desktop interaction and real audio-device playback were not run; the CPU audio test uses a fake voice while CharacterStudio loads the bundled WAV through MonoGame. Behaviors are currently registered by compiled code, not assigned or persisted in scene JSON. Physics is not yet wired into CharacterStudio play mode.
-- Next action: task 63, add an absolute-time sequence asset with one character clip track.
+- Last completed tasks: 63–65 — deterministic character/camera sequences, stable-ID camera cuts, and CharacterStudio sequence playback/scrubbing.
+- Current task: 66 — render a sequence into a dedicated render target at a requested resolution.
+- Current gate: Release D is not yet passed. Sequence data and editor preview work; dedicated-resolution frame export and the export manifest/cancellation path remain.
+- Changed files for the latest batch: added absolute-time sequence/character/camera tracks, camera cuts and playback clock, direct world-transform camera control, a CharacterStudio timeline panel, and CPU evaluation/scrub tests.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (94 passed); RPG save/load check; CharacterStudio reopened the Release A scene and captured a 1280×720 frame with the sequence panel and active Wide camera cut visible; CPU tests prove seek-history-independent poses, interpolated camera keys, stable-ID cuts, camera-view orientation, clamped play/pause/scrub, and no behavior interactions during seeks.
+- Results: `SceneSequence.Evaluate` resets tracked poses to rest before evaluating the absolute time, preventing prior seeks from affecting results. Camera tracks interpolate position, rotation, and field of view; cut keys select camera-track IDs. CharacterStudio exposes Play/Pause, a time slider, and a sequence-preview toggle when a skinned character is present.
+- Limitations: the editor builds an in-memory sample sequence from the first skinned character and does not save sequence assets to scene JSON. Automated UI scrubbing was not run; real-time rendering of the panel was captured and timeline semantics are covered by CPU tests. Export is not implemented yet.
+- Next action: task 66, export sequence frames through a dedicated render target independent of window size.
 
 Suggested request to an implementing AI:
 
@@ -336,23 +336,23 @@ Suggested request to an implementing AI:
 
 ### How much is built
 
-Updated against the current working tree on 23 September 2026. **62 of the original 143 task rows are checked (43.4% by task count); 81 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+Updated against the current working tree on 23 September 2026. **65 of the original 143 task rows are checked (45.5% by task count); 78 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
 
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–62 establish CharacterStudio authoring controls, capsule movement/jumping, camera obstruction, focus-safe actions, motion-driven animation, compiled behaviors, scene-owned audio, and play-on-clone. Absolute-time sequencing, export, project packaging, and distribution remain. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–65 establish CharacterStudio authoring controls, capsule movement/jumping, camera obstruction, focus-safe actions, motion-driven animation, compiled behaviors, scene-owned audio, play-on-clone, and an absolute-time sequence preview with character/camera tracks. Export, project packaging, and distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
-- `dotnet test Ember.sln --no-build --nologo`: PASS, 90 passed, 0 failed, 0 skipped.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 94 passed, 0 failed, 0 skipped.
 - `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
 
-The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. CharacterStudio also reopened that scene after tasks 60–62. Physics/input/animation and behavior/audio/clone lifecycles have CPU coverage, but the new play-mode interaction and real audio playback were not automated. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
+The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, the render diagnostics overlay, and the sequence preview panel. Physics/input/animation and behavior/audio/clone/sequence lifecycles have CPU coverage, but the new play-mode interaction, sequence scrubbing through desktop input, and real audio playback were not automated. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
 
 ### Recommended changes, in priority order
 
@@ -374,6 +374,6 @@ The latest renderer batch produced 1280×720 runtime captures with two character
 
 ### Suggested next sequence
 
-Release A, editor foundation tasks 39–50, and gameplay foundation tasks 51–62 are complete; start task 63. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A, editor foundation tasks 39–50, gameplay foundation tasks 51–62, and sequence-preview tasks 63–65 are complete; start task 66. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.

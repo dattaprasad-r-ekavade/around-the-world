@@ -436,3 +436,22 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | Play-mode UI and real audio-device playback | NOT RUN — desktop input/audio-device automation was unavailable; CPU tests use an injected fake voice and verify runtime ownership/lifecycle |
 
 Release C is still open: there is no packaged scene that combines player movement, collision, jumping, motion-driven animation, and audible interaction. CharacterStudio's play clone currently demonstrates scene editing isolation and the interaction/audio lifecycle; scene-authored behavior/collider assignments and physics wiring remain follow-up work.
+
+## Tasks 63–65 — add absolute-time character and camera sequencing
+
+- Task 63: added `SceneSequence` with explicit duration and `CharacterClipTrack` bindings by stable scene-object ID. Each evaluation resets the target pose to its skin rest state before sampling the imported clip at absolute sequence time; a looped clip track can start at an authored timeline offset.
+- Task 64: added named camera tracks with position, quaternion rotation, and field-of-view keys, plus a camera-cut track that selects by stable camera-track ID. Key interpolation uses vector lerp and shortest-path quaternion slerp. `OrbitCamera.SetWorldTransform` applies the sampled view without converting it into orbit parameters.
+- Task 65: added `SceneSequencePlayer` and a CharacterStudio sequence panel with play/pause, a time slider, and a preview toggle. Seeking samples character pose and camera state directly; it has no behavior/gameplay-event dependency. The editor creates a sample sequence for the first skinned character in a scene, with two camera tracks and a cut halfway through.
+- CPU tests cover repeated absolute-time pose samples after different seek histories, camera position/FOV interpolation, camera cuts by ID, world-camera view orientation, player end/clamp behavior, and scrubbing without dispatching a scene interaction.
+
+### Tasks 63–65 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 94 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio Release A scene capture | PASS — reopened the saved scene and rendered the sequence panel with the Wide camera cut visible at 1280×720 |
+| Desktop play/pause/scrub interaction | NOT RUN — capture mode verifies the UI renders, while sequence semantics are exercised by CPU tests; desktop input automation was unavailable |
+
+The sequence preview is currently generated in memory from the first skinned scene object and is not persisted to JSON. Release D remains open until frame export, manifest/error handling, and a reproducible exported sequence are implemented.

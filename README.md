@@ -31,8 +31,10 @@ controls the selected character's clip, adjusts shared ambient/directional light
 static/skinned directional shadows with draw-count and static-culling diagnostics. **P / Play on
 clone** runs the current scene copy; **E / Interact** plays a sample imported chime, and **P / Stop
 and restore** discards play-mode edits. Behavior assignments and character physics are not yet
-saved/wired into this editor. A general project asset browser and broader gameplay tools remain on
-the roadmap. The supported GLB subset is documented in
+saved/wired into this editor. Scenes with a skinned character also show a sequence panel for
+play/pause, absolute-time scrubbing, camera cuts, and toggling the sequence preview. Sequence assets
+are currently generated in memory and are not saved yet. A general project asset browser and
+broader gameplay tools remain on the roadmap. The supported GLB subset is documented in
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a
@@ -94,7 +96,8 @@ dotnet samples\CharacterStudio\bin\Debug\net9.0-windows\win-x64\CharacterStudio.
 
 Press **P** to run an isolated scene copy, **E** to play the sample interaction sound, and **P**
 again to stop and restore the authored scene. The editor panel also offers these actions and the
-interaction volume slider.
+interaction volume slider. The separate sequence panel can play, pause, scrub, and preview the
+character/camera sequence generated for the first skinned character in the scene.
 
 ---
 
