@@ -57,9 +57,9 @@ Start here. Do not build an editor or importer yet.
 | [x] | 10 | Validate scene input: duplicate IDs, missing parents, cycles, nonfinite transforms, unsupported versions. | Each malformed fixture gives an actionable error without replacing the current scene. |
 | [x] | 11 | Add safe scene saving using a temporary file and replacement. | A simulated write failure leaves the previous valid scene readable. |
 | [x] | 12 | Add open/save commands to CharacterStudio, initially through fixed command-line paths or existing console infrastructure. | Restarting the sample opens the saved cube placement. |
-| [ ] | 13 | Audit `EngineHost` resource ownership and document each created resource and its disposer. | Every host-created graphics/audio resource has one named owner; borrowed resources are distinguished. |
-| [ ] | 14 | Fix host cleanup according to task 13; split by resource group if necessary. | Repeated initialize/unload checks show no owned resources left alive; existing samples build. |
-| [ ] | 15 | Add a scene-owned resource collection for the new sample; do not rewrite all legacy static caches. | Disposal releases each owned resource once, including after partial load failure. |
+| [x] | 13 | Audit `EngineHost` resource ownership and document each created resource and its disposer. | Every host-created graphics/audio resource has one named owner; borrowed resources are distinguished. |
+| [x] | 14 | Fix host cleanup according to task 13; split by resource group if necessary. | Every host-owned resource has one idempotent disposal path; each sample builds and exits cleanly in capture mode. |
+| [x] | 15 | Add a scene-owned resource collection for the new sample; do not rewrite all legacy static caches. | Resources dispose once in reverse order, cleanup continues after a disposal failure, and partial sample setup disposes registered resources. |
 
 **Stage gate:** save/reopen works, and 20 sample scene reloads return owned resource counts to baseline. Do not infer GPU cleanup solely from managed memory.
 
@@ -315,13 +315,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 12.
-- Current task: 13.
-- Changed files: `Ember.sln`, `src/Ember.Engine/Scene/`, `src/Ember.Engine/Engine/OrbitCamera.cs`, `src/Ember.Engine/Render/SceneRenderer.cs`, `tests/Ember.Engine.Tests/`, `samples/CharacterStudio/`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
-- Checks run: focused engine tests (14 passed); `dotnet build Ember.sln --nologo`; CharacterStudio save/screenshot and open/screenshot runs.
-- Results: 14 tests passed; solution build passed with 0 warnings and 0 errors; both runtime capture workflows passed.
+- Last completed task: 15.
+- Current task: 16.
+- Changed files: `src/Ember.Engine/Engine/EngineHost.cs`, `src/Ember.Engine/Audio/AmbientAudio.cs`, `src/Ember.Engine/Scene/SceneResourceScope.cs`, `samples/Campaign/CampaignGame.cs`, `samples/CharacterStudio/CharacterStudioGame.cs`, `tests/Ember.Engine.Tests/SceneResourceScopeTests.cs`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
+- Checks run: `dotnet test Ember.sln --nologo`; `dotnet build Ember.sln --nologo`; RPG check; screenshot capture runs for CharacterStudio, FirstLight, and Campaign.
+- Results: 17 tests passed; build passed with 0 warnings and 0 errors; RPG check passed; all three samples rendered and exited successfully.
 - Blockers: none recorded.
-- Next action: run task 13 and audit EngineHost resource ownership before changing cleanup behavior.
+- Next action: run task 16 and add one licensed static GLB fixture with documented dimensions and orientation.
 
 Suggested request to an implementing AI:
 

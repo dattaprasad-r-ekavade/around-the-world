@@ -11,6 +11,7 @@ public sealed class AmbientAudio : IDisposable
 {
     private readonly SoundEffect _sound;
     private readonly SoundEffectInstance _instance;
+    private bool _disposed;
 
     private AmbientAudio(SoundEffect sound, SoundEffectInstance instance)
     {
@@ -58,8 +59,17 @@ public sealed class AmbientAudio : IDisposable
         }
     }
 
+    /// <summary>Stop the ambient loop while leaving its resources for the owner to dispose.</summary>
+    public void Stop()
+    {
+        if (_disposed) return;
+        _instance.Stop();
+    }
+
     public void Dispose()
     {
+        if (_disposed) return;
+        _disposed = true;
         _instance.Stop();
         _instance.Dispose();
         _sound.Dispose();

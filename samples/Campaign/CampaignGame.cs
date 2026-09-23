@@ -116,7 +116,7 @@ public sealed class CampaignGame : EngineHost
         AttachCanvas();
 
         AttachScene(_faults);
-        Ambience?.Dispose();
+        Ambience?.Stop();
 
         _ui.Resize(GraphicsDevice.Viewport, _uiScalePreference);
         _sprites = new CampaignSprites(GraphicsDevice);

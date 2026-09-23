@@ -29,6 +29,9 @@ public abstract class EngineHost : Game
     protected readonly InputRouter _input = new();
     protected readonly CaptureHost _capture;
 
+    private SpriteBatch? _spriteBatch;
+    private bool _hostDisposed;
+
     protected FontSystem _fontSystem = null!;
     protected FontSystem _headingFontSystem = null!;
     protected SpriteType? _spriteType;
@@ -182,7 +185,7 @@ public abstract class EngineHost : Game
     /// <summary>Hand the canvas its device resources. Call from LoadContent after fonts exist on disk.</summary>
     protected void AttachCanvas(string bodyFontPath, string headingFontPath)
     {
-        var spriteBatch = new SpriteBatch(GraphicsDevice);
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
 
         _fontSystem = new FontSystem { UseKernings = true };
         _fontSystem.AddFont(File.ReadAllBytes(bodyFontPath));
@@ -193,17 +196,17 @@ public abstract class EngineHost : Game
         _white = new Texture2D(GraphicsDevice, 1, 1);
         _white.SetData(new[] { Color.White });
 
-        _ui.Attach(spriteBatch, _white, _fontSystem, _headingFontSystem);
+        _ui.Attach(_spriteBatch, _white, _fontSystem, _headingFontSystem);
     }
 
     /// <summary>8×8 glyph sprites, nearest-neighbour. No TrueType face.</summary>
     protected void AttachCanvas()
     {
-        var spriteBatch = new SpriteBatch(GraphicsDevice);
+        _spriteBatch = new SpriteBatch(GraphicsDevice);
         _white = new Texture2D(GraphicsDevice, 1, 1);
         _white.SetData(new[] { Color.White });
         _spriteType = SpriteType.Bake(GraphicsDevice);
-        _ui.Attach(spriteBatch, _white, _spriteType);
+        _ui.Attach(_spriteBatch, _white, _spriteType);
     }
 
     protected void BeginHostFrame()
@@ -258,12 +261,32 @@ public abstract class EngineHost : Game
 
     protected void DisposeHost()
     {
-        WritePerfSummary();
-        _capture.Dispose();
-        _fontSystem?.Dispose();
-        _headingFontSystem?.Dispose();
-        _spriteType?.Dispose();
-        _white?.Dispose();
+        if (_hostDisposed) return;
+        _hostDisposed = true;
+
+        var errors = new List<Exception>();
+        try { WritePerfSummary(); }
+        catch (Exception exception) { errors.Add(exception); }
+
+        DisposeOne(_capture, errors);
+        DisposeOne(Billboards, errors);
+        DisposeOne(Sounds, errors);
+        DisposeOne(Ambience, errors);
+        DisposeOne(LitEffect, errors);
+        DisposeOne(_spriteType, errors);
+        DisposeOne(_fontSystem, errors);
+        DisposeOne(_headingFontSystem, errors);
+        DisposeOne(_white, errors);
+        DisposeOne(_spriteBatch, errors);
+        if (errors.Count > 0)
+            throw new AggregateException("One or more Ember host resources failed to dispose.", errors);
+    }
+
+    private static void DisposeOne(IDisposable? resource, ICollection<Exception> errors)
+    {
+        if (resource is null) return;
+        try { resource.Dispose(); }
+        catch (Exception exception) { errors.Add(exception); }
     }
 
     protected static bool HasArgument(string[] args, string argument)

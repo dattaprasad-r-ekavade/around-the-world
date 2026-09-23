@@ -23,6 +23,8 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly List<PointLight> _lights = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
+    private SceneResourceScope? _sceneResources;
+    private BasicEffect _studioEffect = null!;
     private SceneRenderer _scene = null!;
     private MouseState _lastMouse;
     private bool _hasMouse;
@@ -66,13 +68,34 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void LoadContent()
     {
-        _scene = new SceneRenderer(GraphicsDevice);
-        AttachScene(_faults);
-        _camera.Reset(Vector3.Zero, distance: 7f, yaw: 0.65f, pitch: -0.25f);
-        _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
-        _lights.Add(new PointLight(new Vector3(3f, 5f, 4f), new Vector3(1f, 0.86f, 0.68f) * 2f, 18f));
+        _sceneResources = new SceneResourceScope();
+        try
+        {
+            _scene = new SceneRenderer(GraphicsDevice);
+            _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
+            {
+                VertexColorEnabled = false,
+                TextureEnabled = false,
+                LightingEnabled = true,
+                PreferPerPixelLighting = true
+            });
+            _studioEffect.EnableDefaultLighting();
+            _studioEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
+            _studioEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
+            _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(1f, 0.83f, 0.64f);
+            _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.28f);
+            _camera.Reset(Vector3.Zero, distance: 7f, yaw: 0.65f, pitch: -0.25f);
+            _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
+            _lights.Add(new PointLight(new Vector3(3f, 5f, 4f), new Vector3(1f, 0.86f, 0.68f) * 2f, 18f));
 
-        foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
+            foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
+        }
+        catch
+        {
+            _sceneResources.Dispose();
+            _sceneResources = null;
+            throw;
+        }
     }
 
     protected override void Update(GameTime gameTime)
@@ -105,7 +128,7 @@ public sealed class CharacterStudioGame : EngineHost
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
         GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
 
-        _scene.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
+        _scene.Begin(_studioEffect, _camera.View, _camera.Projection, _camera.Position,
             cameraYaw: 0f, StoneTextures.StonePalette.Sandstone, _lights);
 
         foreach (var item in _sceneData.Objects)
@@ -124,6 +147,7 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void UnloadContent()
     {
+        _sceneResources?.Dispose();
         DisposeHost();
         base.UnloadContent();
     }
