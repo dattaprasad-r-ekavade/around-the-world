@@ -106,6 +106,102 @@ public sealed class PhysicsWorldTests
         Assert.Equal(rotation, PhysicsConversions.ToXna(PhysicsConversions.ToNumerics(rotation)));
     }
 
+    [Fact]
+    public void CapsuleCharacterMovesIntoAWallAndStaysGrounded()
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(20f, 1f, 20f));
+        world.AddStaticBox(new Vector3(2f, 1f, 0f), new Vector3(0.2f, 2f, 8f));
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 1f, 0f));
+        character.SetMoveInput(Vector3.UnitX);
+
+        for (var step = 0; step < 180; step++) world.Step(1f / 60f);
+
+        Assert.InRange(character.Pose.Position.X, 1.2f, 1.65f);
+        Assert.InRange(character.Pose.Position.Y, 0.85f, 1.05f);
+        Assert.True(character.IsGrounded);
+        Assert.InRange(MathF.Abs(character.Pose.Orientation.X), 0f, 0.001f);
+        Assert.InRange(MathF.Abs(character.Pose.Orientation.Z), 0f, 0.001f);
+    }
+
+    [Fact]
+    public void CapsuleJumpAndLandingFlagsEachFireForOnePhysicsStep()
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(20f, 1f, 20f));
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 1f, 0f));
+        Assert.True(character.IsGrounded);
+        character.RequestJump();
+
+        var jumpEvents = 0;
+        var landEvents = 0;
+        var maximumHeight = character.Pose.Position.Y;
+        for (var step = 0; step < 240; step++)
+        {
+            world.Step(1f / 60f);
+            if (character.JumpedThisStep) jumpEvents++;
+            if (character.LandedThisStep) landEvents++;
+            maximumHeight = MathF.Max(maximumHeight, character.Pose.Position.Y);
+        }
+        for (var step = 0; step < 60; step++)
+        {
+            world.Step(1f / 60f);
+            if (character.JumpedThisStep) jumpEvents++;
+            if (character.LandedThisStep) landEvents++;
+        }
+
+        Assert.True(maximumHeight > 2f);
+        Assert.True(character.IsGrounded);
+        Assert.Equal(1, jumpEvents);
+        Assert.Equal(1, landEvents);
+    }
+
+    [Fact]
+    public void CapsuleJumpCannotPassThroughLowCeiling()
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(20f, 1f, 20f));
+        world.AddStaticBox(new Vector3(0f, 2.3f, 0f), new Vector3(8f, 0.2f, 8f));
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 1f, 0f));
+        character.RequestJump();
+
+        var maximumHeight = character.Pose.Position.Y;
+        for (var step = 0; step < 90; step++)
+        {
+            world.Step(1f / 60f);
+            maximumHeight = MathF.Max(maximumHeight, character.Pose.Position.Y);
+        }
+
+        Assert.True(maximumHeight < 1.65f);
+        Assert.True(character.Pose.Position.Y < 1.05f);
+    }
+
+    [Fact]
+    public void CapsuleClimbsWalkableRampAndStopsAtTooSteepRamp()
+    {
+        var walkable = SimulateRamp(MathHelper.ToRadians(30f));
+        var tooSteep = SimulateRamp(MathHelper.ToRadians(60f));
+
+        Assert.True(walkable.Position.X > 2.5f, $"Walkable ramp ended at x={walkable.Position.X}, y={walkable.Position.Y}.");
+        Assert.True(walkable.Position.Y > 1.5f, $"Walkable ramp ended at x={walkable.Position.X}, y={walkable.Position.Y}.");
+        Assert.True(tooSteep.Position.X < 2f, $"Steep ramp ended at x={tooSteep.Position.X}, y={tooSteep.Position.Y}.");
+        Assert.True(tooSteep.Position.Y < 1.8f, $"Steep ramp ended at x={tooSteep.Position.X}, y={tooSteep.Position.Y}.");
+    }
+
+    [Fact]
+    public void DisposingCharacterRemovesItsBodyAndWorldDisposalInvalidatesController()
+    {
+        var world = new PhysicsWorld();
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 2f, 0f));
+        var id = character.PhysicsBodyId;
+
+        character.Dispose();
+
+        Assert.Throws<KeyNotFoundException>(() => world.GetPose(id));
+        world.Dispose();
+        Assert.Throws<ObjectDisposedException>(() => character.SetMoveInput(Vector3.UnitX));
+    }
+
     private static PhysicsPose SimulateAtRenderRate(int framesPerSecond)
     {
         using var world = new PhysicsWorld();
@@ -118,5 +214,21 @@ public sealed class PhysicsWorldTests
             stepper.Advance(elapsed, world.Step);
 
         return world.GetInterpolatedPose(box, stepper.InterpolationAlpha);
+    }
+
+    private static PhysicsPose SimulateRamp(float angle)
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(24f, 1f, 16f));
+        var rampHeight = 4f * MathF.Sin(angle) - 0.125f * MathF.Cos(angle) + 0.02f;
+        world.AddStaticBox(new Vector3(4f, rampHeight, 0f), new Vector3(8f, 0.25f, 8f),
+            Quaternion.CreateFromAxisAngle(Vector3.UnitZ, angle));
+        using var character = new PhysicsCharacterController(world, new Vector3(-1f, 1f, 0f),
+            new PhysicsCharacterSettings { MaximumSlopeAngleDegrees = 45f, MoveSpeed = 3f });
+        character.SetMoveInput(Vector3.UnitX);
+
+        for (var step = 0; step < 180; step++) world.Step(1f / 60f);
+
+        return character.Pose;
     }
 }

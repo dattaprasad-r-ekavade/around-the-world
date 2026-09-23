@@ -120,11 +120,39 @@ collision-layer mask filters the candidate set; the same category/mask pair cont
 generation. Dispose `PhysicsWorld` when a cell or scene unloads so BEPU's simulation and pooled
 memory are released.
 
+`PhysicsCharacterController` adds one locked-upright capsule to the shared world. Set its horizontal
+world-space movement direction and queue a jump before advancing the fixed step:
+
+```csharp
+using var player = new PhysicsCharacterController(physics, new Vector3(0, 1, 0));
+player.SetMoveInput(new Vector3(moveX, 0, moveZ));
+if (jumpPressed) player.RequestJump();
+
+var jumpEvents = 0;
+var landEvents = 0;
+var stepResult = fixedStepper.Advance(elapsedSeconds, delta =>
+{
+    physics.Step(delta);
+    if (player.JumpedThisStep) jumpEvents++;
+    if (player.LandedThisStep) landEvents++;
+});
+var characterPose = physics.GetInterpolatedPose(player.PhysicsBodyId, stepResult.InterpolationAlpha);
+```
+
+The controller reads the latest movement direction and consumes each jump request once. It detects
+floor support with a world-layer ray probe, projects grounded movement onto walkable surfaces, blocks uphill movement at steeper surfaces,
+and relies on the capsule's physics contacts for wall and ceiling collision. `JumpedThisStep` and
+`LandedThisStep` are one-step flags; inspect them inside the fixed-step callback so multiple physics
+steps in one render update are not skipped. The camera has its own transform and is not the capsule.
+Tune `PhysicsCharacterSettings` for capsule radius/length, speed, jump speed, ground probe, and the
+maximum slope angle.
+
 The engine pins `BepuPhysics` 2.5.0-beta.29 (with matching transitive `BepuUtilities`), a v2
 prerelease under Apache-2.0. This is a deliberate dependency choice for the current adapter; the
 stable 2.4.0 release is older and can be substituted if prerelease use is rejected for a release.
-The adapter is not yet connected to scene-file components or a character controller, and it does
-not yet support imported mesh colliders, triggers, or contact events.
+Physics colliders are still authored through code: imported mesh colliders, moving-platform
+support, step climbing, crouching, jump buffering, and scene-file physics components remain future
+work.
 
 ## Rendering
 

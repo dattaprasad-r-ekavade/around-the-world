@@ -385,3 +385,19 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | BEPU package metadata | PASS — `BepuPhysics` and `BepuUtilities` 2.5.0-beta.29 both declare Apache-2.0 |
 | Rendered physics demo | NOT RUN — this batch adds and tests the engine service; it does not yet connect physics to a sample scene or character controller |
+
+## Tasks 54–56 — add a capsule character controller
+
+- Task 54: added upright dynamic capsules with locked angular inertia and `PhysicsCharacterController`, registered with the shared `PhysicsWorld` step. Horizontal world-space input controls movement; the capsule stops against static walls and remains grounded. Camera state remains an independent transform. Disposing the controller unregisters it, removes its body, and releases its uniquely owned capsule shape.
+- Task 55: added queued jump requests and one-step `JumpedThisStep`/`LandedThisStep` flags. Ground transitions use a world-layer ray probe; capsule contacts stop jumps against ceilings. The flags are consumed inside the fixed-step callback so render frames with multiple physics steps retain each transition.
+- Task 56: added a configurable maximum support angle. Movement on a walkable contact is projected onto the surface; an over-limit slope is not considered grounded and blocks uphill input. Rotated static boxes provide the ramp fixtures.
+- CPU integration tests exercise wall blocking and stable floor contact, one jump/landing transition, low-ceiling collision, a climbable 30-degree ramp, rejection of a 60-degree ramp, and character/body disposal.
+
+### Tasks 54–56 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 79 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| Rendered CharacterStudio/gameplay demo | NOT RUN — character physics is currently an engine API, not yet wired to sample input or scene persistence |

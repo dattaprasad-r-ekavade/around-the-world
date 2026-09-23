@@ -22,8 +22,10 @@ public sealed class PhysicsWorld : IDisposable
     private readonly BufferPool _bufferPool = new();
     private readonly CollidableProperty<PhysicsCollisionFilter> _filters;
     private readonly Dictionary<PhysicsObjectId, BodyHandle> _dynamicBodies = new();
+    private readonly Dictionary<PhysicsObjectId, TypedIndex> _dynamicShapes = new();
     private readonly Dictionary<PhysicsObjectId, PhysicsPoseHistory> _poseHistory = new();
     private readonly Dictionary<CollidableReference, PhysicsObjectId> _objectIds = new();
+    private readonly List<PhysicsCharacterController> _characters = new();
     private Simulation? _simulation;
     private int _nextObjectId = 1;
     private bool _disposed;
@@ -51,15 +53,23 @@ public sealed class PhysicsWorld : IDisposable
 
     public PhysicsObjectId AddStaticBox(XnaVector3 center, XnaVector3 size,
         PhysicsCollisionFilter? filter = null)
+        => AddStaticBox(center, size, XnaQuaternion.Identity, filter);
+
+    public PhysicsObjectId AddStaticBox(XnaVector3 center, XnaVector3 size,
+        XnaQuaternion orientation, PhysicsCollisionFilter? filter = null)
     {
         ThrowIfDisposed();
         ValidateBox(size, nameof(size));
         ValidateFinite(center, nameof(center));
+        ValidateFinite(orientation, nameof(orientation));
+        if (orientation.LengthSquared() < 1e-8f)
+            throw new ArgumentOutOfRangeException(nameof(orientation), "Box orientation must be nonzero.");
 
         var shape = new Box(size.X, size.Y, size.Z);
         var shapeIndex = Simulation.Shapes.Add(shape);
         var handle = Simulation.Statics.Add(new StaticDescription(
-            PhysicsConversions.ToNumerics(center), shapeIndex));
+            PhysicsConversions.ToNumerics(center),
+            PhysicsConversions.ToNumerics(XnaQuaternion.Normalize(orientation)), shapeIndex));
         var id = NextId();
         _filters.Allocate(handle) = filter ?? PhysicsCollisionFilter.DefaultWorld;
         _objectIds.Add(new CollidableReference(handle), id);
@@ -86,9 +96,81 @@ public sealed class PhysicsWorld : IDisposable
         _objectIds.Add(collidable, id);
 
         var pose = ToPhysicsPose(Simulation.Bodies[handle].Pose);
+        _dynamicShapes.Add(id, shapeIndex);
         _poseHistory.Add(id, new PhysicsPoseHistory(pose, pose));
         return id;
     }
+
+    /// <summary>Adds an upright dynamic capsule suitable for a player character.</summary>
+    public PhysicsObjectId AddDynamicCapsule(XnaVector3 position, float radius, float cylinderLength,
+        float mass, PhysicsCollisionFilter? filter = null)
+    {
+        ThrowIfDisposed();
+        ValidateFinite(position, nameof(position));
+        if (!float.IsFinite(radius) || radius <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(radius), "Capsule radius must be finite and positive.");
+        if (!float.IsFinite(cylinderLength) || cylinderLength < 0f)
+            throw new ArgumentOutOfRangeException(nameof(cylinderLength), "Capsule cylinder length must be finite and nonnegative.");
+        if (!float.IsFinite(mass) || mass <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(mass), "Dynamic capsule mass must be finite and positive.");
+
+        var shape = new Capsule(radius, cylinderLength);
+        var shapeIndex = Simulation.Shapes.Add(shape);
+        var inertia = shape.ComputeInertia(mass);
+        inertia.InverseInertiaTensor = default;
+        var handle = Simulation.Bodies.Add(BodyDescription.CreateDynamic(
+            PhysicsConversions.ToNumerics(position), inertia, shapeIndex, 0.01f));
+        var id = NextId();
+        _dynamicBodies.Add(id, handle);
+        _dynamicShapes.Add(id, shapeIndex);
+        _filters.Allocate(handle) = filter ?? new PhysicsCollisionFilter(
+            PhysicsCollisionLayer.Player, PhysicsCollisionLayer.World | PhysicsCollisionLayer.Dynamic);
+        var collidable = Simulation.Bodies[handle].CollidableReference;
+        _objectIds.Add(collidable, id);
+
+        var pose = ToPhysicsPose(Simulation.Bodies[handle].Pose);
+        _poseHistory.Add(id, new PhysicsPoseHistory(pose, pose));
+        return id;
+    }
+
+    /// <summary>Removes a dynamic body and releases its uniquely owned shape.</summary>
+    internal void RemoveDynamicBody(PhysicsObjectId id)
+    {
+        ThrowIfDisposed();
+        if (!_dynamicBodies.Remove(id, out var handle))
+            throw new KeyNotFoundException($"Physics object {id.Value} is not a dynamic body.");
+
+        _objectIds.Remove(Simulation.Bodies[handle].CollidableReference);
+        _poseHistory.Remove(id);
+        Simulation.Bodies.Remove(handle);
+        if (_dynamicShapes.Remove(id, out var shapeIndex))
+            Simulation.Shapes.RemoveAndDispose(shapeIndex, _bufferPool);
+    }
+
+    internal XnaVector3 GetLinearVelocity(PhysicsObjectId id)
+    {
+        ThrowIfDisposed();
+        if (!_dynamicBodies.TryGetValue(id, out var handle))
+            throw new KeyNotFoundException($"Physics object {id.Value} is not a dynamic body.");
+        return PhysicsConversions.ToXna(Simulation.Bodies[handle].Velocity.Linear);
+    }
+
+    internal void SetLinearVelocity(PhysicsObjectId id, XnaVector3 velocity)
+    {
+        ThrowIfDisposed();
+        ValidateFinite(velocity, nameof(velocity));
+        if (!_dynamicBodies.TryGetValue(id, out var handle))
+            throw new KeyNotFoundException($"Physics object {id.Value} is not a dynamic body.");
+        Simulation.Bodies[handle].Velocity.Linear = PhysicsConversions.ToNumerics(velocity);
+    }
+
+    internal void RegisterCharacter(PhysicsCharacterController character)
+    {
+        ThrowIfDisposed();
+        _characters.Add(character);
+    }
+
+    internal void UnregisterCharacter(PhysicsCharacterController character) => _characters.Remove(character);
 
     /// <summary>Advances BEPU by one caller-selected step. Use PhysicsFixedStepper for gameplay.</summary>
     public void Step(float seconds)
@@ -96,6 +178,8 @@ public sealed class PhysicsWorld : IDisposable
         ThrowIfDisposed();
         if (!float.IsFinite(seconds) || seconds <= 0f)
             throw new ArgumentOutOfRangeException(nameof(seconds), "Physics step must be finite and positive.");
+
+        foreach (var character in _characters) character.PreparePhysicsStep();
 
         foreach (var (id, handle) in _dynamicBodies)
         {
@@ -112,6 +196,8 @@ public sealed class PhysicsWorld : IDisposable
             history.Current = ToPhysicsPose(Simulation.Bodies[handle].Pose);
             _poseHistory[id] = history;
         }
+
+        foreach (var character in _characters) character.CompletePhysicsStep();
     }
 
     public PhysicsPose GetPose(PhysicsObjectId id)
@@ -170,6 +256,8 @@ public sealed class PhysicsWorld : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        foreach (var character in _characters) character.OnWorldDisposed();
+        _characters.Clear();
         try { _simulation?.Dispose(); }
         finally
         {
@@ -181,6 +269,7 @@ public sealed class PhysicsWorld : IDisposable
                 finally
                 {
                     _dynamicBodies.Clear();
+                    _dynamicShapes.Clear();
                     _poseHistory.Clear();
                     _objectIds.Clear();
                 }
@@ -209,6 +298,13 @@ public sealed class PhysicsWorld : IDisposable
     {
         if (!float.IsFinite(value.X) || !float.IsFinite(value.Y) || !float.IsFinite(value.Z))
             throw new ArgumentOutOfRangeException(parameterName, "Vector components must be finite.");
+    }
+
+    private static void ValidateFinite(XnaQuaternion value, string parameterName)
+    {
+        if (!float.IsFinite(value.X) || !float.IsFinite(value.Y)
+            || !float.IsFinite(value.Z) || !float.IsFinite(value.W))
+            throw new ArgumentOutOfRangeException(parameterName, "Quaternion components must be finite.");
     }
 
     private static PhysicsPose ToPhysicsPose(in RigidPose pose) => new(

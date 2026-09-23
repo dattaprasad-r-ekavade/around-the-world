@@ -33,8 +33,9 @@ project asset browser and broader gameplay tools remain on the roadmap. The supp
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a
-callback, fixed-step 3D physics with interpolation and layer-filtered raycasts, box and model
-rendering with two lighting paths, procedurally generated wall, floor,
+callback, fixed-step 3D physics with a controllable capsule, jump and slope handling, interpolation,
+and layer-filtered raycasts, box and model rendering with two lighting paths, procedurally
+generated wall, floor,
 timber and cloth textures, procedurally generated character and item sprites, procedurally
 synthesised sound effects and an ambient bed, a 2D canvas with fonts and layout, input sampling
 with press-detection, list and grid pickers, a console command router, and screenshot capture
