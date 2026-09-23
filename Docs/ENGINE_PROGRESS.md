@@ -239,4 +239,20 @@ The Fox fixture's non-symmetric hip rest transform and parented mesh-node test m
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio `--clip Walk --pause --time 0.35 --screenshot` | PASS — 1280×720 animated pose rendered; UI reports Walk at 0.35/0.71s, paused |
 
-Two independently animated characters, clip crossfade, attachments, animated bounds, and skinned scene-file persistence remain upcoming tasks.
+## Tasks 34–36 — share character assets, blend clips, and attach a hand prop
+
+- Task 34: CharacterStudio now creates a separate pose and playback state per scene instance while sharing imported character data, GPU mesh buffers, and textures. `--pair` previews two instances; `--second-clip`, `--second-time`, `--second-speed`, `--pause-second`, and `--second-no-loop` control the second instance.
+- Task 35: added `GltfAnimationCrossfade`, which samples two clips on the same skin and blends local translation/scale plus shortest-path quaternion rotation. Endpoints copy the sampled source pose exactly; the sample's `--crossfade` and `--blend` options expose a fixed blend amount for deterministic previews.
+- Task 36: added `GltfBoneAttachment` with unique named-joint lookup and a local offset. CharacterStudio's `--attach-hand` draws a colored GPU-backed cube attached to Fox's `b_RightHand_08` joint.
+- Captured `captures/fox-pair-attachment.png` with Walk and Run instances paused at different times, plus the visible hand prop. Captured `captures/fox-crossfade.png` for the Walk/Run midpoint blend.
+
+### Tasks 34–36 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 50 tests, including independent instance clocks, crossfade endpoints/midpoint, and animated bone attachment |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio pair and crossfade screenshot captures | PASS — both character instances and crossfade render; colored attachment prop is visible |
+
+The blend amount is currently supplied by the caller rather than advanced by a timed transition controller. CharacterStudio still previews one unique GLB per scene; task 38 will add persistence for character playback and attachment references. Animated clip bounds remain task 37.

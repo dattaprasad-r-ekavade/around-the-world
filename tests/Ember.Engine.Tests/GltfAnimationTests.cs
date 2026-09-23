@@ -221,6 +221,106 @@ public sealed class GltfAnimationTests
         Assert.False(once.IsPlaying);
     }
 
+    [Fact]
+    public void TwoCharacterInstancesSharingClipsKeepIndependentPlaybackAndPoses()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var skin = ImportFoxSkin(model);
+        var walk = GltfAnimationClipData.Import(model.LogicalAnimations.Single(animation => animation.Name == "Walk"), skin);
+        var run = GltfAnimationClipData.Import(model.LogicalAnimations.Single(animation => animation.Name == "Run"), skin);
+        var firstPose = skin.CreatePose();
+        var secondPose = skin.CreatePose();
+        var firstPlayback = new GltfAnimationPlayback(walk, loop: false);
+        var secondPlayback = new GltfAnimationPlayback(run, loop: false);
+
+        firstPlayback.Play();
+        firstPlayback.Advance(0.2f);
+        secondPlayback.Seek(0.8f);
+        secondPlayback.Pause();
+        walk.Evaluate(firstPose, firstPlayback.Time);
+        run.Evaluate(secondPose, secondPlayback.Time);
+        var secondHipIndex = skin.JointNodeIndices[2];
+        var secondHipBefore = secondPose.GetLocalTransform(secondHipIndex);
+        var secondMatricesBefore = secondPose.SkinMatrices.ToArray();
+
+        firstPlayback.Advance(0.15f);
+        walk.Evaluate(firstPose, firstPlayback.Time);
+
+        Assert.InRange(MathF.Abs(firstPlayback.Time - 0.35f), 0f, 0.00001f);
+        Assert.Equal(0.8f, secondPlayback.Time);
+        Assert.False(secondPlayback.IsPlaying);
+        Assert.Equal(secondHipBefore, secondPose.GetLocalTransform(secondHipIndex));
+        Assert.Equal(secondMatricesBefore, secondPose.SkinMatrices.ToArray());
+        Assert.NotEqual(firstPose.GetLocalTransform(secondHipIndex), secondHipBefore);
+    }
+
+    [Fact]
+    public void CrossfadeMatchesBothClipEndpointsAndInterpolatesTheMiddlePose()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var skin = ImportFoxSkin(model);
+        var walk = GltfAnimationClipData.Import(model.LogicalAnimations.Single(animation => animation.Name == "Walk"), skin);
+        var run = GltfAnimationClipData.Import(model.LogicalAnimations.Single(animation => animation.Name == "Run"), skin);
+        var crossfade = new GltfAnimationCrossfade(walk, run);
+        var fromPose = skin.CreatePose();
+        var toPose = skin.CreatePose();
+        var outputPose = skin.CreatePose();
+        var fromTime = walk.Duration * 0.4f;
+        var toTime = run.Duration * 0.4f;
+        walk.Evaluate(fromPose, fromTime);
+        run.Evaluate(toPose, toTime);
+
+        crossfade.Evaluate(outputPose, fromTime, toTime, 0f);
+        AssertPosesClose(fromPose, outputPose);
+        Assert.Equal(fromPose.SkinMatrices.ToArray(), outputPose.SkinMatrices.ToArray());
+
+        crossfade.Evaluate(outputPose, fromTime, toTime, 1f);
+        AssertPosesClose(toPose, outputPose);
+        Assert.Equal(toPose.SkinMatrices.ToArray(), outputPose.SkinMatrices.ToArray());
+
+        crossfade.Evaluate(outputPose, fromTime, toTime, 0.5f);
+        for (var nodeIndex = 0; nodeIndex < skin.Nodes.Count; nodeIndex++)
+        {
+            var from = fromPose.GetLocalTransform(nodeIndex);
+            var to = toPose.GetLocalTransform(nodeIndex);
+            var blended = outputPose.GetLocalTransform(nodeIndex);
+            AssertVectorClose(Vector3.Lerp(from.Position, to.Position, 0.5f), blended.Position);
+            AssertVectorClose(Vector3.Lerp(from.Scale, to.Scale, 0.5f), blended.Scale);
+            var destinationRotation = to.Rotation;
+            if (Quaternion.Dot(from.Rotation, destinationRotation) < 0f)
+                destinationRotation = new Quaternion(-destinationRotation.X, -destinationRotation.Y,
+                    -destinationRotation.Z, -destinationRotation.W);
+            var expectedRotation = Quaternion.Normalize(Quaternion.Slerp(from.Rotation, destinationRotation, 0.5f));
+            Assert.InRange(MathF.Abs(MathF.Abs(Quaternion.Dot(expectedRotation, blended.Rotation)) - 1f), 0f, 0.0001f);
+        }
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => crossfade.Evaluate(outputPose, fromTime, toTime, 1.1f));
+    }
+
+    [Fact]
+    public void NamedHandAttachmentUsesAnimatedBoneWorldAndLocalOffset()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var skin = ImportFoxSkin(model);
+        var attachment = new GltfBoneAttachment(skin, "b_RightHand_08", Matrix.CreateTranslation(1f, 2f, 3f));
+        var clip = GltfAnimationClipData.Import(model.LogicalAnimations.Single(animation => animation.Name == "Walk"), skin);
+        var pose = skin.CreatePose();
+        var instanceWorld = Matrix.CreateTranslation(10f, 0f, 0f);
+        clip.Evaluate(pose, 0f);
+        var bindAttachmentWorld = attachment.GetWorldMatrix(pose, instanceWorld);
+        clip.Evaluate(pose, clip.Duration * 0.5f);
+        var animatedAttachmentWorld = attachment.GetWorldMatrix(pose, instanceWorld);
+
+        AssertMatrixClose(attachment.LocalOffset * pose.GetNodeWorldMatrix(attachment.BoneNodeIndex) * instanceWorld,
+            animatedAttachmentWorld);
+        Assert.NotEqual(bindAttachmentWorld, animatedAttachmentWorld);
+        Assert.Throws<ArgumentException>(() => new GltfBoneAttachment(skin, "missing-hand", Matrix.Identity));
+
+        var badOffset = Matrix.Identity;
+        badOffset.M11 = float.NaN;
+        Assert.Throws<ArgumentException>(() => new GltfBoneAttachment(skin, "b_RightHand_08", badOffset));
+    }
+
     private static GltfSkinData ImportFoxSkin(ModelRoot model) =>
         GltfSkinData.Import(model, model.LogicalNodes.Single(node => node.Name == "fox"));
 

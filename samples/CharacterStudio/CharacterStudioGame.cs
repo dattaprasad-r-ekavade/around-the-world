@@ -15,8 +15,8 @@ using SharpGLTF.Schema2;
 namespace CharacterStudio;
 
 /// <summary>
-/// The first external consumer of the scene foundation: one saved scene object, an orbit
-/// camera, command-line clip playback, and screenshot/open/save paths. It deliberately has no game rules.
+/// The first external consumer of the scene foundation: shared-asset scene instances, independent
+/// character playback, an orbit camera, and screenshot/open/save paths. It deliberately has no game rules.
 /// </summary>
 public sealed class CharacterStudioGame : EngineHost
 {
@@ -25,22 +25,20 @@ public sealed class CharacterStudioGame : EngineHost
         Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"), "Assets/TextureCoordinateTest.glb");
     private static readonly GltfAssetReference FoxAsset = new(
         Guid.Parse("fedcba98-7654-3210-fedc-ba9876543210"), "Assets/Fox.glb");
+    private static readonly Guid PairPreviewInstanceId = Guid.Parse("fedcba98-7654-3210-fedc-ba9876543211");
 
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
-    private readonly string? _requestedAnimation;
-    private readonly float? _requestedAnimationTime;
-    private readonly float _requestedAnimationSpeed;
-    private readonly bool _pauseAnimation;
-    private readonly bool _loopAnimation;
+    private readonly PlaybackOptions _playbackOptions;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
     private string? _assetPath;
     private string _reimportStatus = "R: reimport current GLB";
     private BasicEffect _studioEffect = null!;
     private SkinnedEffect? _skinnedEffect;
+    private AttachmentBoxRenderer? _attachmentRenderer;
     private MouseState _lastMouse;
     private bool _hasMouse;
 
@@ -49,40 +47,64 @@ public sealed class CharacterStudioGame : EngineHost
     {
         _savePath = ParseOption(args, "--save");
         var openPath = ParseOption(args, "--open");
-        _requestedAnimation = ParseOption(args, "--clip");
-        _requestedAnimationTime = ParseFiniteFloatOption(args, "--time");
-        _requestedAnimationSpeed = ParseFiniteFloatOption(args, "--speed") ?? 1f;
-        _pauseAnimation = HasArgument(args, "--pause");
+        var requestedAnimation = ParseOption(args, "--clip");
+        var requestedAnimationTime = ParseFiniteFloatOption(args, "--time");
+        var requestedAnimationSpeed = ParseFiniteFloatOption(args, "--speed") ?? 1f;
+        var pauseAnimation = HasArgument(args, "--pause");
         var startPlayback = HasArgument(args, "--play");
         var forceLoop = HasArgument(args, "--loop");
         var forceNoLoop = HasArgument(args, "--no-loop");
-        _loopAnimation = !forceNoLoop;
+        var pair = HasArgument(args, "--pair");
+        var secondClip = ParseOption(args, "--second-clip");
+        var secondTime = ParseFiniteFloatOption(args, "--second-time");
+        var secondSpeed = ParseFiniteFloatOption(args, "--second-speed") ?? 1f;
+        var pauseSecond = HasArgument(args, "--pause-second");
+        var secondNoLoop = HasArgument(args, "--second-no-loop");
+        var crossfadeClip = ParseOption(args, "--crossfade");
+        var blendAmount = ParseFiniteFloatOption(args, "--blend") ?? 0.5f;
+        var attachHand = HasArgument(args, "--attach-hand");
 
-        if (_pauseAnimation && startPlayback)
+        if (pauseAnimation && startPlayback)
             throw new ArgumentException("Use either --play or --pause with --clip, not both.");
         if (forceLoop && forceNoLoop)
             throw new ArgumentException("Use either --loop or --no-loop with --clip, not both.");
-        var hasAnimationOptions = _requestedAnimationTime is not null
+        var hasAnimationOptions = requestedAnimationTime is not null
             || ParseOption(args, "--speed") is not null
-            || _pauseAnimation || startPlayback || forceLoop || forceNoLoop;
-        if (_requestedAnimation is null && hasAnimationOptions)
+            || pauseAnimation || startPlayback || forceLoop || forceNoLoop;
+        if (requestedAnimation is null && hasAnimationOptions)
             throw new ArgumentException("Animation playback options require --clip <name>.");
+        var hasSecondOptions = secondClip is not null || secondTime is not null
+            || ParseOption(args, "--second-speed") is not null || pauseSecond || secondNoLoop;
+        if (hasSecondOptions && !pair)
+            throw new ArgumentException("Second-character options require --pair.");
+        if (hasSecondOptions && requestedAnimation is null)
+            throw new ArgumentException("Second-character playback options require --clip <name> for the first character.");
+        if (crossfadeClip is not null && requestedAnimation is null)
+            throw new ArgumentException("--crossfade requires --clip <name>.");
+        if (ParseOption(args, "--blend") is not null && crossfadeClip is null)
+            throw new ArgumentException("--blend requires --crossfade <name>.");
+        if (!float.IsFinite(blendAmount) || blendAmount < 0f || blendAmount > 1f)
+            throw new ArgumentOutOfRangeException(nameof(blendAmount), "--blend must be between zero and one.");
+
+        _playbackOptions = new PlaybackOptions(requestedAnimation, requestedAnimationTime,
+            requestedAnimationSpeed, pauseAnimation, !forceNoLoop, pair, secondClip,
+            secondTime, secondSpeed, pauseSecond, !secondNoLoop, crossfadeClip,
+            blendAmount, attachHand);
 
         if (openPath is null)
         {
-            _sceneData = CreateDefaultScene(HasArgument(args, "--fox") || _requestedAnimation is not null
-                ? FoxAsset
-                : DefaultAsset);
+            _sceneData = CreateDefaultScene(ResolveDefaultAsset(args), pair);
         }
         else
         {
             try
             {
                 _sceneData = SceneFile.Load(openPath);
+                if (pair) AddPairIfNeeded(_sceneData);
             }
             catch (Exception exception)
             {
-                _sceneData = CreateDefaultScene(DefaultAsset);
+                _sceneData = CreateDefaultScene(ResolveDefaultAsset(args), pair);
                 _faults.Add($"open {openPath}: {exception.Message}");
             }
         }
@@ -121,9 +143,8 @@ public sealed class CharacterStudioGame : EngineHost
             _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
 
             _assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
-            _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(GraphicsDevice, _assetPath,
-                _requestedAnimation, _requestedAnimationTime, _requestedAnimationSpeed,
-                _pauseAnimation, _loopAnimation));
+            _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(
+                GraphicsDevice, _assetPath, _sceneData, _playbackOptions));
             if (_preview.Current.SkinnedCharacter is not null)
             {
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
@@ -138,6 +159,9 @@ public sealed class CharacterStudioGame : EngineHost
                 skinnedEffect.AmbientLightColor = new Vector3(0.58f, 0.60f, 0.64f);
                 skinnedEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
                 skinnedEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
+
+                if (_preview.Current.Attachment is not null)
+                    _attachmentRenderer = _sceneResources.Own(new AttachmentBoxRenderer(GraphicsDevice));
             }
 
             _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio, far: 1000f);
@@ -185,10 +209,10 @@ public sealed class CharacterStudioGame : EngineHost
         _lastMouse = mouse;
         _input.Commit();
         var preview = _preview?.Current;
-        if (preview?.Playback is { } playback)
+        if (preview is not null)
         {
-            playback.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
-            playback.Clip.Evaluate(preview.SkinPose!, playback.Time);
+            foreach (var state in preview.CharacterInstances.Values)
+                state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
         }
         base.Update(gameTime);
     }
@@ -207,7 +231,15 @@ public sealed class CharacterStudioGame : EngineHost
             var preview = _preview!.Current;
             if (preview.SkinnedCharacter is { } character)
             {
-                DrawSkinnedCharacter(preview, character, instanceWorld);
+                if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
+                    throw new InvalidOperationException($"No character playback state exists for scene object '{item.Name}'.");
+                DrawSkinnedCharacter(preview, character, state, instanceWorld);
+                if (preview.AttachmentInstanceId == item.Id && preview.Attachment is { } attachment)
+                {
+                    (_attachmentRenderer
+                        ?? throw new InvalidOperationException("The attachment prop renderer was not initialized."))
+                        .Draw(attachment.GetWorldMatrix(state.Pose, instanceWorld), _camera.View, _camera.Projection);
+                }
                 continue;
             }
 
@@ -232,17 +264,11 @@ public sealed class CharacterStudioGame : EngineHost
         }
 
         _ui.Begin();
-        if (_preview?.Current.Playback is { } playback)
-        {
-            _ui.Panel(new Rectangle(16, 16, 760, 66), new Color(12, 16, 24, 230), new Color(82, 101, 122));
-            _ui.TextFit(FormatPlaybackStatus(playback), new Vector2(28, 25), 736f, 1f, Color.White);
-            _ui.TextFit(_reimportStatus, new Vector2(28, 47), 736f, 1f, Color.White);
-        }
-        else
-        {
-            _ui.Panel(new Rectangle(16, 16, 760, 48), new Color(12, 16, 24, 230), new Color(82, 101, 122));
-            _ui.TextFit(_reimportStatus, new Vector2(28, 31), 736f, 1f, Color.White);
-        }
+        var statusRows = GetStatusRows();
+        var statusHeight = Math.Max(48, 22 * statusRows.Count + 20);
+        _ui.Panel(new Rectangle(16, 16, 760, statusHeight), new Color(12, 16, 24, 230), new Color(82, 101, 122));
+        for (var row = 0; row < statusRows.Count; row++)
+            _ui.TextFit(statusRows[row], new Vector2(28, 25 + (row * 22)), 736f, 1f, Color.White);
         _ui.End();
 
         base.Draw(gameTime);
@@ -258,11 +284,12 @@ public sealed class CharacterStudioGame : EngineHost
         _preview = null;
         _sceneResources?.Dispose();
         _sceneResources = null;
+        _attachmentRenderer = null;
         DisposeHost();
         base.UnloadContent();
     }
 
-    private static SceneGraph CreateDefaultScene(GltfAssetReference asset)
+    private static SceneGraph CreateDefaultScene(GltfAssetReference asset, bool pair)
     {
         var scene = new SceneGraph();
         scene.Add(new SceneObject(PreviewInstanceId, "GLB Preview")
@@ -270,7 +297,34 @@ public sealed class CharacterStudioGame : EngineHost
             Transform = new Transform(),
             GltfAsset = asset
         });
+        if (pair) AddPairIfNeeded(scene);
         return scene;
+    }
+
+    private static GltfAssetReference ResolveDefaultAsset(string[] args) =>
+        HasArgument(args, "--fox") || HasArgument(args, "--pair")
+        || ParseOption(args, "--clip") is not null || ParseOption(args, "--crossfade") is not null
+        || HasArgument(args, "--attach-hand")
+            ? FoxAsset
+            : DefaultAsset;
+
+    private static void AddPairIfNeeded(SceneGraph scene)
+    {
+        if (scene.Find(PairPreviewInstanceId) is not null) return;
+        var characters = scene.Objects.Where(item => item.GltfAsset is not null).ToArray();
+        if (characters.Length != 1) return;
+
+        var source = characters[0];
+        scene.Add(new SceneObject(PairPreviewInstanceId, $"{source.Name} (2)")
+        {
+            Transform = new Transform
+            {
+                Position = source.Transform.Position + new Vector3(90f, 0f, 0f),
+                Rotation = source.Transform.Rotation,
+                Scale = source.Transform.Scale
+            },
+            GltfAsset = source.GltfAsset
+        });
     }
 
     private GltfAssetReference ResolveSceneAsset()
@@ -328,12 +382,11 @@ public sealed class CharacterStudioGame : EngineHost
     }
 
     private void DrawSkinnedCharacter(PreviewResources preview, GltfSkinnedCharacterData character,
-        Matrix instanceWorld)
+        CharacterInstanceState state, Matrix instanceWorld)
     {
         var effect = _skinnedEffect
             ?? throw new InvalidOperationException("SkinnedEffect was not initialized for the character preview.");
-        var pose = preview.SkinPose
-            ?? throw new InvalidOperationException("The skinned character preview has no per-instance pose.");
+        var pose = state.Pose;
 
         foreach (var primitive in character.Primitives)
         {
@@ -356,11 +409,32 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
-    private static string FormatPlaybackStatus(GltfAnimationPlayback playback)
+    private List<string> GetStatusRows()
     {
+        var rows = new List<string>();
+        if (_preview?.Current is { } preview)
+        {
+            foreach (var item in _sceneData.Objects)
+            {
+                if (preview.CharacterInstances.TryGetValue(item.Id, out var state))
+                    rows.Add($"{item.Name}: {state.Status}");
+            }
+        }
+
+        rows.Add(_reimportStatus);
+        return rows;
+    }
+
+    private static string FormatPlaybackStatus(GltfAnimationPlayback? playback,
+        GltfAnimationPlayback? crossfadePlayback, float blend)
+    {
+        if (playback is null) return "bind pose";
         var state = playback.IsPlaying ? "playing" : "paused";
         var loop = playback.Loop ? "loop" : "once";
-        return $"{playback.Clip.Name} {playback.Time:0.00}/{playback.Clip.Duration:0.00}s x{playback.Speed:0.##} {loop} {state}";
+        var summary = $"{playback.Clip.Name} {playback.Time:0.00}/{playback.Clip.Duration:0.00}s x{playback.Speed:0.##} {loop} {state}";
+        return crossfadePlayback is null
+            ? summary
+            : $"{summary} → {crossfadePlayback.Clip.Name} ({blend:0.00})";
     }
 
     private static float? ParseFiniteFloatOption(string[] args, string name)
@@ -381,9 +455,8 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null || _assetPath is null) return;
         try
         {
-            var cleanupError = _preview.Reload(() => PreviewResources.Load(GraphicsDevice, _assetPath,
-                _requestedAnimation, _requestedAnimationTime, _requestedAnimationSpeed,
-                _pauseAnimation, _loopAnimation));
+            var cleanupError = _preview.Reload(() => PreviewResources.Load(
+                GraphicsDevice, _assetPath, _sceneData, _playbackOptions));
             if (cleanupError is null)
             {
                 _reimportStatus = "GLB reimport succeeded.";
@@ -404,20 +477,146 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
+    private readonly record struct PlaybackOptions(
+        string? AnimationName,
+        float? AnimationTime,
+        float AnimationSpeed,
+        bool PauseAnimation,
+        bool LoopAnimation,
+        bool Pair,
+        string? SecondAnimationName,
+        float? SecondAnimationTime,
+        float SecondAnimationSpeed,
+        bool PauseSecond,
+        bool SecondLoopAnimation,
+        string? CrossfadeAnimationName,
+        float BlendAmount,
+        bool AttachHand);
+
+    private sealed class CharacterInstanceState
+    {
+        private CharacterInstanceState(GltfSkinPose pose, GltfAnimationPlayback? playback,
+            GltfAnimationPlayback? crossfadePlayback, GltfAnimationCrossfade? crossfade,
+            float blendAmount)
+        {
+            Pose = pose;
+            Playback = playback;
+            CrossfadePlayback = crossfadePlayback;
+            Crossfade = crossfade;
+            BlendAmount = blendAmount;
+            Evaluate();
+        }
+
+        public GltfSkinPose Pose { get; }
+        public GltfAnimationPlayback? Playback { get; }
+        public GltfAnimationPlayback? CrossfadePlayback { get; }
+        public GltfAnimationCrossfade? Crossfade { get; }
+        public float BlendAmount { get; }
+        public string Status => FormatPlaybackStatus(Playback, CrossfadePlayback, BlendAmount);
+
+        public void Advance(float elapsedSeconds)
+        {
+            Playback?.Advance(elapsedSeconds);
+            CrossfadePlayback?.Advance(elapsedSeconds);
+            Evaluate();
+        }
+
+        public static CharacterInstanceState Create(GltfSkinnedCharacterData character,
+            PlaybackOptions options, bool isSecondCharacter)
+        {
+            var animationName = isSecondCharacter ? options.SecondAnimationName : options.AnimationName;
+            if (isSecondCharacter && options.Pair && animationName is null && options.AnimationName is not null)
+                animationName = ChooseOtherClip(character, options.AnimationName);
+
+            var clip = ResolveClip(character, animationName);
+            var pose = character.CreatePose();
+            GltfAnimationPlayback? playback = null;
+            GltfAnimationPlayback? crossfadePlayback = null;
+            GltfAnimationCrossfade? crossfade = null;
+            var animationTime = isSecondCharacter
+                ? options.SecondAnimationTime ?? options.AnimationTime ?? 0f
+                : options.AnimationTime ?? 0f;
+            var animationSpeed = isSecondCharacter ? options.SecondAnimationSpeed : options.AnimationSpeed;
+            var loop = isSecondCharacter ? options.SecondLoopAnimation : options.LoopAnimation;
+            var paused = isSecondCharacter ? options.PauseSecond : options.PauseAnimation;
+
+            if (clip is not null)
+            {
+                playback = new GltfAnimationPlayback(clip, loop, animationSpeed);
+                playback.Seek(animationTime);
+                if (!paused) playback.Play();
+                clip.Evaluate(pose, playback.Time);
+
+                // The crossfade demonstration belongs to the first instance; another instance can
+                // still run its own clip clock and pose independently beside it.
+                if (!isSecondCharacter && options.CrossfadeAnimationName is { } targetName)
+                {
+                    var targetClip = ResolveClip(character, targetName)
+                        ?? throw new InvalidOperationException("A crossfade target clip name is required.");
+                    crossfadePlayback = new GltfAnimationPlayback(targetClip, loop, animationSpeed);
+                    crossfadePlayback.Seek(animationTime);
+                    if (!paused) crossfadePlayback.Play();
+                    crossfade = new GltfAnimationCrossfade(clip, targetClip);
+                }
+            }
+            else if (isSecondCharacter && options.SecondAnimationName is not null)
+            {
+                throw new InvalidOperationException("The second character requires --clip <name> for the first character.");
+            }
+
+            return new CharacterInstanceState(pose, playback, crossfadePlayback, crossfade,
+                options.BlendAmount);
+        }
+
+        private void Evaluate()
+        {
+            if (Crossfade is not null && Playback is not null && CrossfadePlayback is not null)
+                Crossfade.Evaluate(Pose, Playback.Time, CrossfadePlayback.Time, BlendAmount);
+            else if (Playback is not null)
+                Playback.Clip.Evaluate(Pose, Playback.Time);
+        }
+
+        private static GltfAnimationClipData? ResolveClip(GltfSkinnedCharacterData character, string? name)
+        {
+            if (name is null) return null;
+            var matches = character.Animations
+                .Where(candidate => string.Equals(candidate.Name, name, StringComparison.OrdinalIgnoreCase))
+                .ToArray();
+            if (matches.Length == 1) return matches[0];
+            var names = string.Join(", ", character.Animations.Select(candidate => candidate.Name));
+            throw new InvalidOperationException(matches.Length == 0
+                ? $"Animation '{name}' was not found. Available clips: {names}."
+                : $"Animation name '{name}' is ambiguous in this asset.");
+        }
+
+        private static string? ChooseOtherClip(GltfSkinnedCharacterData character, string primaryName)
+        {
+            var preferred = string.Equals(primaryName, "Run", StringComparison.OrdinalIgnoreCase) ? "Walk" : "Run";
+            return character.Animations.FirstOrDefault(clip =>
+                    string.Equals(clip.Name, preferred, StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(clip.Name, primaryName, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? character.Animations.FirstOrDefault(clip =>
+                    !string.Equals(clip.Name, primaryName, StringComparison.OrdinalIgnoreCase))?.Name
+                ?? primaryName;
+        }
+    }
+
     private sealed class PreviewResources : IDisposable
     {
         private readonly SceneResourceScope _resources;
 
         private PreviewResources(ImportedGltfScene? scene, GltfSkinnedCharacterData? skinnedCharacter,
-            GltfSkinPose? skinPose, GltfAnimationPlayback? playback, SceneResourceScope resources,
+            Dictionary<Guid, CharacterInstanceState> characterInstances, GltfBoneAttachment? attachment,
+            Guid? attachmentInstanceId, SceneResourceScope resources,
             Dictionary<StaticMeshData, StaticMeshGpuBuffer> meshBuffers,
             Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> skinnedMeshBuffers,
             Dictionary<int, Texture2D> textures)
         {
             Scene = scene;
             SkinnedCharacter = skinnedCharacter;
-            SkinPose = skinPose;
-            Playback = playback;
+            CharacterInstances = characterInstances;
+            Attachment = attachment;
+            AttachmentInstanceId = attachmentInstanceId;
             _resources = resources;
             MeshBuffers = meshBuffers;
             SkinnedMeshBuffers = skinnedMeshBuffers;
@@ -426,14 +625,15 @@ public sealed class CharacterStudioGame : EngineHost
 
         public ImportedGltfScene? Scene { get; }
         public GltfSkinnedCharacterData? SkinnedCharacter { get; }
-        public GltfSkinPose? SkinPose { get; }
-        public GltfAnimationPlayback? Playback { get; }
+        public Dictionary<Guid, CharacterInstanceState> CharacterInstances { get; }
+        public GltfBoneAttachment? Attachment { get; }
+        public Guid? AttachmentInstanceId { get; }
         public Dictionary<StaticMeshData, StaticMeshGpuBuffer> MeshBuffers { get; }
         public Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> SkinnedMeshBuffers { get; }
         public Dictionary<int, Texture2D> Textures { get; }
 
-        public static PreviewResources Load(GraphicsDevice device, string assetPath, string? animationName,
-            float? animationTime, float animationSpeed, bool pauseAnimation, bool loopAnimation)
+        public static PreviewResources Load(GraphicsDevice device, string assetPath,
+            SceneGraph sceneData, PlaybackOptions options)
         {
             var resources = new SceneResourceScope();
             try
@@ -446,26 +646,30 @@ public sealed class CharacterStudioGame : EngineHost
                 if (model.LogicalNodes.Any(node => node.Skin is not null))
                 {
                     var character = GltfSkinnedCharacterData.Import(model);
-                    var pose = character.CreatePose();
-                    GltfAnimationPlayback? playback = null;
-                    if (animationName is not null)
+                    var characterObjects = sceneData.Objects.Where(item => item.GltfAsset is not null).ToArray();
+                    var characterInstances = new Dictionary<Guid, CharacterInstanceState>();
+                    for (var index = 0; index < characterObjects.Length; index++)
                     {
-                        var matchingClips = character.Animations
-                            .Where(clip => string.Equals(clip.Name, animationName, StringComparison.OrdinalIgnoreCase))
-                            .ToArray();
-                        if (matchingClips.Length != 1)
-                        {
-                            var names = string.Join(", ", character.Animations.Select(clip => clip.Name));
-                            throw new InvalidOperationException(matchingClips.Length == 0
-                                ? $"Animation '{animationName}' was not found. Available clips: {names}."
-                                : $"Animation name '{animationName}' is ambiguous in this asset.");
-                        }
+                        var item = characterObjects[index];
+                        characterInstances.Add(item.Id,
+                            CharacterInstanceState.Create(character, options, options.Pair && index > 0));
+                    }
 
-                        var clip = matchingClips[0];
-                        playback = new GltfAnimationPlayback(clip, loopAnimation, animationSpeed);
-                        if (animationTime is { } startTime) playback.Seek(startTime);
-                        if (!pauseAnimation) playback.Play();
-                        clip.Evaluate(pose, playback.Time);
+                    if (options.Pair && characterObjects.Length < 2)
+                        throw new InvalidOperationException("--pair requires two scene objects that reference the character asset.");
+                    if ((options.AnimationName is not null || options.CrossfadeAnimationName is not null)
+                        && characterObjects.Length == 0)
+                        throw new InvalidOperationException("Animation playback requires a scene object that references the character asset.");
+
+                    GltfBoneAttachment? attachment = null;
+                    Guid? attachmentInstanceId = null;
+                    if (options.AttachHand)
+                    {
+                        if (characterObjects.Length == 0)
+                            throw new InvalidOperationException("--attach-hand requires a scene object that references the character asset.");
+                        attachment = new GltfBoneAttachment(character.Skin, "b_RightHand_08",
+                            Matrix.CreateScale(9f) * Matrix.CreateTranslation(0f, 0f, 12f));
+                        attachmentInstanceId = characterObjects[0].Id;
                     }
 
                     foreach (var primitive in character.Primitives)
@@ -484,12 +688,13 @@ public sealed class CharacterStudioGame : EngineHost
                         }
                     }
 
-                    return new PreviewResources(null, character, pose, playback, resources,
-                        meshBuffers, skinnedMeshBuffers, textures);
+                    return new PreviewResources(null, character, characterInstances, attachment,
+                        attachmentInstanceId, resources, meshBuffers, skinnedMeshBuffers, textures);
                 }
 
-                if (animationName is not null)
-                    throw new NotSupportedException("--clip can only be used with a skinned character asset.");
+                if (options.AnimationName is not null || options.Pair || options.CrossfadeAnimationName is not null
+                    || options.AttachHand)
+                    throw new NotSupportedException("Character playback, pairing, crossfades, and hand attachments require a skinned character asset.");
 
                 var scene = GltfSceneImporter.Import(model);
                 foreach (var parts in scene.MeshesByNodeId.Values)
@@ -510,8 +715,8 @@ public sealed class CharacterStudioGame : EngineHost
                     }
                 }
 
-                return new PreviewResources(scene, null, null, null, resources,
-                    meshBuffers, skinnedMeshBuffers, textures);
+                return new PreviewResources(scene, null, new Dictionary<Guid, CharacterInstanceState>(),
+                    null, null, resources, meshBuffers, skinnedMeshBuffers, textures);
             }
             catch
             {

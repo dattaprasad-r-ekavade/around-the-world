@@ -160,6 +160,7 @@ public sealed class GltfAnimationClipData
     public string Name { get; }
     public float Duration { get; }
     public IReadOnlyList<GltfAnimationTrackData> Tracks { get; }
+    internal GltfSkinData Skin => _skin;
 
     public static GltfAnimationClipData Import(Animation animation, GltfSkinData skin)
     {

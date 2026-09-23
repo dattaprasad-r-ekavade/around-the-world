@@ -95,9 +95,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 31 | Import STEP/LINEAR translation, quaternion rotation, and scale animation tracks. | Clip duration/key values match the fixture; unsupported interpolation is rejected. |
 | [x] | 32 | Evaluate one clip at an absolute time, using rest values for missing channels. | Start/middle/end fixtures pass, including shortest-path rotation interpolation. |
 | [x] | 33 | Add play, pause, loop, seek, and speed controls through sample commands. | Seeking to a time matches sequential playback at that time; loop boundaries are correct. |
-| [ ] | 34 | Draw two characters sharing assets with different playback states. | Pausing/seeking one does not change the other. |
-| [ ] | 35 | Add a two-clip local-pose crossfade. | Blend endpoints equal their source poses and the midpoint is smooth. |
-| [ ] | 36 | Add one named bone attachment with a local offset. | A visible hand prop follows the character throughout its animation. |
+| [x] | 34 | Draw two characters sharing assets with different playback states. | Pausing/seeking one does not change the other. |
+| [x] | 35 | Add a two-clip local-pose crossfade. | Blend endpoints equal their source poses and the midpoint is smooth. |
+| [x] | 36 | Add one named bone attachment with a local offset. | A visible hand prop follows the character throughout its animation. |
 | [ ] | 37 | Add conservative animated bounds, initially sampled per clip with a documented margin. | Limbs remain visible throughout supported clips; unsupported procedural poses can disable culling. |
 | [ ] | 38 | Save character asset, clip, playback settings, and attachment references. | Reopening the scene restores both characters and their settings. |
 

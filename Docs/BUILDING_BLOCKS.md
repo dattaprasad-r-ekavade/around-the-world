@@ -237,6 +237,16 @@ clip endpoint. `--play` and `--loop` are explicit forms of the default play/loop
 `--clip` is selected. Selecting a clip without `--fox` loads the bundled Fox fixture; `--open`
 can supply another skinned asset.
 
+Each scene object that references the loaded skinned asset gets its own pose and playback clocks;
+the imported character data, mesh buffers, and textures remain shared. `--pair --clip Walk
+--second-clip Run --second-time 0.6 --pause-second` previews two Fox instances with independent
+clip, time, speed, loop, and pause state. If `--second-clip` is omitted, CharacterStudio chooses
+another available clip. `--crossfade Run --blend 0.5` samples a second clip and mixes both local
+poses; callers control the blend amount over time. `--attach-hand` draws a colored preview cube
+on the first instance's `b_RightHand_08` joint using a local offset. This is a rendering/API
+demonstration; it does not yet persist per-character clip settings or attachments in scene files.
+The preview still loads one unique GLB asset per scene and supports only one named attachment.
+
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the
 scene's `SceneResourceScope` so reload and shutdown dispose GPU resources. The
@@ -248,7 +258,8 @@ Attach a stable, project-relative source reference to a scene object with
 `new GltfAssetReference(assetId, "Assets/Props/guard.glb")`. `SceneFile` saves its ID and path
 as metadata beside the instance transform; it never serializes the imported vertices or
 textures into scene JSON. Multiple instances may share one ID and path. The current
-CharacterStudio preview loads one unique GLB per scene.
+CharacterStudio preview loads one unique GLB per scene and supports multiple scene objects sharing
+that asset, each with its own runtime character state.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference

@@ -10,9 +10,10 @@ public sealed class GltfSkinPose
 {
     private readonly GltfSkinData _skin;
     private readonly GltfLocalTransform[] _localTransforms;
+    private readonly Matrix[] _nodeWorldMatrices;
     private readonly Matrix[] _skinMatrices;
+    private readonly ReadOnlyCollection<Matrix> _readOnlyNodeWorldMatrices;
     private readonly ReadOnlyCollection<Matrix> _readOnlySkinMatrices;
-    private Matrix _meshNodeWorldMatrix;
 
     internal GltfSkinPose(GltfSkinData skin)
     {
@@ -21,6 +22,8 @@ public sealed class GltfSkinPose
         for (var i = 0; i < _localTransforms.Length; i++)
             _localTransforms[i] = skin.Nodes[i].RestTransform;
 
+        _nodeWorldMatrices = new Matrix[skin.Nodes.Count];
+        _readOnlyNodeWorldMatrices = Array.AsReadOnly(_nodeWorldMatrices);
         _skinMatrices = new Matrix[skin.JointNodeIndices.Count];
         _readOnlySkinMatrices = Array.AsReadOnly(_skinMatrices);
         ComputeSkinMatrices();
@@ -29,7 +32,8 @@ public sealed class GltfSkinPose
     public int NodeCount => _localTransforms.Length;
     public int JointCount => _skinMatrices.Length;
     /// <summary>Mesh-node world transform from the most recent skin-matrix calculation.</summary>
-    public Matrix MeshNodeWorldMatrix => _meshNodeWorldMatrix;
+    public Matrix MeshNodeWorldMatrix => _nodeWorldMatrices[_skin.MeshNodeIndex];
+    public ReadOnlyCollection<Matrix> NodeWorldMatrices => _readOnlyNodeWorldMatrices;
     public ReadOnlyCollection<Matrix> SkinMatrices => _readOnlySkinMatrices;
 
     public GltfLocalTransform GetLocalTransform(int nodeIndex)
@@ -44,6 +48,12 @@ public sealed class GltfSkinPose
         _localTransforms[nodeIndex] = NormalizeAndValidate(transform, nodeIndex);
     }
 
+    public Matrix GetNodeWorldMatrix(int nodeIndex)
+    {
+        ValidateNodeIndex(nodeIndex);
+        return _nodeWorldMatrices[nodeIndex];
+    }
+
     /// <summary>Restores all local transforms from the immutable skin asset.</summary>
     public void ResetToRestPose()
     {
@@ -53,21 +63,27 @@ public sealed class GltfSkinPose
 
     internal bool UsesSkin(GltfSkinData skin) => ReferenceEquals(_skin, skin);
 
+    internal void CopyLocalTransformsFrom(GltfSkinPose source)
+    {
+        if (source is null) throw new ArgumentNullException(nameof(source));
+        if (!UsesSkin(source._skin))
+            throw new ArgumentException("The source pose belongs to a different skin.", nameof(source));
+        Array.Copy(source._localTransforms, _localTransforms, _localTransforms.Length);
+    }
+
     /// <summary>Rebuilds all node worlds and skin matrices from this pose's absolute local transforms.</summary>
     public ReadOnlyCollection<Matrix> ComputeSkinMatrices()
     {
-        var nodeWorldMatrices = new Matrix[_localTransforms.Length];
-        for (var i = 0; i < nodeWorldMatrices.Length; i++)
+        for (var i = 0; i < _nodeWorldMatrices.Length; i++)
         {
             var local = NormalizeAndValidate(_localTransforms[i], i).Matrix;
             var parentIndex = _skin.Nodes[i].ParentNodeIndex;
-            nodeWorldMatrices[i] = parentIndex is { } parent
-                ? local * nodeWorldMatrices[parent]
+            _nodeWorldMatrices[i] = parentIndex is { } parent
+                ? local * _nodeWorldMatrices[parent]
                 : local;
         }
 
-        var meshWorld = nodeWorldMatrices[_skin.MeshNodeIndex];
-        _meshNodeWorldMatrix = meshWorld;
+        var meshWorld = _nodeWorldMatrices[_skin.MeshNodeIndex];
         var determinant = meshWorld.Determinant();
         if (!float.IsFinite(determinant) || determinant == 0f)
             throw new InvalidOperationException("The posed mesh-node transform is not invertible; skin matrices cannot be calculated.");
@@ -75,7 +91,7 @@ public sealed class GltfSkinPose
 
         for (var jointIndex = 0; jointIndex < _skinMatrices.Length; jointIndex++)
         {
-            var jointWorld = nodeWorldMatrices[_skin.JointNodeIndices[jointIndex]];
+            var jointWorld = _nodeWorldMatrices[_skin.JointNodeIndices[jointIndex]];
             _skinMatrices[jointIndex] = _skin.InverseBindMatrices[jointIndex] * jointWorld * inverseMeshWorld;
         }
 
