@@ -135,9 +135,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 54 | Add a capsule character with flat-ground movement and wall collision only. | Movement stops at walls and remains grounded; camera is not the physics body. |
 | [x] | 55 | Add jump and ceiling collision. | Jump/land events occur once; jumping into a low ceiling cannot pass through it. |
 | [x] | 56 | Add slope limits. | The capsule climbs an allowed ramp and cannot climb a steeper forbidden ramp. |
-| [ ] | 57 | Add a third-person follow camera with obstruction checks. | Camera follows the capsule and does not pass through a wall behind it. |
-| [ ] | 58 | Add named move/jump input actions and focus handling. | UI typing does not move the player; one press is not repeated across physics substeps. |
-| [ ] | 59 | Drive idle/walk/jump animation from actual character motion. | Running into a wall stops walk animation; jumping selects and exits the jump state. |
+| [x] | 57 | Add a third-person follow camera with obstruction checks. | Camera follows the capsule and does not pass through a wall behind it. |
+| [x] | 58 | Add named move/jump input actions and focus handling. | UI typing does not move the player; one press is not repeated across physics substeps. |
+| [x] | 59 | Drive idle/walk/jump animation from actual character motion. | Running into a wall stops walk animation; jumping selects and exits the jump state. |
 | [ ] | 60 | Add a compiled C# behavior lifecycle with one interaction example. | A behavior starts/stops once and responds to one interaction without leaking across scene reload. |
 | [ ] | 61 | Add one imported audio clip with scene ownership and volume control. | Interaction plays the clip; muted volume works; unloading stops/releases it. |
 | [ ] | 62 | Add editor play-on-clone and stop-to-restore behavior. | Moving/deleting objects during play does not change the authored scene after stopping. |
@@ -319,14 +319,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 54–56 — upright capsule movement and wall contacts, jump/landing/ceiling behavior, and maximum walkable slope handling.
-- Current task: 57 — add a third-person follow camera with obstruction checks.
+- Last completed tasks: 57–59 — collision-shortened third-person follow camera, named focus-safe move/jump actions, and motion-driven idle/walk/jump animation.
+- Current task: 60 — add a compiled C# behavior lifecycle with one interaction example.
 - Current gate: Release B requires assembling, editing, saving, reopening, and capturing a scene through CharacterStudio's UI.
-- Changed files for the latest batch: added shared-world upright dynamic capsules, a fixed-step-driven player controller with grounded movement/jump/slope logic, disposal of character bodies and their unique shapes, rotated static-box fixtures, acceptance tests, and API/roadmap progress documentation.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (79 passed); RPG save/load check; capsule remains grounded and stops at a wall; jump and landing flags each occur once; low ceiling blocks ascent; 30-degree ramp is climbable while a 60-degree ramp is rejected.
-- Results: the capsule has locked angular inertia and remains separate from camera transforms. Ground support is measured with a ray filtered to the `World` layer; walkable input is projected onto the support plane and too-steep surfaces block uphill movement. Controller-owned dynamic shapes are removed on disposal.
-- Blockers: none for tasks 54–56. Physics character creation remains code-driven and only static `World`-layer surfaces count as ground; mesh colliders, moving-platform support, step climbing, and scene-file components remain future work.
-- Next action: task 57, add a third-person follow camera with obstruction checks.
+- Changed files for the latest batch: added the follow-camera boom test, camera-relative movement direction, named keyboard actions with focus/UI suppression and one-shot press consumption, and an imported-clip animator driven from the post-physics capsule state.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (86 passed); RPG save/load check; camera follows and shortens before a wall while ignoring the player collider; captured/unfocused movement is neutral and a queued jump press consumes once; physics moves from idle to walk, returns to idle at a wall, and enters/exits the jump clip.
+- Results: camera and animation remain engine components rather than being tied to CharacterStudio UI. Input maps read window focus and UI keyboard capture supplied by the host. The animator evaluates a per-instance pose from actual resolved physics velocity and grounded transitions.
+- Blockers: none for tasks 57–59. This is engine/API and physics integration coverage, not yet a rendered packaged gameplay level; scene-file physics, step climbing, coyote-time jumps, and gamepad rebinding remain future work.
+- Next action: task 60, add a compiled C# behavior lifecycle with one interaction example.
 
 Suggested request to an implementing AI:
 
@@ -336,23 +336,23 @@ Suggested request to an implementing AI:
 
 ### How much is built
 
-Updated against the current working tree on 23 September 2026. **56 of the original 143 task rows are checked (39.2% by task count); 87 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+Updated against the current working tree on 23 September 2026. **59 of the original 143 task rows are checked (41.3% by task count); 84 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
 
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–56 establish the first usable CharacterStudio controls and a BEPU-backed physics service with capsule movement, jumping, wall/ceiling collision, slope limits, fixed stepping, and collision-layer queries. Camera controls, input actions, animation/gameplay integration, timeline, and standalone distribution remain. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–59 establish CharacterStudio authoring controls and reusable gameplay services for capsule movement, jumping, camera obstruction, focus-safe actions, and motion-driven animation. Compiled behavior, audio interaction, play-mode cloning, timeline, and standalone distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
-- `dotnet test Ember.sln --no-build --nologo`: PASS, 79 passed, 0 failed, 0 skipped.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 86 passed, 0 failed, 0 skipped.
 - `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
 
-The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. Tasks 51–56 have CPU-side physics integration tests rather than a rendered gameplay demo. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
+The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. Tasks 51–59 have CPU-side physics/input/animation integration tests rather than a rendered gameplay demo. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
 
 ### Recommended changes, in priority order
 
@@ -374,6 +374,6 @@ The latest renderer batch produced 1280×720 runtime captures with two character
 
 ### Suggested next sequence
 
-Release A, editor foundation tasks 39–50, and physics tasks 51–56 are complete; start task 57. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A, editor foundation tasks 39–50, and gameplay foundation tasks 51–59 are complete; start task 60. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.

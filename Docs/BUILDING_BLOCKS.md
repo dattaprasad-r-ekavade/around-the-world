@@ -147,12 +147,49 @@ steps in one render update are not skipped. The camera has its own transform and
 Tune `PhysicsCharacterSettings` for capsule radius/length, speed, jump speed, ground probe, and the
 maximum slope angle.
 
+`ThirdPersonFollowCamera` tracks a world position plus `TargetOffset`. Its boom ray uses
+`World | Dynamic` by default, so it ignores the `Player` layer and moves in front of a blocking wall.
+`MoveDirection` turns a normalized local right/forward input vector into a horizontal world vector.
+
+```csharp
+var camera = new ThirdPersonFollowCamera();
+camera.SetProjection(aspectRatio);
+camera.Follow(physics, player.Pose.Position);
+player.SetMoveInput(camera.MoveDirection(actions.ReadMovement()));
+var view = camera.View;
+```
+
+`InputActionMap` supplies named `MoveForward`, `MoveBackward`, `MoveLeft`, `MoveRight`, and `Jump`
+actions, with WASD/arrow/space defaults. Sample it once per render frame with both window-focus
+and UI-keyboard-capture state. Captured or unfocused input is neutral, and keys held through either
+state stay suppressed until release. Apply the movement result every render frame, including its
+zero value while input is blocked. Use `ConsumePressed(Jump)` before fixed-step advance: the press
+remains pending until consumed and can be consumed only once, even if the render frame produces
+several physics substeps.
+
+```csharp
+var inputFrame = actions.Sample(keyboard, windowFocused, uiCapturesKeyboard);
+player.SetMoveInput(camera.MoveDirection(inputFrame.ReadMovement()));
+if (actions.ConsumePressed(GameplayActionNames.Jump)) player.RequestJump();
+fixedStepper.Advance(elapsedSeconds, delta =>
+{
+    physics.Step(delta);
+    animator.AdvanceFixedStep(delta);
+});
+```
+
+`GltfCharacterMotionAnimator` takes idle, walk, and jump clips from one imported character asset.
+Call `AdvanceFixedStep` after `PhysicsWorld.Step`; it chooses the state from grounded status, jump
+transitions, and actual horizontal capsule velocity, then evaluates the selected clip into its own
+`GltfSkinPose`. A character running into a wall therefore returns to idle when the solver removes
+its horizontal velocity.
+
 The engine pins `BepuPhysics` 2.5.0-beta.29 (with matching transitive `BepuUtilities`), a v2
 prerelease under Apache-2.0. This is a deliberate dependency choice for the current adapter; the
 stable 2.4.0 release is older and can be substituted if prerelease use is rejected for a release.
 Physics colliders are still authored through code: imported mesh colliders, moving-platform
-support, step climbing, crouching, jump buffering, and scene-file physics components remain future
-work.
+support, step climbing, coyote-time jumps, gamepad/rebinding support, and scene-file physics
+components remain future work.
 
 ## Rendering
 

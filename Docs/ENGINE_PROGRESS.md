@@ -401,3 +401,19 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 79 tests, 0 failed, 0 skipped |
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | Rendered CharacterStudio/gameplay demo | NOT RUN — character physics is currently an engine API, not yet wired to sample input or scene persistence |
+
+## Tasks 57–59 — connect camera, actions, and animation to character motion
+
+- Task 57: added `ThirdPersonFollowCamera` with orbit/zoom, projection, target offset, and a boom ray against `World | Dynamic` layers. The camera shortens to just before the nearest obstruction and ignores the player's `Player` layer. `MoveDirection` converts local right/forward input into a horizontal world vector.
+- Task 58: added named move/jump actions with WASD, arrows, and space defaults. Samples provide window focus and UI keyboard-capture state; while blocked, actions are neutral and held keys remain suppressed until release. `ConsumePressed` retains an edge until a physics step consumes it once, preventing catch-up substeps from replaying the same press.
+- Task 59: added `GltfCharacterMotionAnimator` to choose idle, walk, or jump clips using the controller's post-step grounded state, jump flag, and actual horizontal velocity. It updates its per-instance skin pose after each fixed step; wall collision therefore returns the selected state from walk to idle.
+- Integration tests use the physics capsule and Fox GLB animation data, plus a generated jump fixture. They cover wall obstruction/following, player-layer exclusion, UI/focus suppression, press consumption across render frames, diagonal input normalization, wall-stop idle, and jump-state exit.
+
+### Tasks 57–59 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 86 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| Rendered gameplay sample | NOT RUN — components are integrated in CPU simulation tests but not yet wired into a packaged level or CharacterStudio mode |
