@@ -611,6 +611,34 @@ pop is the loudest thing in the effect.
 A looping ambient bed. `TryStart(out ambient, out fault)` — false with a message on a machine
 with no audio device, which must not be fatal.
 
+### Imported scene audio and compiled behaviours
+
+`ImportedAudioClip.Load(path)` loads one MonoGame-supported audio file and creates one playback
+voice. Register the clip with a `SceneBehaviourRuntime` using `Own`; its volume is between 0 and 1,
+and setting it to zero mutes playback. Runtime disposal stops and releases the voice.
+`IAudioClipVoice` is the narrow backend seam used by CPU tests; game code normally uses `Load`.
+
+Subclass `SceneBehaviour` in a game or engine assembly and register the instance against a scene
+object before starting its runtime. The context exposes the runtime graph, owner, and scene resource
+scope. Owner-scoped interactions are ignored when the object is disabled or missing.
+
+```csharp
+using var play = new ScenePlaySession(authoredScene, (runtimeScene, behaviours) =>
+{
+    var bell = behaviours.Own(ImportedAudioClip.Load("Assets/interaction.wav"));
+    behaviours.Add(switchObjectId, new PlayAudioOnInteractionBehaviour(bell));
+});
+play.Behaviours.Interact(switchObjectId, "Interact");
+```
+
+`ScenePlaySession` deep-copies mutable scene state while retaining stable object and attachment
+IDs. It starts registered behavior instances once, then stops them and disposes their owned resources
+when the session ends. Runtime edits affect only `RuntimeScene`; disposing the session discards those
+edits. CharacterStudio demonstrates this with **P / Play on clone**, **E / Interact**, a volume
+slider, and **P / Stop and restore**. Its behavior hookup is sample code for now: behavior types and
+collider assignments are not yet serialized into scene JSON, and this editor preview does not yet
+wire the physics character controller into play mode.
+
 ---
 
 ## The sample

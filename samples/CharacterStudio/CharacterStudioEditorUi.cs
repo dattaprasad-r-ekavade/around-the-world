@@ -10,6 +10,7 @@ using System.IO;
 using System.Linq;
 using NumericsVector2 = System.Numerics.Vector2;
 using NumericsVector3 = System.Numerics.Vector3;
+using NumericsVector4 = System.Numerics.Vector4;
 
 namespace CharacterStudio;
 
@@ -22,7 +23,7 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly IntPtr _context;
     private readonly ImGuiIOPtr _io;
     private readonly ImGuiMonoGameRenderer _renderer;
-    private readonly SceneCommandHistory _history;
+    private SceneCommandHistory _history;
     private readonly Action _beforeStructureChange;
     private readonly Action _afterStructureChange;
     private readonly Func<Guid, CharacterEditorInfo?> _getCharacterInfo;
@@ -30,6 +31,12 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Action<Guid, float> _seekCharacter;
     private readonly Action<Guid, bool> _setCharacterPlaying;
     private readonly SceneLighting _lighting;
+    private readonly Func<bool> _isPlaying;
+    private readonly Action _startPlay;
+    private readonly Action _stopPlay;
+    private readonly Action _interact;
+    private readonly Func<float> _getInteractionVolume;
+    private readonly Action<float> _setInteractionVolume;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -65,7 +72,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight,
         SceneCommandHistory history, Action beforeStructureChange, Action afterStructureChange,
         Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
-        Action<Guid, float> seekCharacter, Action<Guid, bool> setCharacterPlaying, SceneLighting lighting)
+        Action<Guid, float> seekCharacter, Action<Guid, bool> setCharacterPlaying, SceneLighting lighting,
+        Func<bool> isPlaying, Action startPlay, Action stopPlay, Action interact,
+        Func<float> getInteractionVolume, Action<float> setInteractionVolume)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -77,6 +86,12 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _seekCharacter = seekCharacter ?? throw new ArgumentNullException(nameof(seekCharacter));
         _setCharacterPlaying = setCharacterPlaying ?? throw new ArgumentNullException(nameof(setCharacterPlaying));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
+        _isPlaying = isPlaying ?? throw new ArgumentNullException(nameof(isPlaying));
+        _startPlay = startPlay ?? throw new ArgumentNullException(nameof(startPlay));
+        _stopPlay = stopPlay ?? throw new ArgumentNullException(nameof(stopPlay));
+        _interact = interact ?? throw new ArgumentNullException(nameof(interact));
+        _getInteractionVolume = getInteractionVolume ?? throw new ArgumentNullException(nameof(getInteractionVolume));
+        _setInteractionVolume = setInteractionVolume ?? throw new ArgumentNullException(nameof(setInteractionVolume));
         _context = ImGui.CreateContext();
         try
         {
@@ -97,6 +112,11 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     public bool WantsMouse => _wantsMouse;
     public bool WantsKeyboard => _wantsKeyboard;
     public Guid? SelectedObjectId => _selectedObjectId;
+
+    public void SetHistory(SceneCommandHistory history) =>
+        _history = history ?? throw new ArgumentNullException(nameof(history));
+
+    public void CompletePendingEdit(SceneGraph scene) => CommitActiveTransformEdit(scene);
 
     public void AddTextInput(char character)
     {
@@ -191,6 +211,29 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         }
 
         ImGui.Text("Scene tools");
+        if (_isPlaying())
+        {
+            ImGui.TextColored(new NumericsVector4(1f, 0.72f, 0.2f, 1f), "PLAYING ON CLONE");
+            ImGui.SameLine();
+            if (ImGui.Button("Stop and restore"))
+            {
+                _stopPlay();
+                ImGui.End();
+                return;
+            }
+            ImGui.SameLine();
+            if (ImGui.Button("Interact")) _interact();
+            var volume = _getInteractionVolume();
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.SliderFloat("Interaction volume", ref volume, 0f, 1f, "%.2f"))
+                _setInteractionVolume(volume);
+        }
+        else if (ImGui.Button("Play on clone"))
+        {
+            _startPlay();
+            ImGui.End();
+            return;
+        }
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("##textEntry", "Click here and type", ref _textEntry, 128);
         ImGui.TextDisabled("Orbit pauses while a tool window is active.");

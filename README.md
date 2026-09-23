@@ -28,14 +28,17 @@ independent clip state, a saved hand attachment, versioned scene open/save, and 
 capture. Its editor panel lists scene objects, edits local transforms with undo/redo, creates,
 duplicates and deletes objects, places new instances of GLBs already referenced by the scene,
 controls the selected character's clip, adjusts shared ambient/directional lighting, and renders
-static/skinned directional shadows with draw-count and static-culling diagnostics. A general
-project asset browser and broader gameplay tools remain on the roadmap. The supported GLB subset is documented in
+static/skinned directional shadows with draw-count and static-culling diagnostics. **P / Play on
+clone** runs the current scene copy; **E / Interact** plays a sample imported chime, and **P / Stop
+and restore** discards play-mode edits. Behavior assignments and character physics are not yet
+saved/wired into this editor. A general project asset browser and broader gameplay tools remain on
+the roadmap. The supported GLB subset is documented in
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a
 callback, fixed-step 3D physics with a controllable capsule, a third-person obstruction camera,
 jump/slope handling, named keyboard actions, motion-driven character clips, interpolation, and
-layer-filtered raycasts; box and model rendering with two lighting paths; procedurally generated wall, floor,
+layer-filtered raycasts; compiled scene behaviours and scene-owned imported audio; box and model rendering with two lighting paths; procedurally generated wall, floor,
 timber and cloth textures, procedurally generated character and item sprites, procedurally
 synthesised sound effects and an ambient bed, a 2D canvas with fonts and layout, input sampling
 with press-detection, list and grid pickers, a console command router, and screenshot capture
@@ -80,6 +83,18 @@ Campaign is a game, not part of the engine — run it the same way:
 ```powershell
 dotnet samples\Campaign\bin\Debug\net9.0-windows\win-x64\Campaign.dll --windowed
 ```
+
+### Running CharacterStudio
+
+Open the saved mixed environment/character scene in the editor sample:
+
+```powershell
+dotnet samples\CharacterStudio\bin\Debug\net9.0-windows\win-x64\CharacterStudio.dll --open samples\CharacterStudio\Scenes\ReleaseAShowcase.json
+```
+
+Press **P** to run an isolated scene copy, **E** to play the sample interaction sound, and **P**
+again to stop and restore the authored scene. The editor panel also offers these actions and the
+interaction volume slider.
 
 ---
 

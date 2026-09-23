@@ -417,3 +417,22 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 86 tests, 0 failed, 0 skipped |
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | Rendered gameplay sample | NOT RUN — components are integrated in CPU simulation tests but not yet wired into a packaged level or CharacterStudio mode |
+
+## Tasks 60–62 — add compiled behaviours, imported audio, and play-on-clone
+
+- Task 60: added `SceneBehaviour` and `SceneBehaviourRuntime`. Game assemblies register compiled behaviour instances against stable scene-object IDs before starting; each receives the scene, owner, and resource scope, can receive owner-scoped interactions, and stops once when its scene unloads. Recreating a play session starts a fresh set of behavior instances.
+- Task 61: added `ImportedAudioClip`, which loads a MonoGame-supported file through `SoundEffect.FromStream`, owns one playback voice, exposes 0–1 volume control, and stops/releases the voice on disposal. `PlayAudioOnInteractionBehaviour` is the compiled example. CharacterStudio includes a generated 0.32-second WAV chime and a play-mode volume slider; volume zero mutes it.
+- Task 62: added `SceneGraphCloner` and `ScenePlaySession`. The clone preserves stable IDs and parent links while copying transforms, character settings, and attachment records. CharacterStudio's **P / Play on clone** swaps the preview to the clone, and **P / Stop and restore** returns to authored state. Transform edits and object creation/deletion in play mode apply to the clone; save and reimport are unavailable until play mode stops.
+- CPU tests cover behavior start/stop idempotence, owner-enabled interaction routing, fresh behavior instances after a session reload, muted interaction audio with stop/dispose on unload, and moving/deleting cloned objects without changing the authored graph.
+
+### Tasks 60–62 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 90 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio Release A scene capture | PASS — reopened the saved showcase and rendered a 1280×720 PNG; the bundled WAV is copied beside the sample assets |
+| Play-mode UI and real audio-device playback | NOT RUN — desktop input/audio-device automation was unavailable; CPU tests use an injected fake voice and verify runtime ownership/lifecycle |
+
+Release C is still open: there is no packaged scene that combines player movement, collision, jumping, motion-driven animation, and audible interaction. CharacterStudio's play clone currently demonstrates scene editing isolation and the interaction/audio lifecycle; scene-authored behavior/collider assignments and physics wiring remain follow-up work.

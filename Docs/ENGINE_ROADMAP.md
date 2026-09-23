@@ -138,9 +138,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 57 | Add a third-person follow camera with obstruction checks. | Camera follows the capsule and does not pass through a wall behind it. |
 | [x] | 58 | Add named move/jump input actions and focus handling. | UI typing does not move the player; one press is not repeated across physics substeps. |
 | [x] | 59 | Drive idle/walk/jump animation from actual character motion. | Running into a wall stops walk animation; jumping selects and exits the jump state. |
-| [ ] | 60 | Add a compiled C# behavior lifecycle with one interaction example. | A behavior starts/stops once and responds to one interaction without leaking across scene reload. |
-| [ ] | 61 | Add one imported audio clip with scene ownership and volume control. | Interaction plays the clip; muted volume works; unloading stops/releases it. |
-| [ ] | 62 | Add editor play-on-clone and stop-to-restore behavior. | Moving/deleting objects during play does not change the authored scene after stopping. |
+| [x] | 60 | Add a compiled C# behavior lifecycle with one interaction example. | A behavior starts/stops once and responds to one interaction without leaking across scene reload. |
+| [x] | 61 | Add one imported audio clip with scene ownership and volume control. | Interaction plays the clip; muted volume works; unloading stops/releases it. |
+| [x] | 62 | Add editor play-on-clone and stop-to-restore behavior. | Moving/deleting objects during play does not change the authored scene after stopping. |
 
 **Release C: game prototype.** A packaged test level supports movement, collision, jumping, animation, and an audible interaction. Stairs, moving platforms, gamepad rebinding, and root motion remain explicit follow-up tasks.
 
@@ -319,14 +319,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 57–59 — collision-shortened third-person follow camera, named focus-safe move/jump actions, and motion-driven idle/walk/jump animation.
-- Current task: 60 — add a compiled C# behavior lifecycle with one interaction example.
-- Current gate: Release B requires assembling, editing, saving, reopening, and capturing a scene through CharacterStudio's UI.
-- Changed files for the latest batch: added the follow-camera boom test, camera-relative movement direction, named keyboard actions with focus/UI suppression and one-shot press consumption, and an imported-clip animator driven from the post-physics capsule state.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (86 passed); RPG save/load check; camera follows and shortens before a wall while ignoring the player collider; captured/unfocused movement is neutral and a queued jump press consumes once; physics moves from idle to walk, returns to idle at a wall, and enters/exits the jump clip.
-- Results: camera and animation remain engine components rather than being tied to CharacterStudio UI. Input maps read window focus and UI keyboard capture supplied by the host. The animator evaluates a per-instance pose from actual resolved physics velocity and grounded transitions.
-- Blockers: none for tasks 57–59. This is engine/API and physics integration coverage, not yet a rendered packaged gameplay level; scene-file physics, step climbing, coyote-time jumps, and gamepad rebinding remain future work.
-- Next action: task 60, add a compiled C# behavior lifecycle with one interaction example.
+- Last completed tasks: 60–62 — compiled scene-behaviour lifecycle, imported interaction audio, and CharacterStudio play-on-clone/restore.
+- Current task: 63 — add a sequence asset with duration and one character clip track.
+- Current gate: Release C is not yet passed. CharacterStudio proves scene behavior, audio interaction, and clone isolation, but a packaged level still needs movement, collision, jumping, and motion-driven animation together.
+- Changed files for the latest batch: added `SceneBehaviourRuntime`, `ScenePlaySession`, deep scene cloning, `ImportedAudioClip`, an interaction-behaviour example, a generated WAV fixture, CharacterStudio play/stop/interact/volume controls, and CPU lifecycle/audio/clone tests.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (90 passed); RPG save/load check; CharacterStudio reopened the Release A scene and captured 1280×720 successfully; CPU tests confirm start/stop idempotence, interaction routing, mute volume, audio stop/disposal, and authored-scene isolation after moving/deleting clone objects.
+- Results: compiled behavior instances are registered before startup and stopped once when their play session unloads; session-owned audio is stopped and released. CharacterStudio uses **P** or **Play on clone**, **E** or **Interact**, then **P** or **Stop and restore**. Clone edits are discarded at stop.
+- Limitations: automated desktop interaction and real audio-device playback were not run; the CPU audio test uses a fake voice while CharacterStudio loads the bundled WAV through MonoGame. Behaviors are currently registered by compiled code, not assigned or persisted in scene JSON. Physics is not yet wired into CharacterStudio play mode.
+- Next action: task 63, add an absolute-time sequence asset with one character clip track.
 
 Suggested request to an implementing AI:
 
@@ -336,23 +336,23 @@ Suggested request to an implementing AI:
 
 ### How much is built
 
-Updated against the current working tree on 23 September 2026. **59 of the original 143 task rows are checked (41.3% by task count); 84 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+Updated against the current working tree on 23 September 2026. **62 of the original 143 task rows are checked (43.4% by task count); 81 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
 
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–59 establish CharacterStudio authoring controls and reusable gameplay services for capsule movement, jumping, camera obstruction, focus-safe actions, and motion-driven animation. Compiled behavior, audio interaction, play-mode cloning, timeline, and standalone distribution remain. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–62 establish CharacterStudio authoring controls, capsule movement/jumping, camera obstruction, focus-safe actions, motion-driven animation, compiled behaviors, scene-owned audio, and play-on-clone. Absolute-time sequencing, export, project packaging, and distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
-- `dotnet test Ember.sln --no-build --nologo`: PASS, 86 passed, 0 failed, 0 skipped.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 90 passed, 0 failed, 0 skipped.
 - `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
 
-The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. Tasks 51–59 have CPU-side physics/input/animation integration tests rather than a rendered gameplay demo. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
+The latest renderer batch produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. CharacterStudio also reopened that scene after tasks 60–62. Physics/input/animation and behavior/audio/clone lifecycles have CPU coverage, but the new play-mode interaction and real audio playback were not automated. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
 
 ### Recommended changes, in priority order
 
@@ -368,12 +368,12 @@ The latest renderer batch produced 1280×720 runtime captures with two character
 
 **6. Make the first gameplay proof earlier and make deferred prerequisites explicit.** Keep Release A and the editor foundation first, but consider moving Stage 7's cinematic export branch after a minimal RPG interaction proof if the RPG is the main delivery goal. At the end of Stage 6, demonstrate movement, a door or interaction target, a simple inventory change and save/restart in one small level using existing Ember.Rpg primitives. This is a smoke test, not an early replacement for Stages 9–12. Before task 137's settlement, explicitly decide whether authored ramps are sufficient or promote step climbing from the optional list into required tasks. Likewise, record whether third-person alone satisfies the intended RPG slice or whether a first-person mode is required. If reordering is adopted, update stage prerequisites and the first-unchecked-task rule together.
 
-**7. Specify the minimum authoring workflow needed by task 62.** Before play-on-clone, add small rows for assigning a collider and compiled behavior to a scene object, persisting those settings, and validating their references. Tasks 51–61 can otherwise succeed using hard-coded sample setup while leaving no authored scene that task 62 can clone into a playable state. Acceptance: save/reopen a level with a floor collider and one interaction behavior, start play, observe both, stop, and confirm the authored state is restored. Reuse the existing scene model and avoid introducing a broad component framework in advance.
+**7. Add authored runtime-component data before relying on play mode for the RPG.** Tasks 60–62 provide compiled behavior registration, a scene-owned audio example, and an isolated CharacterStudio play clone, but the sample currently wires its behavior in code and does not simulate the roadmap's physics character. Add small tasks for assigning a collider and compiled behavior to a scene object, persisting their settings, and validating references. Acceptance: save/reopen a level with a floor collider and one interaction behavior, start play, observe movement and interaction, stop, and confirm authored state is restored. Reuse the existing scene model and avoid introducing a broad component framework in advance.
 
 **8. Separate task completion from release-gate evidence.** Release A now has dated scenario and capture evidence. Keep the Stage 2 reload/resource gate separate from CPU disposal fixtures. Attachments currently persist a bone name and local offset and render as a preview cube; task 99 should explicitly add an equipment asset reference rather than assume arbitrary prop persistence already exists. Keep README's CharacterStudio capability summary current as more of the supported import subset is added.
 
 ### Suggested next sequence
 
-Release A, editor foundation tasks 39–50, and gameplay foundation tasks 51–59 are complete; start task 60. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A, editor foundation tasks 39–50, and gameplay foundation tasks 51–62 are complete; start task 63. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.

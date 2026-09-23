@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using Ember.Assets;
+using Ember.Audio;
 using Ember;
 using Ember.Input;
 using Ember.Scene;
@@ -43,7 +44,11 @@ public sealed class CharacterStudioGame : EngineHost
     private DirectionalShadowMap? _shadowMap;
     private Effect? _shadowEffect;
     private string? _blockedSaveReason;
-    private string _reimportStatus = "R: reimport scene GLBs | S: save scene";
+    private string _reimportStatus = "P: play on clone | R: reimport GLBs | S: save scene";
+    private ScenePlaySession? _playSession;
+    private SceneCommandHistory _playHistory = new();
+    private ImportedAudioClip? _playAudioClip;
+    private float _interactionVolume = 0.65f;
     private AttachmentBoxRenderer? _attachmentRenderer;
     private MouseState _lastMouse;
     private bool _hasMouse;
@@ -52,6 +57,8 @@ public sealed class CharacterStudioGame : EngineHost
     private int _culledStaticDrawCalls;
     private int _skinnedDrawCalls;
     private double _frameMilliseconds;
+
+    private SceneGraph CurrentScene => _playSession?.RuntimeScene ?? _sceneData;
 
     public CharacterStudioGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: "Ember Character Studio")
@@ -146,7 +153,9 @@ public sealed class CharacterStudioGame : EngineHost
             AttachCanvas();
             _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight,
                 _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange,
-                GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting);
+                GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting,
+                () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
+                () => _interactionVolume, SetInteractionVolume);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -196,13 +205,20 @@ public sealed class CharacterStudioGame : EngineHost
             _input.Sample();
         var mouse = _input.CurrentMouse;
         _editorUi?.Update((float)gameTime.ElapsedGameTime.TotalSeconds,
-            _input.CurrentKeyboard, mouse, LogicalMouse(mouse), _sceneData);
+            _input.CurrentKeyboard, mouse, LogicalMouse(mouse), CurrentScene);
         var uiCapturesMouse = _editorUi?.WantsMouse ?? false;
         var uiCapturesKeyboard = _editorUi?.WantsKeyboard ?? false;
 
         if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
-        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
-        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
+        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.P))
+        {
+            if (_playSession is null) StartPlaySession();
+            else StopPlaySession();
+        }
+        if (!uiCapturesKeyboard && _playSession is not null
+            && _input.Pressed(_input.CurrentKeyboard, Keys.E)) TriggerInteraction();
+        if (!uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
+        if (!uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
         if (!_hasMouse)
         {
             _lastMouse = mouse;
@@ -267,6 +283,8 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void UnloadContent()
     {
         Window.TextInput -= HandleTextInput;
+        _playSession?.Dispose();
+        _playSession = null;
         _editorUi?.Dispose();
         _editorUi = null;
         _preview?.Dispose();
@@ -304,7 +322,7 @@ public sealed class CharacterStudioGame : EngineHost
 
     private CharacterEditorInfo? GetCharacterEditorInfo(Guid objectId)
     {
-        if (_preview?.Current is not { } preview || _sceneData.Find(objectId)?.GltfAsset is not { } reference
+        if (_preview?.Current is not { } preview || CurrentScene.Find(objectId)?.GltfAsset is not { } reference
             || !preview.Assets.TryGetValue(reference.AssetId, out var asset)
             || asset.SkinnedCharacter is not { } character)
             return null;
@@ -336,7 +354,7 @@ public sealed class CharacterStudioGame : EngineHost
         out CharacterInstanceState state)
     {
         if (_preview?.Current is { } preview
-            && _sceneData.Find(objectId)?.GltfAsset is { } reference
+            && CurrentScene.Find(objectId)?.GltfAsset is { } reference
             && preview.Assets.TryGetValue(reference.AssetId, out var asset)
             && asset.SkinnedCharacter is { } loadedCharacter
             && preview.CharacterInstances.TryGetValue(objectId, out var loadedState))
@@ -370,11 +388,12 @@ public sealed class CharacterStudioGame : EngineHost
         });
     }
 
-    private Dictionary<Guid, string> ResolveSceneAssets()
+    private Dictionary<Guid, string> ResolveSceneAssets(SceneGraph? scene = null)
     {
+        scene ??= CurrentScene;
         var result = new Dictionary<Guid, string>();
         var references = new Dictionary<Guid, GltfAssetReference>();
-        foreach (var item in _sceneData.Objects)
+        foreach (var item in scene.Objects)
         {
             if (item.GltfAsset is not { } reference) continue;
             if (references.TryGetValue(reference.AssetId, out var existing)
@@ -393,12 +412,12 @@ public sealed class CharacterStudioGame : EngineHost
     {
         if (_preview is null) return null;
         Bounds3? result = null;
-        foreach (var item in _sceneData.Objects)
+        foreach (var item in CurrentScene.Objects)
         {
             if (!item.Enabled) continue;
             if (item.GltfAsset is not { } reference
                 || !_preview.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
-            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+            var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
             if (asset.SkinnedCharacter is { } character)
             {
                 var localBounds = asset.AnimatedBounds
@@ -433,11 +452,11 @@ public sealed class CharacterStudioGame : EngineHost
         {
             GraphicsDevice.DepthStencilState = DepthStencilState.Default;
             GraphicsDevice.BlendState = BlendState.Opaque;
-            foreach (var item in _sceneData.Objects)
+            foreach (var item in CurrentScene.Objects)
             {
                 if (!item.Enabled || item.GltfAsset is not { } reference
                     || !_preview!.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
-                var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+                var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
                 if (asset.SkinnedCharacter is { } character)
                 {
                     if (!_preview.Current.CharacterInstances.TryGetValue(item.Id, out var state)) continue;
@@ -488,13 +507,13 @@ public sealed class CharacterStudioGame : EngineHost
         SetMatrix(effect, "LightViewProjection", lightViewProjection);
         var cameraFrustum = new BoundingFrustum(_camera.View * _camera.Projection);
 
-        foreach (var item in _sceneData.Objects)
+        foreach (var item in CurrentScene.Objects)
         {
             if (!item.Enabled || item.GltfAsset is not { } reference) continue;
             var preview = _preview!.Current;
             if (!preview.Assets.TryGetValue(reference.AssetId, out var asset))
                 throw new InvalidOperationException($"No loaded GLB asset exists for scene object '{item.Name}'.");
-            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+            var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
             if (asset.SkinnedCharacter is { } character)
             {
                 if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
@@ -588,7 +607,7 @@ public sealed class CharacterStudioGame : EngineHost
         var rows = new List<string>();
         if (_preview?.Current is { } preview)
         {
-            foreach (var item in _sceneData.Objects)
+            foreach (var item in CurrentScene.Objects)
             {
                 if (preview.CharacterInstances.TryGetValue(item.Id, out var state))
                     rows.Add($"{item.Name}: {state.Status}");
@@ -684,7 +703,7 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null) return;
         foreach (var (objectId, state) in _preview.Current.CharacterInstances)
         {
-            var sceneObject = _sceneData.Find(objectId)
+            var sceneObject = CurrentScene.Find(objectId)
                 ?? throw new InvalidOperationException($"Scene object '{objectId}' disappeared while saving character settings.");
             state.StoreSettings(sceneObject.CharacterSettings ??= new GltfCharacterSettings());
         }
@@ -692,10 +711,96 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void BeforeSceneStructureChange() => CaptureCharacterSettings();
 
-    private void AfterSceneStructureChange() => _preview?.Current.RebuildCharacterInstances(_sceneData);
+    private void AfterSceneStructureChange() => _preview?.Current.RebuildCharacterInstances(CurrentScene);
+
+    private void StartPlaySession()
+    {
+        if (_playSession is not null || _preview is null) return;
+        ScenePlaySession? candidate = null;
+        ImportedAudioClip? candidateAudio = null;
+        try
+        {
+            _editorUi?.CompletePendingEdit(_sceneData);
+            CaptureCharacterSettings();
+            candidate = new ScenePlaySession(_sceneData, (runtimeScene, behaviours) =>
+            {
+                if (runtimeScene.Objects.Count == 0)
+                    runtimeScene.Add(new SceneObject(Guid.NewGuid(), "Play Test"));
+                var interactionClip = behaviours.Own(ImportedAudioClip.Load(
+                    Path.Combine(AppContext.BaseDirectory, "Assets", "InteractionChime.wav")));
+                candidateAudio = interactionClip;
+                interactionClip.Volume = _interactionVolume;
+                foreach (var item in runtimeScene.Objects)
+                    behaviours.Add(item.Id, new PlayAudioOnInteractionBehaviour(interactionClip));
+            });
+            var cleanupError = _preview.Reload(() => PreviewResources.Load(
+                GraphicsDevice, ResolveSceneAssets(candidate.RuntimeScene), candidate.RuntimeScene));
+            _playSession = candidate;
+            candidate = null;
+            _playAudioClip = candidateAudio;
+            _playHistory = new SceneCommandHistory();
+            _editorUi?.SetHistory(_playHistory);
+            _reimportStatus = cleanupError is null
+                ? "Play clone started. E or Interact plays the scene sound; P stops and restores."
+                : $"Play clone started; previous preview cleanup failed: {cleanupError.Message}";
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+        }
+        catch (Exception exception)
+        {
+            candidate?.Dispose();
+            _reimportStatus = $"Play mode could not start: {exception.Message}";
+        }
+    }
+
+    private void StopPlaySession()
+    {
+        if (_playSession is not { } session || _preview is null) return;
+        _editorUi?.CompletePendingEdit(session.RuntimeScene);
+        try
+        {
+            var cleanupError = _preview.Reload(() => PreviewResources.Load(
+                GraphicsDevice, ResolveSceneAssets(_sceneData), _sceneData));
+            Exception? sessionCleanupError = null;
+            try { session.Dispose(); }
+            catch (Exception exception) { sessionCleanupError = exception; }
+            _playSession = null;
+            _playAudioClip = null;
+            _editorUi?.SetHistory(_editorHistory);
+            var errors = new[] { cleanupError, sessionCleanupError }.Where(error => error is not null)
+                .Select(error => error!.Message).ToArray();
+            _reimportStatus = errors.Length == 0
+                ? "Play clone stopped; authored scene restored."
+                : $"Authored scene restored with cleanup issue: {string.Join("; ", errors)}";
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Could not restore the authored preview; play mode remains active: {exception.Message}";
+        }
+    }
+
+    private void TriggerInteraction()
+    {
+        if (_playSession is not { } session) return;
+        var ownerId = _editorUi?.SelectedObjectId
+            ?? CurrentScene.Objects.FirstOrDefault()?.Id;
+        if (ownerId is { } id) session.Behaviours.Interact(id, "Interact");
+    }
+
+    private void SetInteractionVolume(float volume)
+    {
+        if (!float.IsFinite(volume) || volume < 0f || volume > 1f) return;
+        _interactionVolume = volume;
+        if (_playAudioClip is { IsDisposed: false } clip) clip.Volume = volume;
+    }
 
     private void SaveScene()
     {
+        if (_playSession is not null)
+        {
+            _reimportStatus = "Stop play mode before saving the authored scene.";
+            return;
+        }
         if (_sceneSavePath is null)
         {
             _reimportStatus = _blockedSaveReason ?? "Pass --save <path> to enable S: save scene";
@@ -731,12 +836,12 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void ReimportAsset()
     {
-        if (_preview is null) return;
+        if (_preview is null || _playSession is not null) return;
         try
         {
             CaptureCharacterSettings();
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
-                GraphicsDevice, ResolveSceneAssets(), _sceneData));
+                GraphicsDevice, ResolveSceneAssets(_sceneData), _sceneData));
             if (cleanupError is null)
             {
                 _reimportStatus = "Scene GLB reimport succeeded. | S: save scene";
