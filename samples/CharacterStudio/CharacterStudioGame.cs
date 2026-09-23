@@ -8,6 +8,7 @@ using Ember.Assets;
 using Ember.Audio;
 using Ember;
 using Ember.Input;
+using Ember.Project;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
@@ -35,12 +36,22 @@ public sealed class CharacterStudioGame : EngineHost
     private static readonly Guid CloseCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0002");
 
     private readonly SceneGraph _sceneData;
+    private readonly EngineProjectFile? _project;
+    private readonly bool _loadAssetsFromProject;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private readonly SceneCommandHistory _editorHistory = new();
     private readonly SceneLighting _sceneLighting = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
     private readonly string? _sceneSavePath;
+    private readonly string? _openSequencePath;
+    private readonly string? _saveSequencePath;
+    private readonly string? _startupSequenceExportDirectory;
+    private readonly float? _startupSequenceExportStartTime;
+    private readonly float? _startupSequenceExportEndTime;
+    private readonly int _startupSequenceExportFrameRate;
+    private readonly int _startupSequenceExportWidth;
+    private readonly int _startupSequenceExportHeight;
     private readonly PlaybackOptions _playbackOptions;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
@@ -85,6 +96,27 @@ public sealed class CharacterStudioGame : EngineHost
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _savePath = ParseOption(args, "--save");
         var openPath = ParseOption(args, "--open");
+        var projectPath = ParseOption(args, "--project");
+        if (projectPath is not null && openPath is not null)
+            throw new ArgumentException("Use either --project <ember.project.json> or --open <scene.json>, not both.");
+        if (projectPath is not null)
+        {
+            _project = EngineProjectFile.Load(projectPath);
+            openPath = _project.ResolveStartupScenePath();
+        }
+        _openSequencePath = ParseOption(args, "--open-sequence");
+        _saveSequencePath = ParseOption(args, "--save-sequence");
+        _startupSequenceExportDirectory = ParseOption(args, "--export-sequence");
+        var hasStartupExportOptions = HasArgument(args, "--export-start")
+            || HasArgument(args, "--export-end") || HasArgument(args, "--export-fps")
+            || HasArgument(args, "--export-width") || HasArgument(args, "--export-height");
+        if (_startupSequenceExportDirectory is null && hasStartupExportOptions)
+            throw new ArgumentException("Sequence export settings require --export-sequence <directory>.");
+        _startupSequenceExportStartTime = ParseFiniteFloatOption(args, "--export-start");
+        _startupSequenceExportEndTime = ParseFiniteFloatOption(args, "--export-end");
+        _startupSequenceExportFrameRate = ParseIntOption(args, "--export-fps", 30);
+        _startupSequenceExportWidth = ParseIntOption(args, "--export-width", 1280);
+        _startupSequenceExportHeight = ParseIntOption(args, "--export-height", 720);
         var requestedAnimation = ParseOption(args, "--clip");
         var requestedAnimationTime = ParseFiniteFloatOption(args, "--time");
         var requestedAnimationSpeed = ParseFiniteFloatOption(args, "--speed") ?? 1f;
@@ -149,6 +181,7 @@ public sealed class CharacterStudioGame : EngineHost
                 _reimportStatus = "Open failed; recovery scene is unsaved unless you use --save to another path.";
             }
         }
+        _loadAssetsFromProject = _project is not null && openedExistingScene;
 
         // Never let S overwrite a malformed or unsupported source with the fallback scene.
         // An explicit --save path remains available for recovery/Save As.
@@ -204,6 +237,46 @@ public sealed class CharacterStudioGame : EngineHost
             else
                 _camera.Reset(Vector3.Zero, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
             BuildSequencePreview();
+
+            if (_openSequencePath is { } sequencePath)
+            {
+                _sequence = SequenceFile.Load(sequencePath, _sceneData,
+                    BuildSequenceClipCatalog(_preview.Current));
+                _sequencePlayer = new SceneSequencePlayer(_sequence);
+                _sequencePreviewEnabled = false;
+                Console.WriteLine($"Opened sequence '{_sequence.Name}' from {Path.GetFullPath(sequencePath)}");
+            }
+
+            if (_saveSequencePath is { } saveSequencePath)
+            {
+                var sequence = _sequence
+                    ?? throw new InvalidOperationException("There is no character sequence to save.");
+                SequenceFile.SaveAtomic(sequence, _sceneData, saveSequencePath);
+                Console.WriteLine($"Saved sequence '{sequence.Name}' to {Path.GetFullPath(saveSequencePath)}");
+            }
+
+            if (_startupSequenceExportDirectory is { } exportDirectory)
+            {
+                if (_sequence is null)
+                {
+                    Console.Error.WriteLine("CharacterStudio export failed: --export-sequence requires a scene with a skinned character.");
+                    Environment.ExitCode = 1;
+                    Exit();
+                }
+                else
+                {
+                    StartSequenceExport(new SequenceExportEditorRequest(exportDirectory,
+                        _startupSequenceExportStartTime ?? 0f,
+                        _startupSequenceExportEndTime ?? _sequence.Duration,
+                        _startupSequenceExportFrameRate, _startupSequenceExportWidth, _startupSequenceExportHeight));
+                    if (_sequenceExportJob?.IsRunning != true)
+                    {
+                        Console.Error.WriteLine($"CharacterStudio export failed: {_lastSequenceExportError}");
+                        Environment.ExitCode = 1;
+                        Exit();
+                    }
+                }
+            }
 
             if (_savePath is not null) SaveScene();
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
@@ -305,7 +378,7 @@ public sealed class CharacterStudioGame : EngineHost
 
         base.Draw(gameTime);
         _editorUi?.Render();
-        EndHostFrame(hold: false, exit: Exit);
+        EndHostFrame(hold: _sequenceExportJob?.IsRunning == true, exit: Exit);
     }
 
     protected override void OnDisplayChanged()
@@ -351,7 +424,8 @@ public sealed class CharacterStudioGame : EngineHost
     private static GltfAssetReference ResolveDefaultAsset(string[] args) =>
         HasArgument(args, "--fox") || HasArgument(args, "--pair")
         || ParseOption(args, "--clip") is not null || ParseOption(args, "--crossfade") is not null
-        || HasArgument(args, "--attach-hand")
+        || HasArgument(args, "--attach-hand") || ParseOption(args, "--export-sequence") is not null
+        || ParseOption(args, "--open-sequence") is not null || ParseOption(args, "--save-sequence") is not null
             ? FoxAsset
             : DefaultAsset;
 
@@ -430,19 +504,39 @@ public sealed class CharacterStudioGame : EngineHost
     {
         scene ??= CurrentScene;
         var result = new Dictionary<Guid, string>();
-        var references = new Dictionary<Guid, GltfAssetReference>();
+        var references = new Dictionary<Guid, (GltfAssetReference Reference, Guid ObjectId)>();
         foreach (var item in scene.Objects)
         {
             if (item.GltfAsset is not { } reference) continue;
             if (references.TryGetValue(reference.AssetId, out var existing)
-                && !string.Equals(existing.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                && !string.Equals(existing.Reference.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to conflicting paths.");
-            references[reference.AssetId] = reference;
+            references[reference.AssetId] = (reference, item.Id);
         }
 
-        if (references.Count == 0) references.Add(DefaultAsset.AssetId, DefaultAsset);
-        foreach (var (assetId, reference) in references)
-            result.Add(assetId, Path.GetFullPath(reference.SourcePath, AppContext.BaseDirectory));
+        if (references.Count == 0 && _project is null)
+            references.Add(DefaultAsset.AssetId, (DefaultAsset, Guid.Empty));
+        foreach (var (assetId, entry) in references)
+        {
+            var (reference, objectId) = entry;
+            var resolvedPath = _loadAssetsFromProject
+                ? _project!.ResolveContentPath(reference.SourcePath)
+                : Path.GetFullPath(reference.SourcePath, AppContext.BaseDirectory);
+            if (!File.Exists(resolvedPath))
+                throw new FileNotFoundException(
+                    $"Scene object {objectId} references missing GLB asset {assetId} at project-relative path '{reference.SourcePath}' resolved to '{resolvedPath}'.",
+                    resolvedPath);
+            result.Add(assetId, resolvedPath);
+        }
+        return result;
+    }
+
+    private static IReadOnlyDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> BuildSequenceClipCatalog(
+        PreviewResources preview)
+    {
+        var result = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
+        foreach (var (assetId, asset) in preview.Assets)
+            result.Add(assetId, asset.SkinnedCharacter?.Animations ?? Array.Empty<GltfAnimationClipData>());
         return result;
     }
 
@@ -679,6 +773,15 @@ public sealed class CharacterStudioGame : EngineHost
             throw new ArgumentException($"Option {name} must be a finite number; received '{raw}'.");
         }
 
+        return value;
+    }
+
+    private static int ParseIntOption(string[] args, string name, int defaultValue)
+    {
+        var raw = ParseOption(args, name);
+        if (raw is null) return defaultValue;
+        if (!int.TryParse(raw, NumberStyles.Integer, CultureInfo.InvariantCulture, out var value))
+            throw new ArgumentException($"Option {name} must be an integer; received '{raw}'.");
         return value;
     }
 
@@ -995,6 +1098,16 @@ public sealed class CharacterStudioGame : EngineHost
         _lastSequenceExportStatus = job.State.ToString();
         _lastSequenceExportDirectory = job.Settings.OutputDirectory;
         _lastSequenceExportError = job.Error;
+        if (job.State == SequenceFrameExportState.Completed)
+            Console.WriteLine($"Sequence export completed: {job.CompletedFrames} frames in {job.Settings.OutputDirectory}");
+        else
+            Console.Error.WriteLine($"Sequence export {job.State.ToString().ToLowerInvariant()}: {job.Error ?? "canceled"}");
+
+        if (_startupSequenceExportDirectory is not null)
+        {
+            if (job.State != SequenceFrameExportState.Completed) Environment.ExitCode = 1;
+            Exit();
+        }
     }
 
     private void SetSequencePlaying(bool playing)

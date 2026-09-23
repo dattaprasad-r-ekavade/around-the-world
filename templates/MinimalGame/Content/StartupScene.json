@@ -1,0 +1,17 @@
+{
+  "Version": 2,
+  "Objects": [
+    {
+      "Id": "8b76d2d1-5f19-4fee-9a3c-1d1792d77a01",
+      "Name": "Welcome Cube",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Position": [0, 0, 0],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [1, 1, 1]
+    }
+  ]
+}

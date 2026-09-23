@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>RpgSlice</RootNamespace>
+    <AssemblyName>RpgSlice</AssemblyName>
+    <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
+    <None Update="Content\World\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

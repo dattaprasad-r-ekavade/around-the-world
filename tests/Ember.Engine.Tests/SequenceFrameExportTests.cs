@@ -24,6 +24,35 @@ public sealed class SequenceFrameExportTests
     }
 
     [Fact]
+    public void FrameCountUsesEndExclusiveBoundariesAndDistinguishesAdjacentFloatTimes()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "ember-frame-boundary-" + Guid.NewGuid().ToString("N"));
+        var oneFrameBoundary = 1f / 30f;
+        var nonzeroStartBoundary = (float)(1d + 1d / 30d);
+
+        Assert.Equal(3, CreateSettings(directory, start: 0f, end: 0.1f, frameRate: 30).FrameCount);
+        Assert.Equal(4, CreateSettings(directory, start: 0f, end: MathF.BitIncrement(0.1f), frameRate: 30).FrameCount);
+        Assert.Equal(3, CreateSettings(directory, start: 0f, end: MathF.BitDecrement(0.1f), frameRate: 30).FrameCount);
+        Assert.Equal(1, CreateSettings(directory, start: 0f, end: MathF.BitDecrement(oneFrameBoundary), frameRate: 30).FrameCount);
+        Assert.Equal(1, CreateSettings(directory, start: 0f, end: oneFrameBoundary, frameRate: 30).FrameCount);
+        Assert.Equal(2, CreateSettings(directory, start: 0f, end: MathF.BitIncrement(oneFrameBoundary), frameRate: 30).FrameCount);
+        Assert.Equal(1, CreateSettings(directory, start: 1f, end: nonzeroStartBoundary, frameRate: 30).FrameCount);
+        Assert.Equal(2, CreateSettings(directory, start: 1f, end: MathF.BitIncrement(nonzeroStartBoundary), frameRate: 30).FrameCount);
+    }
+
+    [Fact]
+    public void NonAlignedEndpointsIncludeOnlyFrameTimesBeforeTheEnd()
+    {
+        var settings = CreateSettings(Path.Combine(Path.GetTempPath(), "ember-frame-range-" + Guid.NewGuid().ToString("N")),
+            start: 0.125f, end: 0.36f, frameRate: 30);
+
+        Assert.Equal(8, settings.FrameCount);
+        Assert.Equal(0.125f, settings.FrameTime(0));
+        Assert.InRange(settings.FrameTime(7), 0.3583f, 0.3584f);
+        Assert.True(settings.FrameTime(7) < settings.EndTime);
+    }
+
+    [Fact]
     public void CompletingFramesWritesHashesSettingsAndCompleteManifest()
     {
         var directory = Path.Combine(Path.GetTempPath(), "ember-sequence-export-" + Guid.NewGuid().ToString("N"));
@@ -80,6 +109,7 @@ public sealed class SequenceFrameExportTests
 
             Assert.Equal(SequenceFrameExportState.Canceled, canceled.State);
             Assert.Equal(1, canceled.CompletedFrames);
+            Assert.True(File.Exists(canceledSettings.FramePath(0)));
             using (var manifest = JsonDocument.Parse(File.ReadAllText(canceled.ManifestPath)))
             {
                 Assert.Equal("canceled", manifest.RootElement.GetProperty("status").GetString());
@@ -92,6 +122,8 @@ public sealed class SequenceFrameExportTests
             failed.ProcessNextFrame(_ => throw new IOException("disk full"));
 
             Assert.Equal(SequenceFrameExportState.Failed, failed.State);
+            Assert.Equal(0, failed.CompletedFrames);
+            Assert.False(File.Exists(failed.Settings.FramePath(0)));
             Assert.Contains("disk full", failed.Error, StringComparison.Ordinal);
             using var failedManifest = JsonDocument.Parse(File.ReadAllText(failed.ManifestPath));
             Assert.Equal("failed", failedManifest.RootElement.GetProperty("status").GetString());

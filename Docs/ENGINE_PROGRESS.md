@@ -454,4 +454,141 @@ Release C is still open: there is no packaged scene that combines player movemen
 | CharacterStudio Release A scene capture | PASS — reopened the saved scene and rendered the sequence panel with the Wide camera cut visible at 1280×720 |
 | Desktop play/pause/scrub interaction | NOT RUN — capture mode verifies the UI renders, while sequence semantics are exercised by CPU tests; desktop input automation was unavailable |
 
-The sequence preview is currently generated in memory from the first skinned scene object and is not persisted to JSON. Release D remains open until frame export, manifest/error handling, and a reproducible exported sequence are implemented.
+At that point the sequence preview was generated in memory from the first skinned scene object and was not persisted to JSON. Release D remained open pending frame export, manifest/error handling, and a reproducible exported sequence.
+
+## Tasks 66–68 — render and export numbered sequence frames
+
+- Task 66: added `SequenceFrameRenderTarget`, which renders to a reusable color/depth target at the requested dimensions, restores the previous render targets and viewport, writes a PNG, and disposes when the export finishes, fails, or is canceled. CharacterStudio UI controls output folder, range, frame rate, width, and height. Startup flags (`--export-sequence`, `--export-start`, `--export-end`, `--export-fps`, `--export-width`, `--export-height`) support reproducible capture and exit nonzero on error.
+- Task 67: exports one frame per draw at `start + frameIndex / fps`, named `frame_000000.png` onward. Export samples absolute sequence time, restores the editor preview/camera after each frame, and is rejected while play-on-clone is active; this capture path therefore has no live physics simulation. Frame counting uses an end-exclusive interval with a documented half-ULP endpoint allowance applied to shortest round-tripping decimal float values.
+- Task 68: `SequenceFrameExportJob` writes an atomic version-1 `manifest.json` at start and after every frame. It records status, progress, range, output dimensions, frame rate/count, sequence name, referenced GLB IDs/paths/SHA-256/byte lengths, and any error. A pre-existing manifest is protected; cancellation preserves completed frames and marks the manifest canceled; a render/write failure marks it failed and records the reason.
+- Regression coverage checks 0.1 seconds at 30 fps, exactly 300 frames for ten seconds at 30 fps from a nonzero start, a nonaligned range, exact and adjacent float times from zero and nonzero starts, frame output times, settings/asset metadata, cancellation, and frame-write failure.
+
+### Tasks 66–68 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and custom effect content, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 100 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio GPU export smoke | PASS — from a 1280×720 window, wrote exactly three 640×360 PNGs at 0, 1/30, and 2/30 seconds; process exited 0 and manifest reports completed 3/3 with one asset version |
+| Export cancellation and render/write error cases | PASS — incomplete outputs retain completed frame count and explicit canceled/failed manifest status |
+
+At this export-only snapshot, the Release D gate remained open pending sequence persistence. The implementation update below records persistence, restart/reopen verification, and the project-template batch.
+
+## Tasks 68a–69b — persist sequences and start external projects
+
+- Task 68a: added version-1 `SequenceFile` JSON with stable character-track IDs, target scene-object IDs, asset IDs and clip names, sequence duration, camera-track IDs/names/keys, and camera cuts. `SaveAtomic` validates scene targets before replacing the file. `Load` resolves clips against imported assets and rejects unsupported versions, missing/mismatched targets/assets/clips, ambiguous clip names, and camera cuts to missing tracks.
+- Task 68b: CharacterStudio accepts `--save-sequence <path>` and `--open-sequence <path>` alongside scene save/open. Open sequence data replaces the generated preview; startup export can then render that reopened sequence.
+- Task 69a: added version-1 `EngineProjectFile` (`ember.project.json`) with a project-relative `startupScene`. Paths are normalized, absolute and `..` paths are rejected, and missing scenes produce an error with the project path and resolved scene path. Resolution is based on the project file's directory rather than the process working directory.
+- Task 69b: added `templates/MinimalGame` and `tools/new-engine-project.ps1`. The generator creates a minimal Windows consumer in an empty destination, writes a `Directory.Build.props` reference to the chosen Ember checkout, and copies only the sample project/scene. The starter app loads the configured scene and renders its enabled scene objects.
+- Tests cover sequence/camera/pose round-trip, invalid references and versions, atomic preservation on invalid save, relative project scene resolution, path traversal/absolute paths, missing scenes, and unsupported project versions.
+
+### Tasks 68a–69b checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — all repository projects and custom effects, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 111 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio save/restart/reopen/re-export | PASS — separate processes exported the same 3 frames at 640×360/30 fps; SHA-256 matched for all frames and manifests report complete 3/3 runs |
+| External template consumer | PASS — generated under `%TEMP%`, built with 0 warnings/errors against the engine project in this checkout without copying its source, loaded `Content/StartupScene.json`, and captured the 1280×720 cube scene |
+
+**Release D passed on 23 September 2026** on the same GPU/configuration: saved scene and sequence reopened after process restart, and all exported frame hashes matched. Cross-GPU pixel identity remains outside the gate.
+
+## Tasks 70a–70c — resolve and package projects
+
+- Task 70a: `EngineProjectFile.ResolveContentPath()` resolves safe project-relative paths from `ember.project.json`. CharacterStudio accepts `--project <ember.project.json>`, opens its startup scene, and resolves scene GLBs from the project root. Missing GLBs report the referencing scene object, asset ID, relative path, and resolved path.
+- Task 70b: `EngineProjectPackage.Create()` builds a new package directory containing the project file, startup scene, referenced GLBs, and local buffer/image files declared by GLB JSON URIs. Missing or escaping local dependencies identify the scene object, asset, and path. Remote external URIs fail clearly. A staging directory is renamed into place only after all files copy successfully; the destination must not exist already.
+- Task 70c: the generated minimal consumer accepts `--package-to <directory>` and performs packaging before constructing `EngineHost`, so no graphics window opens. `UseAppHost` is disabled for `dotnet run` in this template; the standalone distribution profile remains task 71.
+- Tests cover project-root resolution and traversal rejection, package relocation, exact referenced-file copying, unused-file exclusion, GLB buffer/image sidecars, missing scene/asset/dependency diagnostics, and out-of-root sidecar rejection.
+
+### Tasks 70a–70c checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — all repository projects and custom effect content, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 117 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio project-root startup | PASS — from a different working directory, opened the project scene and two GLBs; sequence export completed 3/3 frames |
+| Generated consumer package command | PASS — generated outside the repository, packaged without opening a graphics window, then opened the moved package from a separate working directory |
+| Real project package relocation | PASS — copied the startup scene and both referenced GLBs, moved the package, reopened it in CharacterStudio from another working directory, and exported 3/3 frames |
+
+The real CharacterStudio GLBs embed their image/buffer data; separate local sidecar buffer/image URIs are covered by synthetic GLB package tests. Release E remains open for task 71 Windows x64 distribution and task 72 tutorial.
+
+## Tasks 71a–71b — publish and launch a Windows x64 distribution
+
+- Task 71a: added `tools/publish-engine-project.ps1`. It publishes the generated external consumer as self-contained `win-x64`, creates the dependency package with the published executable, and installs that package under `Project/` beside the app. The output includes the executable, CoreCLR/hostfxr/hostpolicy, Ember.Engine, MonoGame, SharpDX, and the project content. The template defaults to `Project/ember.project.json` when that bundled project exists.
+- Task 71b: copied the distribution to a separate temp folder and launched it from another working directory with `dotnet` removed from `PATH` and `DOTNET_ROOT` unset. Its `--screenshot` capture showed the starter scene and one rendered cube. No `.cs`, `.csproj`, or `.sln` files were present in the copied distribution.
+- The publish flow accepts only a new destination directory and stages output beside it before moving the completed distribution into place.
+
+### Tasks 71a–71b checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet publish` through `tools/publish-engine-project.ps1` | PASS — self-contained `win-x64` output with apphost, .NET runtime, Engine/MonoGame/SharpDX assemblies, and bundled project content |
+| Isolated distribution launch | PASS — copied output, changed to an unrelated working directory, removed `dotnet` from `PATH`, unset `DOTNET_ROOT`, and captured the 1280×720 starter scene from the published `.exe` |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings, 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 117 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+The launch check was performed on the available graphics-capable Windows host with .NET command paths removed. No separate physical clean machine was available. At that task 71 snapshot, Release E still awaited the animated consumer and tutorial (tasks 72a–72c).
+
+## Tasks 72a–72c — animated consumer, relocated publish, and tutorial
+
+- Task 72a: the template consumer loads skinned GLB scene objects and applies saved clip name/time/speed/loop/play state. It renders the Fox through the skinned path, uses named movement/exit actions, converts world movement through a parent transform, and follows the character's world position. The consumer has an opt-in `--smoke-controls` mode that feeds synthetic W/A/S/D/Escape states through the same update path and checks expected world deltas plus the camera target.
+- Task 72b: `EngineProjectPackage` now also preserves an optional root `ThirdPartyNotices.txt`. A generated Fox project was packaged, moved, and opened from an unrelated working directory. The publisher produced a self-contained Win64 app with the Fox and its CC BY 4.0 attribution in `Project/`.
+- Task 72c: added [`Docs/ANIMATED_GAME_TUTORIAL.md`](ANIMATED_GAME_TUTORIAL.md) and linked it from README. It covers project generation, adding and crediting Fox, authoring the scene in CharacterStudio, consumer build/run, control smoke, packaging, relocation, self-contained publishing, and unsupported features.
+
+### Tasks 72a–72c checks
+
+| Check | Result |
+| --- | --- |
+| CharacterStudio scene authoring | PASS — saved Fox `Walk` at time 0.17 to the external project and reopened it by its project manifest |
+| Animated consumer capture and saved time | PASS — 1280×720 Fox capture from another working directory; paused captures at times 0.1 and 0.3 had different SHA-256 hashes |
+| Consumer control smoke | PASS — scripted W/A/S/D deltas matched expected world motion under a rotated/scaled parent; Escape requested exit and the process exited 0 |
+| Relocated project package | PASS — package reopened after moving; Fox rendered and optional `ThirdPartyNotices.txt` remained beside the project manifest |
+| Self-contained relocated distribution | PASS — copied Win64 output ran from an unrelated directory with `dotnet` absent from `PATH`, `DOTNET_ROOT` unset, and no `.cs`, `.csproj`, or `.sln` files; captured the Fox and retained attribution |
+| Published animation progression | PASS — two captures from the copied self-contained app had different SHA-256 hashes |
+| Tutorial walkthrough | PASS — followed the documented CharacterStudio authoring, project build, control smoke, package/move, publish, relocate, and direct `.exe` launch steps in a fresh generated consumer |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 118 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+**Release E passed on 23 September 2026** on the available graphics-capable Windows host. The scripted input smoke verifies the consumer's action, movement, camera-follow, and exit path; direct physical key injection was unavailable because CUA exposed no native apps. A separate physical clean machine was not available. Remote external GLB URIs remain unsupported.
+
+## Tasks 73–75 — world manifest, cell mapping, and RpgSlice — 23 September 2026
+
+- Task 73: added a versioned `WorldManifest` with stable GUID cell IDs, exterior X/Z coordinates, and manifest-relative scene references for exterior and interior cells. Loading and atomic saving validate duplicate IDs, duplicate exterior coordinates, missing scenes, invalid kinds/coordinates, unsupported versions, and unsafe paths.
+- Task 74: added `ExteriorCellGrid.FromWorldPosition`, which maps world X/Z through a configurable positive cell width using floor semantics. Exact positive/negative edges and positions just below zero have fixtures.
+- Task 75: added `samples/RpgSlice`, registered in the solution and README. It loads one exterior cell through `Content/World/world.json`, renders its scene blockout, and uses Ember.Engine's physics character controller, named WASD/jump/exit actions, and follow camera. It has no Campaign or Ember.Rpg project reference.
+
+### Tasks 73–75 checks
+
+| Check | Result |
+| --- | --- |
+| World manifest and coordinate tests | PASS — 9 tests for round-trip, duplicate IDs/coordinates, missing/escaping scene paths, boundaries, negative coordinates, invalid widths, and range overflow |
+| RpgSlice build | PASS — 0 warnings and 0 errors |
+| RpgSlice `--smoke-controls --windowed` | PASS — manifest loaded cell (0, 0); scripted W input moved the physics character 2.50 m |
+| RpgSlice screenshot | PASS — 1280×720 render saved to `C:\Users\ekava\AppData\Local\Temp\rpgslice-review.png` and visually inspected |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 127 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+At this update, 86 of 154 roadmap rows are complete (55.8%). Task 76 is next. RpgSlice currently renders box-based blockout objects; GLB rendering and cell streaming/lifecycle are not part of this slice.
+
+## Tasks 76–78 — cell lifecycle, async preparation, and loading ring — 24 September 2026
+
+- Task 76: added `CellLifecycle` with the explicit unloaded, preparing, ready, active, unloading, and failed states. Invalid transitions fail, temporary preparation resources transfer to the activation stage, and failed preparation disposes any resources still owned by the lifecycle.
+- Task 77: added `WorldCellLoadOperation<TPrepared,TActive>`. It runs CPU preparation on a worker, records the preparation thread, captures and enforces the resource-owning thread for activation and unload, disposes prepared data after activation, and publishes active resources only after the activation callback completes. Failed activation disposes prepared data and leaves active resources unpublished.
+- Task 78: added `ExteriorCellLoadingRing` with configurable radius and cell width. It returns newly requested coordinates in stable order, deduplicates repeated updates and boundary crossings, and can forget a coordinate after unload so it may be requested again.
+
+### Tasks 76–78 checks
+
+| Check | Result |
+| --- | --- |
+| Lifecycle, async preparation, and ring tests | PASS — 16 focused tests, 0 failed |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 143 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+At this update, 89 of 154 roadmap rows are complete (57.8%). Task 79 is next. Thread-affinity tests use disposable CPU fixtures; graphics and physics activation on a live device remain to be exercised in a concrete loader integration.

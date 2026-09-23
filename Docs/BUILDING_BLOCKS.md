@@ -458,10 +458,59 @@ behaviours or gameplay events.
 Camera tracks use stable IDs and contain position, rotation, and field-of-view keys. A
 `SequenceCameraCutTrack` selects the active camera by ID, not by the track's position in a list.
 `SceneSequence.SampleCamera(time)` reads only camera/cut data without changing character poses.
-CharacterStudio builds an in-memory sample sequence when the open scene has a skinned character and
-shows Play/Pause, a time slider, and a preview toggle in its sequence panel. Sequence JSON
-persistence and frame export arrive in later roadmap tasks; this editor example is currently
-created from the first character in the scene.
+CharacterStudio builds an in-memory sample sequence from the first skinned character in the open
+scene and shows Play/Pause, a time slider, and a preview toggle in its sequence panel. `SequenceFile`
+persists it as a separate versioned JSON file with stable track/object/asset/camera IDs, clip names,
+timing, camera transforms, and cuts. On load, every scene-object, asset, clip, and camera reference
+is validated against the opened scene and imported clip catalog. CharacterStudio accepts
+`--save-sequence <path>` and `--open-sequence <path>` alongside its existing `--save` and `--open`
+scene flags.
+
+`SequenceFrameExportSettings` treats the requested range as end-exclusive: frame `i` is sampled
+at `start + i / fps` while that time is before `end`. `SequenceFrameExportJob` renders one frame
+per draw, writes numbered PNG files, and updates `manifest.json` before work and after each frame.
+The manifest records export dimensions/timing and SHA-256/length for each referenced GLB. A new
+export requires a directory without an existing manifest; cancellation or a render/write failure
+leaves the completed frames and an explicit incomplete status.
+
+`SequenceFrameRenderTarget` reuses a color/depth target at the requested output size, restores the
+previous render target and viewport, and disposes the target when the job completes, fails, or is
+canceled. CharacterStudio exports only its authored scene; starting an export while play-on-clone
+is active is rejected, so the first export path has no live physics simulation.
+
+For automated or command-line capture, CharacterStudio accepts `--export-sequence <empty-folder>`
+with optional `--export-start <seconds>`, `--export-end <seconds>`, `--export-fps <integer>`,
+`--export-width <pixels>`, and `--export-height <pixels>`. Defaults are 0, the generated sequence
+duration, 30 fps, and 1280×720. This mode exports then exits with a nonzero status on failure.
+`--screenshot <path>` can be combined to capture the window after the export finishes. Pass
+`--open <scene.json> --open-sequence <sequence.json>` to export a sequence saved by an earlier run.
+
+## Project startup
+
+`EngineProjectFile` reads/writes version-1 `ember.project.json` with a `startupScene` path relative
+to the project file. It normalizes separators, rejects rooted or parent-traversal paths, and checks
+that the resolved JSON scene exists. `ResolveContentPath()` resolves other project-relative content
+from the same directory and rejects paths that escape the project root. CharacterStudio accepts
+`--project <ember.project.json>` to open the configured startup scene and resolve its referenced
+GLBs from the project root, regardless of the process working directory.
+
+`EngineProjectPackage.Create()` writes a portable project folder containing its project file,
+startup scene, referenced GLBs, and any project-local buffer/image files named by GLB URIs. Missing
+or out-of-root dependencies report the scene object ID, asset ID, and path. Remote external URIs
+are rejected, and the destination must not already exist. If the project root contains an optional
+`ThirdPartyNotices.txt`, the package preserves it beside the project file for bundled asset credits
+and licenses.
+
+`tools/new-engine-project.ps1` generates `templates/MinimalGame` into an empty external directory.
+The generated `Directory.Build.props` points to the selected Ember checkout's
+`src/Ember.Engine/Ember.Engine.csproj`. The small sample loads its configured `SceneFile` and draws
+each enabled object as a cube. This source project reference keeps the engine source in its checkout
+while letting the external game build and run as an independent consumer.
+
+`tools/publish-engine-project.ps1` builds a self-contained `win-x64` distribution, packages the
+project's startup scene and dependencies under `Project/`, and verifies the runtime, engine, and
+graphics assemblies are present. In the published app, that bundled project becomes the default.
+The app can launch from any working directory without `dotnet` or the engine source checkout.
 
 ## Interface
 

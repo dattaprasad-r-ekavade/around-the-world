@@ -1,12 +1,13 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
 
 namespace Ember.Sequence;
 
-/// <summary>Fixed scene-sequence output settings. Frame times are start + index / frame rate.</summary>
+/// <summary>Fixed scene-sequence output settings. Frames cover the end-exclusive interval [start, end).</summary>
 public sealed class SequenceFrameExportSettings
 {
     public const int MaximumFrameRate = 240;
@@ -32,9 +33,15 @@ public sealed class SequenceFrameExportSettings
         if ((long)width * height > MaximumPixelCount)
             throw new ArgumentException($"The render target cannot exceed {MaximumPixelCount:N0} pixels.");
 
-        var frameSpan = ((double)endTime - startTime) * frameRate;
-        var floatPrecisionTolerance = Math.Max(1e-7, Math.Abs(frameSpan) * 1e-7);
-        var count = Math.Ceiling(frameSpan - floatPrecisionTolerance);
+        // Interpret the shortest round-tripping decimal as the authored time. This keeps values
+        // such as 0.1f at their expected decimal boundary while preserving adjacent floats.
+        // The half-ULP allowance handles an endpoint rounded from an exact frame boundary.
+        var decimalStart = RoundTripDecimal(startTime);
+        var decimalEnd = RoundTripDecimal(endTime);
+        var frameSpan = (decimalEnd - decimalStart) * frameRate;
+        var endpointRounding = FloatSpacing(endTime) * 0.5d * frameRate;
+        var count = Math.Ceiling(frameSpan - endpointRounding);
+        count = Math.Max(1d, count);
         if (!double.IsFinite(count) || count < 1 || count > MaximumFrameCount)
             throw new ArgumentOutOfRangeException(nameof(endTime), $"Export must contain between 1 and {MaximumFrameCount:N0} frames.");
 
@@ -67,6 +74,19 @@ public sealed class SequenceFrameExportSettings
         if (frameIndex < 0 || frameIndex >= FrameCount)
             throw new ArgumentOutOfRangeException(nameof(frameIndex));
         return Path.Combine(OutputDirectory, $"frame_{frameIndex:D6}.png");
+    }
+
+    private static double RoundTripDecimal(float value) =>
+        double.Parse(value.ToString("R", CultureInfo.InvariantCulture), NumberStyles.Float,
+            CultureInfo.InvariantCulture);
+
+    private static double FloatSpacing(float value)
+    {
+        var above = MathF.BitIncrement(value);
+        var below = MathF.BitDecrement(value);
+        var aboveSpacing = float.IsFinite(above) ? (double)above - value : 0d;
+        var belowSpacing = float.IsFinite(below) ? (double)value - below : 0d;
+        return Math.Max(aboveSpacing, belowSpacing);
     }
 }
 

@@ -99,6 +99,65 @@ again to stop and restore the authored scene. The editor panel also offers these
 interaction volume slider. The separate sequence panel can play, pause, scrub, and preview the
 character/camera sequence generated for the first skinned character in the scene.
 
+CharacterStudio can also export that generated sequence to numbered PNGs. The folder must not
+already contain an export manifest:
+
+```powershell
+dotnet samples\CharacterStudio\bin\Debug\net9.0-windows\win-x64\CharacterStudio.dll --export-sequence captures\walk --export-start 0 --export-end 0.1 --export-fps 30 --export-width 640 --export-height 360
+```
+
+The defaults are the whole sequence at 30 fps and 1280×720. The folder receives `frame_000000.png`
+and `manifest.json`; incomplete runs are marked canceled or failed in the manifest. Save and reopen
+a sequence with its scene using companion versioned JSON files:
+
+```powershell
+dotnet samples\CharacterStudio\bin\Debug\net9.0-windows\win-x64\CharacterStudio.dll --save captures\walk.scene.json --save-sequence captures\walk.sequence.json --export-sequence captures\walk-before --export-start 0 --export-end 0.1 --export-fps 30 --export-width 640 --export-height 360 --screenshot captures\walk-before.png --warmup 1
+dotnet samples\CharacterStudio\bin\Debug\net9.0-windows\win-x64\CharacterStudio.dll --open captures\walk.scene.json --open-sequence captures\walk.sequence.json --export-sequence captures\walk-after --export-start 0 --export-end 0.1 --export-fps 30 --export-width 640 --export-height 360 --screenshot captures\walk-after.png --warmup 1
+```
+
+Sequence JSON stores stable track, scene-object, asset, and camera IDs, clip names, timing,
+transforms, and cuts. Loading validates every target, asset, clip, and camera reference.
+
+### Starting an external Ember project
+
+Generate a minimal consumer in an empty folder outside this repository. The generated project
+references Ember.Engine from the engine checkout and includes a project file whose startup scene
+is resolved relative to that file:
+
+```powershell
+.\tools\new-engine-project.ps1 -DestinationPath C:\Games\MyEmberGame -EngineRoot D:\Projects\engine
+Set-Location C:\Games\MyEmberGame
+dotnet run -- --windowed
+```
+
+Edit `ember.project.json` to select another project-relative startup scene. The generator copies
+the starter game and scene content only; it does not copy Ember's source tree.
+
+Create a package from the generated consumer without starting a graphics window, then move the
+package folder and launch the consumer against its project file:
+
+```powershell
+dotnet run -- --package-to C:\Games\MyEmberGamePackage
+dotnet run -- --project C:\Games\MyEmberGamePackage\ember.project.json
+```
+
+Packaging copies the startup scene, referenced GLBs, and project-local buffer/image sidecars while
+keeping their project-relative paths.
+
+Publish a self-contained Windows x64 distribution with the .NET runtime and native dependencies,
+then launch it directly from the output folder:
+
+```powershell
+.\tools\publish-engine-project.ps1 -ProjectDirectory C:\Games\MyEmberGame -DestinationPath C:\Build\MyEmberGame-win-x64
+C:\Build\MyEmberGame-win-x64\MinimalEmberGame.exe
+```
+
+The publisher bundles the packaged project under `Project/`; the executable finds it without a
+command-line project path.
+
+For a complete authored Fox scene, package, and playable Windows build, follow
+[`Docs/ANIMATED_GAME_TUTORIAL.md`](Docs/ANIMATED_GAME_TUTORIAL.md).
+
 ---
 
 ## The repository
@@ -116,6 +175,8 @@ src/Ember.Scripting/    ConsoleRouter. No MonoGame reference, on purpose.
 src/Ember.Rpg/          Entity records, flags, items, dialogue, and quests. Games reference it; Ember.Engine never does. Check: tests/Ember.Rpg.Check.
 
 samples/FirstLight/     The contract sample: the smallest game that can be built on the above.
+
+samples/RpgSlice/      A manifest-loaded exterior cell with physics movement; depends on Ember.Engine, not Campaign.
 
 samples/Campaign/       A game built on the engine. A consumer of src/, never part of it.
 

@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net9.0-windows</TargetFramework>
+    <RuntimeIdentifier>win-x64</RuntimeIdentifier>
+    <SelfContained>false</SelfContained>
+    <UseAppHost>false</UseAppHost>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>disable</ImplicitUsings>
+    <RootNamespace>MinimalEmberGame</RootNamespace>
+    <AssemblyName>MinimalEmberGame</AssemblyName>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="$(EmberEngineProject)" />
+    <None Update="ember.project.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Content\**\*.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

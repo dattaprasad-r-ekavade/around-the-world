@@ -12,8 +12,9 @@ namespace Ember.Sequence;
 public sealed class CharacterClipTrack
 {
     public CharacterClipTrack(Guid targetObjectId, GltfAnimationClipData clip,
-        float startTime = 0f, float playbackSpeed = 1f, bool loop = false)
+        float startTime = 0f, float playbackSpeed = 1f, bool loop = false, Guid? id = null)
     {
+        if (id == Guid.Empty) throw new ArgumentException("Character track ID cannot be empty.", nameof(id));
         if (targetObjectId == Guid.Empty) throw new ArgumentException("Target scene-object ID cannot be empty.", nameof(targetObjectId));
         Clip = clip ?? throw new ArgumentNullException(nameof(clip));
         if (!float.IsFinite(startTime) || startTime < 0f)
@@ -21,12 +22,14 @@ public sealed class CharacterClipTrack
         if (!float.IsFinite(playbackSpeed) || playbackSpeed <= 0f)
             throw new ArgumentOutOfRangeException(nameof(playbackSpeed), "Track speed must be finite and positive.");
 
+        Id = id ?? Guid.NewGuid();
         TargetObjectId = targetObjectId;
         StartTime = startTime;
         PlaybackSpeed = playbackSpeed;
         Loop = loop;
     }
 
+    public Guid Id { get; }
     public Guid TargetObjectId { get; }
     public GltfAnimationClipData Clip { get; }
     public float StartTime { get; }
@@ -181,6 +184,8 @@ public sealed class SceneSequence
         if (characters.Any(track => track is null)) throw new ArgumentException("Character tracks cannot contain null entries.", nameof(characterTracks));
         if (characters.Any(track => track.StartTime > duration))
             throw new ArgumentException("A character track cannot start after the sequence ends.", nameof(characterTracks));
+        if (characters.Select(track => track.Id).Distinct().Count() != characters.Length)
+            throw new ArgumentException("Character track IDs must be unique.", nameof(characterTracks));
         if (characters.Select(track => track.TargetObjectId).Distinct().Count() != characters.Length)
             throw new ArgumentException("A sequence can contain at most one character clip track per scene object.", nameof(characterTracks));
 

@@ -35,6 +35,31 @@ public sealed class InputActionMapTests
     }
 
     [Fact]
+    public void MinimalConsumerWASDMovementAndEscapeUseNamedActions()
+    {
+        const string exitAction = "Exit";
+        var actions = new InputActionMap();
+        actions.Bind(exitAction, Keys.Escape);
+
+        Assert.Equal(new Microsoft.Xna.Framework.Vector2(0f, 1f),
+            actions.Sample(new KeyboardState(Keys.W), true, false).ReadMovement());
+        actions.Sample(new KeyboardState(), true, false);
+        Assert.Equal(new Microsoft.Xna.Framework.Vector2(0f, -1f),
+            actions.Sample(new KeyboardState(Keys.S), true, false).ReadMovement());
+        actions.Sample(new KeyboardState(), true, false);
+        Assert.Equal(new Microsoft.Xna.Framework.Vector2(-1f, 0f),
+            actions.Sample(new KeyboardState(Keys.A), true, false).ReadMovement());
+        actions.Sample(new KeyboardState(), true, false);
+        Assert.Equal(new Microsoft.Xna.Framework.Vector2(1f, 0f),
+            actions.Sample(new KeyboardState(Keys.D), true, false).ReadMovement());
+
+        var escapePressed = actions.Sample(new KeyboardState(Keys.Escape), true, false);
+        Assert.True(escapePressed[exitAction].IsDown);
+        Assert.True(escapePressed[exitAction].WasPressed);
+        Assert.False(actions.Sample(new KeyboardState(Keys.Escape), true, false)[exitAction].WasPressed);
+    }
+
+    [Fact]
     public void KeysHeldAcrossFocusLossStaySuppressedUntilReleased()
     {
         var actions = new InputActionMap();

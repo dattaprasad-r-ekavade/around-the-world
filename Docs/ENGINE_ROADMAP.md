@@ -151,20 +151,28 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 63 | Add a sequence asset with duration and one character clip track. | Evaluating any absolute time produces the same pose regardless of seek history. |
 | [x] | 64 | Add camera transform keys and camera-cut tracks. | Known times select the expected camera and pose; scene objects retain stable references. |
 | [x] | 65 | Add sequence play/pause/scrub UI. | Forward/backward scrubbing updates the scene without firing gameplay events. |
-| [ ] | 66 | Add export to a dedicated render target at a requested resolution. | Export dimensions do not depend on window size; resources are released after capture. |
-| [ ] | 67 | Export numbered PNG frames at `start + frameIndex / fps`; disable live physics during this first capture mode. | Ten seconds at 30 fps exports exactly 300 frames; selected frames match preview sample times. |
-| [ ] | 68 | Add export manifest, progress, cancel, and write-error handling. | Cancellation/errors leave clearly marked incomplete output; successful manifest records asset versions/settings. |
+| [x] | 66 | Add export to a dedicated render target at a requested resolution. | Export dimensions do not depend on window size; resources are released after capture. |
+| [x] | 67 | Export numbered PNG frames at `start + frameIndex / fps`; disable live physics during this first capture mode. | Ten seconds at 30 fps exports exactly 300 frames; selected frames match preview sample times. |
+| [x] | 68 | Add export manifest, progress, cancel, and write-error handling. | Cancellation/errors leave clearly marked incomplete output; successful manifest records asset versions/settings. |
+| [x] | 68a | Add versioned sequence JSON for duration, character tracks, camera keys/cuts, and stable IDs/references. | CPU round-trip preserves every serialized value; unsupported versions and missing target/asset/clip/camera references fail clearly. |
+| [x] | 68b | Integrate sequence save/open into CharacterStudio and export a reopened timeline. | Save, restart, reopen the same scene and sequence, then reproduce sampled pose/camera state and frame timing/settings. |
 
-**Release D: scene rendering.** A saved sequence can produce the same animated shot again on the same configuration. Cross-GPU pixel identity and arbitrary physics seeking are not promised.
+**Release D: scene rendering — PASS (23 September 2026).** CharacterStudio saved and reopened the same scene and sequence, then exported the same three PNG frames with matching SHA-256 hashes on the same configuration. Cross-GPU pixel identity and arbitrary physics seeking are not promised.
 
 ## Stage 8 — Make it reusable
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 69 | Add a minimal outside-consumer project template and startup-scene setting. | A project outside this repository builds against Ember without copying engine source. |
-| [ ] | 70 | Package scene/asset dependencies with missing-reference validation. | Required content is present; a broken reference fails the package step with its path/ID. |
-| [ ] | 71 | Produce a Windows x64 distribution including runtime/native dependencies. | It runs without the SDK/source tree on a clean graphics-capable Windows machine. |
-| [ ] | 72 | Write one tutorial using only features proven above and list unsupported features. | Following it creates an animated scene and a playable build without editing engine source. |
+| [x] | 69a | Add a versioned project file with a safe project-relative startup-scene setting. | Relative startup scenes resolve from the project file location, independent of process working directory; missing or escaping paths fail clearly. |
+| [x] | 69b | Add a minimal outside-consumer project template and generator. | Generate a project outside this repository, build it against Ember by reference without copying engine source, and load its configured startup scene. |
+| [x] | 70a | Resolve project content paths from the project file and let CharacterStudio open a project startup scene. | After changing the working directory, the startup scene and each referenced GLB resolve inside the project root; missing/escaping paths identify the scene object, asset ID, and path. |
+| [x] | 70b | Build a project package from its startup scene and referenced GLBs. | The package contains the project file, startup scene, referenced GLBs, and local buffer/image files named by GLB URIs; missing or escaping references fail with object ID, asset ID, and path. |
+| [x] | 70c | Expose project packaging through the generated minimal consumer. | The generated consumer can create a package without opening a graphics window, and the package opens after being moved to another directory. |
+| [x] | 71a | Add a self-contained Windows x64 publish flow for the generated consumer. | Publish output contains the app, .NET runtime, engine assemblies, native dependencies, and project content. |
+| [x] | 71b | Run the published distribution from outside the checkout without SDK/runtime lookup. | From a copied output folder and unrelated working directory, the app starts with `dotnet` absent from `PATH` and displays the starter scene. |
+| [x] | 72a | Extend the minimal consumer to render skinned scene objects and play their saved clip settings, with simple character movement. | A saved CharacterStudio Fox scene animates in the consumer; WASD moves it and Escape exits. |
+| [x] | 72b | Verify the animated project survives packaging, relocation, and self-contained publishing. | The published app opens the relocated project without SDK/source access and captures the animated character. |
+| [x] | 72c | Write a tutorial using only the accepted workflow and list unsupported features. | Following it creates an animated scene and playable Windows build without editing engine source. |
 
 **Release E: small reusable engine.** Preserve the sample projects as regression tests. Reassess architecture only after another real project encounters a concrete limitation.
 
@@ -174,12 +182,12 @@ Start after task 72. Put reusable cell/loading code in `Ember.Engine/World`; kee
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 73 | Define stable cell IDs and a world manifest listing exterior coordinates and interior scene references. | Duplicate IDs/coordinates and missing scene references fail validation. |
-| [ ] | 74 | Add world-position-to-exterior-cell conversion using configurable cell width. | Boundary and negative-coordinate fixtures return the expected cells. |
-| [ ] | 75 | Create RpgSlice with one exterior cell loaded through the manifest. | It renders and supports existing player movement without Campaign dependencies. |
-| [ ] | 76 | Add an explicit cell lifecycle: unloaded, preparing, ready, active, unloading, failed. | Invalid transitions are rejected and failed loading releases temporary resources. |
-| [ ] | 77 | Prepare one cell's CPU data asynchronously; activate graphics/physics resources on their owning thread. | Loading records thread ownership correctly and never exposes a partially active cell. |
-| [ ] | 78 | Add a configurable nearby-cell loading ring around the player. | Crossing a boundary requests the correct neighbors exactly once. |
+| [x] | 73 | Define stable cell IDs and a world manifest listing exterior coordinates and interior scene references. | Duplicate IDs/coordinates and missing scene references fail validation. |
+| [x] | 74 | Add world-position-to-exterior-cell conversion using configurable cell width. | Boundary and negative-coordinate fixtures return the expected cells. |
+| [x] | 75 | Create RpgSlice with one exterior cell loaded through the manifest. | It renders and supports existing player movement without Campaign dependencies. |
+| [x] | 76 | Add an explicit cell lifecycle: unloaded, preparing, ready, active, unloading, failed. | Invalid transitions are rejected and failed loading releases temporary resources. |
+| [x] | 77 | Prepare one cell's CPU data asynchronously; activate graphics/physics resources on their owning thread. | Loading records thread ownership correctly and never exposes a partially active cell. |
+| [x] | 78 | Add a configurable nearby-cell loading ring around the player. | Crossing a boundary requests the correct neighbors exactly once. |
 | [ ] | 79 | Add a bounded per-frame activation/upload queue. | A multi-cell load respects configured work limits and exposes queue/timing diagnostics. |
 | [ ] | 80 | Unload cells outside a wider retention ring using asset reference counts. | Shared assets stay alive while another cell needs them; repeated crossings do not accumulate resources. |
 | [ ] | 81 | Cancel obsolete load requests and reject stale completion results. | Rapid travel cannot activate old destination cells or leak their prepared resources. |
@@ -319,14 +327,15 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 63–65 — deterministic character/camera sequences, stable-ID camera cuts, and CharacterStudio sequence playback/scrubbing.
-- Current task: 66 — render a sequence into a dedicated render target at a requested resolution.
-- Current gate: Release D is not yet passed. Sequence data and editor preview work; dedicated-resolution frame export and the export manifest/cancellation path remain.
-- Changed files for the latest batch: added absolute-time sequence/character/camera tracks, camera cuts and playback clock, direct world-transform camera control, a CharacterStudio timeline panel, and CPU evaluation/scrub tests.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (94 passed); RPG save/load check; CharacterStudio reopened the Release A scene and captured a 1280×720 frame with the sequence panel and active Wide camera cut visible; CPU tests prove seek-history-independent poses, interpolated camera keys, stable-ID cuts, camera-view orientation, clamped play/pause/scrub, and no behavior interactions during seeks.
-- Results: `SceneSequence.Evaluate` resets tracked poses to rest before evaluating the absolute time, preventing prior seeks from affecting results. Camera tracks interpolate position, rotation, and field of view; cut keys select camera-track IDs. CharacterStudio exposes Play/Pause, a time slider, and a sequence-preview toggle when a skinned character is present.
-- Limitations: the editor builds an in-memory sample sequence from the first skinned character and does not save sequence assets to scene JSON. Automated UI scrubbing was not run; real-time rendering of the panel was captured and timeline semantics are covered by CPU tests. Export is not implemented yet.
-- Next action: task 66, export sequence frames through a dedicated render target independent of window size.
+- Last completed tasks: 76–78 — cell lifecycle, owner-thread activation, and exterior loading ring.
+- Current task: 79 — add a bounded per-frame activation/upload queue with work limits and timing diagnostics.
+- Current checklist: 89 of 154 ordered rows complete (57.8%); task 79 is the first unchecked row.
+- Current gate: Release E passed on the tested Windows host; Stage 9 now has a manifest-backed exterior sample, validated cell state, asynchronous CPU preparation, and ring request planning.
+- Changed files for the latest batch: `CellLifecycle.cs`, `WorldCellLoadOperation.cs`, `ExteriorCellLoadingRing.cs`, their engine tests, and this roadmap/progress update.
+- Checks: `dotnet build Ember.sln --nologo` (0 warnings, 0 errors); `dotnet test Ember.sln --no-build --nologo` (143 passed, 0 failed); RPG save/load check passed. Focused lifecycle/preparation/ring tests passed (16 total), including failure cleanup, worker/owner thread identity, atomic active-resource publication, boundary crossing, exact-once requests, and re-request after forgetting an unloaded cell.
+- Results: lifecycle accepts only authored state transitions and disposes preparation data on failure. Cell CPU preparation runs on a worker; activation and unload require the captured owner thread; consumers see active resources only after the activation callback succeeds. The square loading ring uses the shared floor-based grid mapping and suppresses duplicate requests.
+- Limitations: thread-affinity tests use disposable fixtures rather than live graphics-device resources. The ring produces coordinate requests; queue budgeting, cancellation, retention, and concrete world activation remain later tasks.
+- Next action: task 79, add a bounded per-frame activation/upload queue with diagnostics.
 
 Suggested request to an implementing AI:
 
@@ -343,7 +352,7 @@ Updated against the current working tree on 23 September 2026. **65 of the origi
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–65 establish CharacterStudio authoring controls, capsule movement/jumping, camera obstruction, focus-safe actions, motion-driven animation, compiled behaviors, scene-owned audio, play-on-clone, and an absolute-time sequence preview with character/camera tracks. Export, project packaging, and distribution remain. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–69b establish CharacterStudio authoring controls, gameplay foundations, persisted/reproducible sequence export (Release D passed), and an outside-consumer project template. Scene/asset packaging and distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
@@ -384,20 +393,19 @@ This is a fresh review of the working tree, including uncommitted sequence-expor
 
 ### Actual completion and verification
 
-**68 of 146 ordered roadmap rows are checked (46.6% by row count): original tasks 01–65 plus 38a, 38b and 47a.** Against the original baseline this is 65/143 (45.5%). There are 78 unchecked ordered rows. Neither percentage measures remaining effort, commercial readiness, or completion of the proposed studio game.
+**75 of 149 ordered roadmap rows are checked (50.3% by row count): original tasks 01–68 plus 38a, 38b, 47a, 68a/b, and 69a/b.** Against the original baseline this is 68/143 (47.6%). There are 74 unchecked ordered rows. Neither percentage measures remaining effort, commercial readiness, or completion of the proposed studio game.
 
 | Area | What is present | Remaining boundary |
 | --- | --- | --- |
 | Scene and asset foundation, 01–38b | Hierarchy, transforms, validated scene JSON, resource scopes, static/skinned GLB assets, independent character playback, attachments and mixed-asset preview. | Release A has recorded before/reopen captures. This review did not repeat its visual checks or the resource soak. |
 | Authoring and rendering, 39–50 plus 47a | ImGui panel, selection, transform and object history, loaded-asset placement, animation controls, shared lighting, custom effect build, static/skinned shadows, static culling and diagnostics. | Release B still needs an end-to-end authoring acceptance session. Rendering a panel does not verify typing, focus, selection, undo or all DPI interactions. |
 | Gameplay components, 51–62 | BEPU world and capsule controller, fixed stepping, jumps/slopes, obstruction camera, named actions, motion-driven animation, behavior/audio ownership and isolated play clones. | CharacterStudio's play session wires an audio interaction but does not construct the physics controller. The packaged integrated Release C level remains absent, as ENGINE_PROGRESS.md explicitly records. |
-| Sequence preview, 63–65 | Absolute-time character tracks, camera keys/cuts and preview controls. | The sequence is generated in memory; there is no saved sequence document to reopen. UI interaction is not established by CPU tests. |
-| Export, 66–68 | Uncommitted render-target, frame-job, manifest, cancellation and editor integration code is present. | Work in progress, not completed rows; the current test run has a frame-count failure. Actual GPU export and recovery still require acceptance evidence. |
-| Distribution, 69–72 | Existing samples build against engine projects. | External-project template, dependency packaging and clean-machine Windows distribution remain unchecked. |
+| Sequence and export, 63–68b | Absolute-time character/camera tracks, versioned sequence JSON, exact-size PNG output, manifests, cancellation/error handling, and CharacterStudio restart/reopen workflow. | Release D passed on this machine/configuration with identical before/after frame hashes. Cross-GPU identity is not promised. |
+| Project and distribution, 69a–72 | Versioned project startup-scene config and an external consumer template build against the engine checkout. | Generated consumers still require the checkout/SDK; task 70 content packaging and task 71 clean-machine distribution remain unchecked. |
 | Cell-based RPG, 73–143 | Existing Ember.Rpg primitives and Campaign examples remain reusable starting points. | Planned cell streaming, world persistence, navigation and integrated RPG slice remain unchecked. |
 | Co-op studio simulator | Rendering, input, audio and scene primitives can be reused. | No studio economy/project simulation or multiplayer implementation was found in the inspected engine/test sources. Engine progress must not be reported as game completion. |
 
-Fresh checks for this review:
+Historical checks at the review snapshot (superseded for export work by the implementation update at the end of this file):
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings, 0 errors.
 - `dotnet test Ember.sln --no-build --nologo`: FAIL, 97 passed, 1 failed, 98 total, 0 skipped.
@@ -408,10 +416,10 @@ The checkout contains work in progress and changed during inspection, so these r
 
 ### Engine-plan changes to adopt
 
-1. **Fix frame-boundary semantics before closing 66–68.** `SequenceFrameExportSettings` calculates a ceiling from float start/end values using a 1e-9 adjustment. The float representation of 0.1 seconds multiplied by 30 exceeds three enough to produce a fourth frame. Define the end-exclusive interval and its numeric tolerance explicitly, or use an exact frame/time representation. Acceptance must cover 0.1 seconds at 30 fps, 10 seconds at 30 fps, nonzero starts, nonaligned endpoints and values either side of a boundary. Keep the failing regression; do not merely change its expectation.
+1. **Frame-boundary semantics for 66–68 — resolved.** The interval is end-exclusive. Frame counting interprets shortest round-tripping decimal float values and allows half an endpoint ULP for a value rounded from a frame boundary. Regression coverage includes 0.1 and 10 seconds at 30 fps, nonzero starts, a nonaligned endpoint, and adjacent floats on either side of boundaries.
 2. **Track component implementation and release gates separately.** Keep existing completed rows as the implementation record, but add explicit Pending/Pass/Blocked gate entries with evidence. Revisit tasks whose acceptance was narrowed to source inspection or a static capture. In particular, complete Release B through actual select/edit/undo/save/reopen actions and Release C through movement, collision, jump, animation and audible interaction in a packaged level. Add atomic integration rows instead of assuming all checked components establish the gate.
-3. **Add sequence persistence before claiming Release D.** Add versioned serialization of track IDs, target IDs, clip references, camera keys/cuts and duration; validate missing references. A manifest naming a sequence and hashing GLBs does not reconstruct its timeline, scene transforms or lighting. Acceptance: restart, reopen saved scene and sequence, export again, and compare specified sample times/settings on the same configuration. Record the scene/sequence and loaded asset versions actually used by the renderer; hashing a file changed on disk after import can misdescribe the in-memory asset.
-4. **Resolve content roots before 69–71.** Asset paths still resolve against `AppContext.BaseDirectory`. Introduce a project/content root shared by loading, reimport and packaging. Verify an external project after changing the working directory and moving its complete folder. Include native libraries and compiled effects in a clean-machine package check.
+3. **Sequence persistence before Release D — verified.** Tasks 68a/68b store and reload track IDs, target IDs, asset/clip references, camera keys/cuts, and duration. CharacterStudio reopened a saved scene and sequence in a new process; all three selected GPU frame hashes matched the original export. Record the scene/sequence and loaded asset versions actually used by the renderer when packaging; a file changed after import can still make a source-file hash misdescribe in-memory data.
+4. **Resolve content roots before packaging.** Task 69a gives projects a root relative to `ember.project.json` for their startup scene. GLB asset loading/reimport still resolves against `AppContext.BaseDirectory`; task 70 must make packaging resolve content from the project root. Verify after changing the working directory and moving a complete project folder. Include native libraries and compiled effects in a clean-machine package check.
 5. **Retain unresolved correctness and measurement work.** The skinned importer still collects a single skinned mesh without explicitly rejecting additional unskinned mesh geometry in the same GLB. Reject or support that case with a fixture. Sampled animation bounds remain fixture-tested estimates; keep unverified poses uncullable. Measure import latency, frame-time percentiles and owned resource counts on a representative mixed scene; perform repeated reload/play/stop/export cancellation checks rather than infer leak freedom from CPU disposal tests.
 
 ### Fit for the proposed game
@@ -439,4 +447,33 @@ These are recommendations, not additional completed roadmap rows. Split each mil
 
 Recommended product-validation scope: one office, one genre, three hands-on disciplines, one hire, one release and one patch. Prove two-player collaboration before four-player polish. Represent later large studios through departments and aggregate work; measure load before promising thousands of individually simulated staff. The educational gate should test understanding of consequences, while the co-op gate should test whether everyone has useful work and reasons to interact.
 
-**Next action under the unchanged engine roadmap:** resolve and verify the in-progress 66–68 export work, leaving rows unchecked until their individual acceptance checks pass. **Recommended planning action for the new game:** write the separate studio-game milestones and their engine prerequisites before committing to RPG-specific expansion. This review changes documentation only and preserves all existing implementation work.
+**At this review snapshot**, sequence export tasks 66–68 were still in progress. The implementation updates at the end of this file record their completion and subsequent sequence/project work, superseding that action. **Recommended planning action for the new game:** write the separate studio-game milestones and their engine prerequisites before committing to RPG-specific expansion.
+
+## Implementation update — tasks 66–68 — 23 September 2026
+
+Tasks 66–68 are complete. Frame ranges are end-exclusive, with explicit float boundary handling and tests on both sides of exact boundaries. CharacterStudio renders numbered PNGs through a dedicated target at the requested resolution, one frame per draw; it blocks export during play-on-clone. The version-1 manifest records range, dimensions, frame rate/count, sequence name, asset IDs/paths/hashes/lengths, progress, and canceled/failed/completed state. Startup export flags support a reproducible GPU smoke run and return a failing process exit code when export fails.
+
+Verification:
+
+- `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 100 passed, 0 failed, 0 skipped.
+- `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, save/load equality.
+- CharacterStudio GPU export from a 1280×720 window: PASS, three 640×360 frames for `[0, 0.1)` at 30 fps; all PNG headers are 640×360; manifest is `completed`, 3/3 frames, with one GLB version; process exited 0.
+- CPU tests cover 300 frames for ten seconds at 30 fps, nonzero starts, a nonaligned endpoint, neighboring float values, cancellation, and frame-write failure.
+
+At this update's snapshot, task 68a was first unchecked. The newer implementation update below records its completion and the restart/reopen evidence.
+
+## Implementation update — tasks 68a–69b — 23 September 2026
+
+Tasks 68a–69b are complete. Sequence data now round-trips as a companion versioned JSON file and CharacterStudio can reopen it with its scene before export. The release-gate run started separate processes for save/export and open/re-export; all three corresponding PNGs had identical SHA-256 hashes, and both manifests reported complete 3/3 exports with the same resolution, frame rate, and range.
+
+The new project manifest resolves startup scenes from its own directory and rejects unsafe or missing startup paths. A generated Minimal Ember Game under `%TEMP%` built outside the repository while referencing this checkout's engine project, then loaded its configured startup scene and produced a visible 1280×720 screenshot. The generated project contains its starter source and content; it does not copy Ember source.
+
+Verification for this batch:
+
+- `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 111 passed, 0 failed, 0 skipped.
+- `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, save/load equality.
+- CharacterStudio restart/reopen/re-export and the external-consumer build/run: PASS, as detailed in ENGINE_PROGRESS.md.
+
+At that earlier snapshot, after tasks 68a–69b and before tasks 70a–71b, 75 of 149 ordered rows were complete (50.3%), task 70 was first unchecked, and external consumers still depended on the engine checkout and SDK.
