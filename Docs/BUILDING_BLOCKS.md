@@ -180,9 +180,26 @@ imported `SceneGraph` for its world matrix; the matrices use Ember's row-vector 
 `StaticMeshData` stores position, normal, `TEXCOORD_0`, triangle indices, and a local AABB.
 `Bounds3.Transform(matrix)` transforms all eight corners and returns an enclosing world AABB;
 combine bounds with `Encapsulate` when framing a scene. `OrbitCamera.Frame(bounds)` targets its
-center and fits its bounding sphere to the current field of view and aspect ratio. Unsupported
-topology, missing required attributes, animation, skins, and matrix-only node transforms fail
-with a clear exception.
+center and fits its bounding sphere to the current field of view and aspect ratio.
+
+The static import subset is deliberately narrow:
+
+- The default scene and its reachable node hierarchy; nodes use position/rotation/scale
+  transforms. Matrix-only transforms, skinned nodes, and animated models fail.
+- Triangle primitives with `POSITION` and `NORMAL`; `TEXCOORD_0` is required for textured
+  materials and optional for untextured ones. Other vertex attributes, morph targets, and other
+  primitive topologies fail instead of being silently discarded. Missing indices mean
+  sequential triangle indices.
+- OPAQUE base-color materials with a factor and optional PNG/JPEG image using `TEXCOORD_0`.
+  Alpha mask/blend, texture transforms, other UV sets, and unsupported image formats fail.
+- No required glTF extensions are implemented. `extensionsRequired` entries and extensions
+  SharpGLTF reports as incompatible fail before Ember creates scene objects. Optional extension
+  metadata is not imported; those assets rely on their core glTF fallback data.
+
+Metallic/roughness, normal, emissive, occlusion, alpha-cutout rendering, morph animation,
+skinned deformation, and animation playback are outside this static draw path. Add support only
+with a fixture that proves the imported result; do not assume a successful parse means every
+visual feature was rendered.
 
 `GltfMaterialData` reads base-color factors, double-sidedness, and resolved PNG/JPEG base-color
 images for OPAQUE materials with TEXCOORD_0. It rejects blend/mask modes, other UV sets,
@@ -190,6 +207,16 @@ non-identity texture transforms, and unsupported image formats. It copies resolv
 so the SharpGLTF model can be released independently; unresolved image references fail clearly.
 This initial slice does not import metallic / roughness, normal, emissive, alpha-cutout, or
 animation data.
+
+### CPU skin data
+
+`GltfSkinData.Import(model, meshNode)` reads one skinned mesh's immutable node records, rest
+local transforms, joint-order mapping, inverse-bind matrices, and mesh-node rest world matrix.
+It includes non-joint ancestors so transforms above either the skeleton or mesh are retained.
+`GltfSkinWeightData.Import(primitive, vertexCount, jointCount)` reads `JOINTS_0` and
+`WEIGHTS_0`, validates references and values, and normalizes each vertex's weights. The current
+limit is four influences per vertex; additional joint/weight sets fail clearly. This is CPU
+asset data only: the scene importer and renderer do not yet play or draw skinned characters.
 
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the

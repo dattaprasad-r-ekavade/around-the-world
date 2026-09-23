@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
+using System.Linq;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
 using SharpGLTF.Schema2;
@@ -40,6 +41,7 @@ public static class GltfSceneImporter
     public static ImportedGltfScene Import(ModelRoot model)
     {
         if (model is null) throw new ArgumentNullException(nameof(model));
+        ValidateRequiredExtensions(model);
         if (model.DefaultScene is null)
             throw new NotSupportedException("The GLB must define a default scene.");
         if (model.LogicalAnimations.Count > 0)
@@ -100,6 +102,20 @@ public static class GltfSceneImporter
             foreach (var child in source.VisualChildren)
                 AddNode(child, sceneObject.Id);
         }
+    }
+
+    private static void ValidateRequiredExtensions(ModelRoot model)
+    {
+        var unsupported = model.ExtensionsRequired
+            .Concat(model.IncompatibleExtensions)
+            .Where(name => !string.IsNullOrWhiteSpace(name))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(name => name, StringComparer.Ordinal)
+            .FirstOrDefault();
+
+        if (unsupported is not null)
+            throw new NotSupportedException(
+                $"The GLB requires extension '{unsupported}', which Ember's static importer does not support.");
     }
 
     public static ImportedGltfScene Load(string path)

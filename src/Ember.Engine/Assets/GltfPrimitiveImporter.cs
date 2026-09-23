@@ -11,8 +11,19 @@ public static class GltfPrimitiveImporter
     public static StaticMeshData Import(MeshPrimitive primitive, bool allowMissingTextureCoordinates = false)
     {
         if (primitive is null) throw new ArgumentNullException(nameof(primitive));
+        if (primitive.MorphTargetsCount > 0)
+            throw new NotSupportedException("Morph targets are not supported by the static mesh importer.");
+
         if (primitive.DrawPrimitiveType != PrimitiveType.TRIANGLES)
             throw new NotSupportedException($"Primitive topology '{primitive.DrawPrimitiveType}' is not supported; only TRIANGLES is supported.");
+
+        var unsupportedAttribute = primitive.VertexAccessors.Keys
+            .FirstOrDefault(semantic => semantic != "POSITION"
+                && semantic != "NORMAL"
+                && semantic != "TEXCOORD_0");
+        if (unsupportedAttribute is not null)
+            throw new NotSupportedException(
+                $"Vertex attribute '{unsupportedAttribute}' is not supported; Ember imports POSITION, NORMAL, and TEXCOORD_0 only.");
 
         var positionAccessor = GetRequiredAccessor(primitive, "POSITION");
         var normalAccessor = GetRequiredAccessor(primitive, "NORMAL");

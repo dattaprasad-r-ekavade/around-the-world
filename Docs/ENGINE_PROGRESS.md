@@ -18,7 +18,7 @@
 
 The build and RPG check were run sequentially because running both at once can make them write the same project output concurrently and cause a file-lock failure. The sequential commands above are the accepted baseline.
 
-This file records only the starting health of the repository. It does not claim that rendering, animation, streaming, physics, or editor work has been implemented.
+This baseline records only the repository's starting health. Later sections track completed roadmap work and the checks that passed for it; unlisted capabilities remain unimplemented.
 
 ## Tasks 02–06 — scene foundation
 
@@ -175,3 +175,34 @@ The camera fits a conservative bounding sphere around the scene AABB, so framing
 | CharacterStudio capture | PASS — GLB preview and reimport status strip rendered; clean shutdown completed |
 
 The CPU test exercises the shared replacement owner and the real GLB importer. GPU upload failure preservation is covered by the same staging boundary in CharacterStudio's preview factory, but is not forced through a graphics-device fault-injection test.
+
+## Task 25 — document and enforce the static GLB subset
+
+- Documented the current node, transform, primitive, vertex-attribute, material, and extension subset in `BUILDING_BLOCKS.md`.
+- Required or SharpGLTF-incompatible extensions now fail before Ember creates any scene objects, with the extension name in the diagnostic.
+- The primitive importer rejects morph targets and vertex attributes outside POSITION, NORMAL, and TEXCOORD_0 rather than silently dropping them.
+- Negative CPU tests cover a required `KHR_mesh_quantization` extension, an unsupported COLOR_0 attribute, and a morph target.
+
+### Task 25 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo` | PASS — 34 CPU tests, including required-extension, morph-target, and vertex-attribute rejection |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+## Tasks 26–28 — establish CPU rigged-character data
+
+- Task 26: added the Khronos Fox animation fixture with CC0/CC BY 4.0 attribution, source and reference-viewer links, and SHA-256. Tests pin its 24-joint order, representative rest hierarchy, identity first inverse-bind matrix, and Survey (3.416667 s), Walk (0.708333 s), and Run (1.158333 s) durations.
+- Task 27: added immutable `GltfSkinData` records for source node IDs, full ancestor hierarchy, rest local transforms, skin-order joint mapping, inverse-bind matrices, and mesh-node rest world transform. Missing inverse-bind arrays use the glTF identity default; malformed counts and matrix-only skeleton transforms fail.
+- Task 28: added immutable `GltfSkinWeightData` for exactly four `JOINTS_0`/`WEIGHTS_0` slots. It validates supported accessor formats, vertex counts, joint references, and finite nonnegative weights, normalizes each positive total, and rejects extra influence sets.
+
+### Tasks 26–28 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo` | PASS — 38 CPU tests, including Fox reference metadata, mesh-parent transform, weight normalization, invalid joint, and excess-set cases |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+The Fox fixture provides a non-symmetric hip rest transform and parented mesh-node test so joint-order mistakes and dropped mesh placement are visible before GPU skinning is implemented.

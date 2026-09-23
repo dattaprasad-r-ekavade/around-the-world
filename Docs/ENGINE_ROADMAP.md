@@ -77,7 +77,7 @@ Start here. Do not build an editor or importer yet.
 | [x] | 22 | Add local mesh bounds, transformed bounds, and camera framing. | Rotated/scaled objects frame correctly; bounds contain their transformed vertices. |
 | [x] | 23 | Add stable asset IDs and scene references to source GLB paths via metadata. | Two scene objects reference one asset; save/reopen reloads both without embedding mesh data in scene JSON. |
 | [x] | 24 | Add explicit reimport that keeps the old valid asset until the replacement succeeds. | Valid changes appear; corrupt replacement content shows an error and leaves the old model usable. |
-| [ ] | 25 | Write the supported GLB subset and reject unsupported required extensions/features. | Negative fixtures fail clearly instead of drawing misleading partial content. |
+| [x] | 25 | Write the supported GLB subset and reject unsupported required extensions/features. | Negative fixtures fail clearly instead of drawing misleading partial content. |
 
 **Stage gate:** reopen a saved scene containing two instances of the imported model. Compare placement and textures with the authored reference.
 
@@ -87,9 +87,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 26 | Add one licensed rigged GLB with a known bind pose and animation; record its hierarchy and expected clip duration. | The source application/reference viewer displays the expected pose and clip. |
-| [ ] | 27 | Import joint hierarchy, inverse-bind matrices, and rest local transforms into immutable data. | CPU fixtures verify joint ordering and bind transforms, including mesh-node transforms. |
-| [ ] | 28 | Import joint indices/weights with explicit supported limits and validation. | Invalid joints/weights fail; accepted weights are normalized; excess influences are reported. |
+| [x] | 26 | Add one licensed rigged GLB with a known bind pose and animation; record its hierarchy and expected clip duration. | The source application/reference viewer displays the expected pose and clip. |
+| [x] | 27 | Import joint hierarchy, inverse-bind matrices, and rest local transforms into immutable data. | CPU fixtures verify joint ordering and bind transforms, including mesh-node transforms. |
+| [x] | 28 | Import joint indices/weights with explicit supported limits and validation. | Invalid joints/weights fail; accepted weights are normalized; excess influences are reported. |
 | [ ] | 29 | Add per-instance pose arrays and calculate skin matrices from a supplied pose. | Bind-pose fixtures produce expected transformed vertices; instances do not share mutable arrays. |
 | [ ] | 30 | Add the skinning draw path; validate SkinnedEffect/profile limits before choosing it. | The character's bind pose visually matches the reference; oversized skeletons fail clearly. |
 | [ ] | 31 | Import STEP/LINEAR translation, quaternion rotation, and scale animation tracks. | Clip duration/key values match the fixture; unsupported interpolation is rejected. |
