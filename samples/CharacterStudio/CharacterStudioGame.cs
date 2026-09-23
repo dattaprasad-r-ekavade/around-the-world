@@ -7,6 +7,7 @@ using Ember.Assets;
 using Ember;
 using Ember.Input;
 using Ember.Scene;
+using Ember.Render;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -31,6 +32,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private readonly SceneCommandHistory _editorHistory = new();
+    private readonly SceneLighting _sceneLighting = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
     private readonly string? _sceneSavePath;
@@ -137,19 +139,15 @@ public sealed class CharacterStudioGame : EngineHost
             Window.TextInput += HandleTextInput;
             AttachCanvas();
             _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight,
-                _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange);
+                _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange,
+                GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting);
             _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 VertexColorEnabled = false,
                 TextureEnabled = false,
-                LightingEnabled = true,
                 PreferPerPixelLighting = true
             });
-            _studioEffect.EnableDefaultLighting();
-            _studioEffect.AmbientLightColor = new Vector3(0.62f, 0.64f, 0.68f);
-            _studioEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
-            _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
-            _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
+            _sceneLighting.Apply(_studioEffect);
 
             _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(), _sceneData));
@@ -161,14 +159,10 @@ public sealed class CharacterStudioGame : EngineHost
                     _preview.Current.MaximumJointCount);
                 var skinnedEffect = _sceneResources.Own(new SkinnedEffect(GraphicsDevice)
                 {
-                    PreferPerPixelLighting = true,
-                    SpecularPower = 24f
+                    PreferPerPixelLighting = true
                 });
                 _skinnedEffect = skinnedEffect;
-                skinnedEffect.EnableDefaultLighting();
-                skinnedEffect.AmbientLightColor = new Vector3(0.58f, 0.60f, 0.64f);
-                skinnedEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
-                skinnedEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
+                _sceneLighting.Apply(skinnedEffect);
 
                 if (_preview.Current.AttachmentsByInstanceId.Count > 0)
                     _attachmentRenderer = _sceneResources.Own(new AttachmentBoxRenderer(GraphicsDevice));
@@ -240,6 +234,8 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void Draw(GameTime gameTime)
     {
         GraphicsDevice.Clear(new Color(12, 16, 24));
+        _sceneLighting.Apply(_studioEffect);
+        if (_skinnedEffect is not null) _sceneLighting.Apply(_skinnedEffect);
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
         GraphicsDevice.BlendState = BlendState.Opaque;
         GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
@@ -339,6 +335,55 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void HandleTextInput(object? sender, TextInputEventArgs args) =>
         _editorUi?.AddTextInput(args.Character);
+
+    private CharacterEditorInfo? GetCharacterEditorInfo(Guid objectId)
+    {
+        if (_preview?.Current is not { } preview || _sceneData.Find(objectId)?.GltfAsset is not { } reference
+            || !preview.Assets.TryGetValue(reference.AssetId, out var asset)
+            || asset.SkinnedCharacter is not { } character)
+            return null;
+
+        preview.CharacterInstances.TryGetValue(objectId, out var state);
+        var playback = state?.Playback;
+        return new CharacterEditorInfo(character.Animations.Select(clip => clip.Name).ToArray(),
+            playback?.Clip.Name, playback?.Time ?? 0f, playback?.Clip.Duration ?? 0f,
+            playback?.IsPlaying ?? false);
+    }
+
+    private void SelectCharacterClip(Guid objectId, string clipName)
+    {
+        if (!TryGetCharacterState(objectId, out var character, out var state)) return;
+        state.SelectClip(character, clipName);
+    }
+
+    private void SeekCharacter(Guid objectId, float time)
+    {
+        if (TryGetCharacterState(objectId, out _, out var state)) state.Seek(time);
+    }
+
+    private void SetCharacterPlaying(Guid objectId, bool playing)
+    {
+        if (TryGetCharacterState(objectId, out _, out var state)) state.SetPlaying(playing);
+    }
+
+    private bool TryGetCharacterState(Guid objectId, out GltfSkinnedCharacterData character,
+        out CharacterInstanceState state)
+    {
+        if (_preview?.Current is { } preview
+            && _sceneData.Find(objectId)?.GltfAsset is { } reference
+            && preview.Assets.TryGetValue(reference.AssetId, out var asset)
+            && asset.SkinnedCharacter is { } loadedCharacter
+            && preview.CharacterInstances.TryGetValue(objectId, out var loadedState))
+        {
+            character = loadedCharacter;
+            state = loadedState;
+            return true;
+        }
+
+        character = null!;
+        state = null!;
+        return false;
+    }
 
     private static void AddPairIfNeeded(SceneGraph scene)
     {
@@ -648,16 +693,61 @@ public sealed class CharacterStudioGame : EngineHost
 
         public GltfCharacterSettings Settings { get; }
         public GltfSkinPose Pose { get; }
-        public GltfAnimationPlayback? Playback { get; }
-        public GltfAnimationPlayback? CrossfadePlayback { get; }
-        public GltfAnimationCrossfade? Crossfade { get; }
-        public float BlendAmount { get; }
+        public GltfAnimationPlayback? Playback { get; private set; }
+        public GltfAnimationPlayback? CrossfadePlayback { get; private set; }
+        public GltfAnimationCrossfade? Crossfade { get; private set; }
+        public float BlendAmount { get; private set; }
         public string Status => FormatPlaybackStatus(Playback, CrossfadePlayback, BlendAmount);
 
         public void Advance(float elapsedSeconds)
         {
             Playback?.Advance(elapsedSeconds);
             CrossfadePlayback?.Advance(elapsedSeconds);
+            Evaluate();
+            StoreSettings(Settings);
+        }
+
+        public void SelectClip(GltfSkinnedCharacterData character, string clipName)
+        {
+            var clip = ResolveClip(character, clipName)
+                ?? throw new ArgumentException($"Animation '{clipName}' was not found.", nameof(clipName));
+            var wasPlaying = Playback?.IsPlaying ?? Settings.IsPlaying;
+            var playback = new GltfAnimationPlayback(clip, Settings.Loop, Settings.Speed);
+            if (wasPlaying) playback.Play();
+            Playback = playback;
+            CrossfadePlayback = null;
+            Crossfade = null;
+            BlendAmount = Settings.BlendAmount;
+            Settings.CrossfadeClipName = null;
+            Settings.ClipName = clip.Name;
+            Settings.Time = 0f;
+            Settings.IsPlaying = wasPlaying;
+            Evaluate();
+            StoreSettings(Settings);
+        }
+
+        public void Seek(float time)
+        {
+            if (Playback is null) return;
+            Playback.Seek(time);
+            CrossfadePlayback?.Seek(time);
+            Evaluate();
+            StoreSettings(Settings);
+        }
+
+        public void SetPlaying(bool playing)
+        {
+            if (Playback is null) return;
+            if (playing)
+            {
+                Playback.Play();
+                CrossfadePlayback?.Play();
+            }
+            else
+            {
+                Playback.Pause();
+                CrossfadePlayback?.Pause();
+            }
             Evaluate();
             StoreSettings(Settings);
         }

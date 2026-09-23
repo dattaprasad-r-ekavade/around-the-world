@@ -285,7 +285,14 @@ duplicate, and delete commands share that history; undoing deletion restores the
 and character references plus its parent/child links. Duplicates get new object and attachment
 IDs while retaining the imported GLB reference. The asset list shows GLBs already referenced by
 the open scene, and **Place instance** adds another scene object pointing to the same source path.
-It does not scan arbitrary project folders. Non-finite transform input is ignored; **S** saves
+It does not scan arbitrary project folders. A selected skinned instance exposes its imported clip
+list, absolute-time scrubber, and playback toggle; changing those controls updates only that
+instance and the version-2 scene settings saved by **S**.
+
+`SceneLighting` applies one ambient color and normalized directional light to both `BasicEffect`
+and `SkinnedEffect`. CharacterStudio exposes the ambient RGB, direction, and directional RGB as
+runtime controls. The sample uses MonoGame's built-in effect shaders, so these paths do not need
+an `.fx` content build or custom `.mgfx` files. Non-finite transform input is ignored; **S** saves
 the edited scene. The panel uses pinned ImGui.NET 1.91.6.1 with a small MonoGame renderer backend.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,

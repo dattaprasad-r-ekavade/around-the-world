@@ -329,3 +329,22 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio runtime capture | PASS — `captures/scene-editor-batch-42-44.png`, 1280×720; native UI library loaded and the editor controls rendered |
 | Interactive editor clicks and typing | NOT RUN — desktop input automation helper failed to initialize |
+
+## Tasks 45–47 — edit character playback and share scene lighting
+
+- Task 45: added a clip dropdown, absolute-time scrubber, and play/pause toggle for a selected skinned scene object. The UI passes that object's stable ID to the corresponding playback state, so changing a clip or time does not affect other instances. Changing clips starts the new clip at zero and clears the prior crossfade; scrub and play state are saved in the existing scene version-2 character settings.
+- Task 46: added `Ember.Render.SceneLighting` and runtime controls for ambient RGB, directional direction, and directional RGB. CharacterStudio applies the same light values to its static `BasicEffect` and skinned `SkinnedEffect`, including disabling the extra default directional lights on both.
+- Task 47: no separate shader build step is required for this lighting path. The sample uses MonoGame's built-in effect shaders and adds no `.fx`, `.mgfx`, or `.mgcb` content. A full solution build verifies both effect integrations and legacy samples.
+- Captured `captures/scene-editor-batch-45-47-animated.png` at 1280×720 with two independently animated Fox instances, and `captures/scene-editor-batch-45-47-mixed.png` with the static courtyard and both characters after the shared-lighting change. The desktop input helper was unavailable, so clip selection, scrubbing, and lighting slider changes were source-reviewed, not operated by synthetic clicks.
+
+### Tasks 45–47 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 63 tests, 0 failed; includes light-value validation and existing independent character playback/seek coverage |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio animated capture | PASS — `captures/scene-editor-batch-45-47-animated.png`, 1280×720; Walk and Run render simultaneously |
+| CharacterStudio mixed static/skinned capture | PASS — `captures/scene-editor-batch-45-47-mixed.png`, 1280×720; courtyard and both characters render with the shared light |
+| Custom shader build assets | NOT NEEDED — no `.fx`, `.mgfx`, or `.mgcb` files; MonoGame built-in effects are used |
+| Interactive clip/light control verification | NOT RUN — desktop input automation helper failed to initialize |

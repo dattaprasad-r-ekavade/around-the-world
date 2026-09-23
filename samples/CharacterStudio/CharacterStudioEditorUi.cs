@@ -1,4 +1,5 @@
 using Ember.Scene;
+using Ember.Render;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -12,6 +13,9 @@ using NumericsVector3 = System.Numerics.Vector3;
 
 namespace CharacterStudio;
 
+internal sealed record CharacterEditorInfo(
+    IReadOnlyList<string> ClipNames, string? ClipName, float Time, float Duration, bool IsPlaying);
+
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed class CharacterStudioEditorUi : IDisposable
 {
@@ -21,6 +25,11 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly SceneCommandHistory _history;
     private readonly Action _beforeStructureChange;
     private readonly Action _afterStructureChange;
+    private readonly Func<Guid, CharacterEditorInfo?> _getCharacterInfo;
+    private readonly Action<Guid, string> _selectCharacterClip;
+    private readonly Action<Guid, float> _seekCharacter;
+    private readonly Action<Guid, bool> _setCharacterPlaying;
+    private readonly SceneLighting _lighting;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -54,13 +63,20 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     ];
 
     public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight,
-        SceneCommandHistory history, Action beforeStructureChange, Action afterStructureChange)
+        SceneCommandHistory history, Action beforeStructureChange, Action afterStructureChange,
+        Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
+        Action<Guid, float> seekCharacter, Action<Guid, bool> setCharacterPlaying, SceneLighting lighting)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _beforeStructureChange = beforeStructureChange ?? throw new ArgumentNullException(nameof(beforeStructureChange));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
+        _getCharacterInfo = getCharacterInfo ?? throw new ArgumentNullException(nameof(getCharacterInfo));
+        _selectCharacterClip = selectCharacterClip ?? throw new ArgumentNullException(nameof(selectCharacterClip));
+        _seekCharacter = seekCharacter ?? throw new ArgumentNullException(nameof(seekCharacter));
+        _setCharacterPlaying = setCharacterPlaying ?? throw new ArgumentNullException(nameof(setCharacterPlaying));
+        _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         _context = ImGui.CreateContext();
         try
         {
@@ -271,7 +287,72 @@ internal sealed class CharacterStudioEditorUi : IDisposable
             if (IsFinite(scale))
                 transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
         });
+
+        DrawCharacterControls(selected);
+        DrawLightingControls();
         ImGui.End();
+    }
+
+    private void DrawCharacterControls(SceneObject selected)
+    {
+        var character = _getCharacterInfo(selected.Id);
+        ImGui.Separator();
+        ImGui.Text("Character animation");
+        if (character is null || character.ClipNames.Count == 0)
+        {
+            ImGui.TextDisabled("Select a character with imported clips.");
+            return;
+        }
+
+        var currentClip = character.ClipName ?? "Select clip";
+        if (ImGui.BeginCombo("Clip", currentClip))
+        {
+            foreach (var clipName in character.ClipNames)
+            {
+                var isSelected = string.Equals(character.ClipName, clipName, StringComparison.OrdinalIgnoreCase);
+                if (ImGui.Selectable(clipName, isSelected)) _selectCharacterClip(selected.Id, clipName);
+                if (isSelected) ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+
+        if (character.Duration > 0f)
+        {
+            var time = Math.Clamp(character.Time, 0f, character.Duration);
+            ImGui.SetNextItemWidth(-1f);
+            if (ImGui.SliderFloat("Time (seconds)", ref time, 0f, character.Duration, "%.2f"))
+                _seekCharacter(selected.Id, time);
+        }
+
+        var playing = character.IsPlaying;
+        if (ImGui.Checkbox("Playing", ref playing)) _setCharacterPlaying(selected.Id, playing);
+    }
+
+    private void DrawLightingControls()
+    {
+        ImGui.Separator();
+        if (!ImGui.TreeNode("Scene lighting")) return;
+
+        var ambient = new NumericsVector3(_lighting.AmbientColor.X, _lighting.AmbientColor.Y, _lighting.AmbientColor.Z);
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat3("Ambient RGB", ref ambient, 0f, 1.5f))
+            _lighting.AmbientColor = new Microsoft.Xna.Framework.Vector3(ambient.X, ambient.Y, ambient.Z);
+
+        var direction = new NumericsVector3(
+            _lighting.DirectionalDirection.X, _lighting.DirectionalDirection.Y, _lighting.DirectionalDirection.Z);
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat3("Direction", ref direction, -1f, 1f)
+            && direction.LengthSquared() > 0.0001f)
+            _lighting.DirectionalDirection = new Microsoft.Xna.Framework.Vector3(
+                direction.X, direction.Y, direction.Z);
+
+        var directional = new NumericsVector3(
+            _lighting.DirectionalColor.X, _lighting.DirectionalColor.Y, _lighting.DirectionalColor.Z);
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.SliderFloat3("Sun RGB", ref directional, 0f, 1.5f))
+            _lighting.DirectionalColor = new Microsoft.Xna.Framework.Vector3(
+                directional.X, directional.Y, directional.Z);
+        ImGui.TreePop();
     }
 
     private void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform,
