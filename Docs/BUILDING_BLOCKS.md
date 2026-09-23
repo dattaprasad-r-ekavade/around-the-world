@@ -279,11 +279,14 @@ stores the initial selected state, **S** saves current playback times, and `--op
 the per-instance settings and attached preview props.
 
 CharacterStudio's editor panel provides a text-entry field, a scene-object hierarchy keyed by
-stable IDs, and numeric local position, Euler rotation (degrees), and scale controls for the
-selected object. Duplicate display names remain independently selectable. Non-finite transform
-input is ignored; the existing **S** command saves the edited scene. The panel uses pinned
-ImGui.NET 1.91.6.1 with a small MonoGame renderer backend; it currently has no undo history or
-object creation/deletion controls.
+stable IDs, numeric local position, Euler rotation (degrees), and scale controls, and bounded
+undo/redo history. Transform edits become one history entry when a field is committed. Create,
+duplicate, and delete commands share that history; undoing deletion restores the object's asset
+and character references plus its parent/child links. Duplicates get new object and attachment
+IDs while retaining the imported GLB reference. The asset list shows GLBs already referenced by
+the open scene, and **Place instance** adds another scene object pointing to the same source path.
+It does not scan arbitrary project folders. Non-finite transform input is ignored; **S** saves
+the edited scene. The panel uses pinned ImGui.NET 1.91.6.1 with a small MonoGame renderer backend.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference

@@ -4,6 +4,8 @@ using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System;
+using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using NumericsVector2 = System.Numerics.Vector2;
 using NumericsVector3 = System.Numerics.Vector3;
@@ -16,10 +18,16 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly IntPtr _context;
     private readonly ImGuiIOPtr _io;
     private readonly ImGuiMonoGameRenderer _renderer;
+    private readonly SceneCommandHistory _history;
+    private readonly Action _beforeStructureChange;
+    private readonly Action _afterStructureChange;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
     private Guid? _selectedObjectId;
+    private Guid? _selectedAssetId;
+    private Guid? _activeTransformObjectId;
+    private Transform? _activeTransformStart;
     private bool _initialSelectionSet;
     private bool _wantsMouse;
     private bool _wantsKeyboard;
@@ -45,10 +53,14 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         (Keys.OemPipe, ImGuiKey.Backslash), (Keys.OemTilde, ImGuiKey.GraveAccent)
     ];
 
-    public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight)
+    public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight,
+        SceneCommandHistory history, Action beforeStructureChange, Action afterStructureChange)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
+        _history = history ?? throw new ArgumentNullException(nameof(history));
+        _beforeStructureChange = beforeStructureChange ?? throw new ArgumentNullException(nameof(beforeStructureChange));
+        _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
         _context = ImGui.CreateContext();
         try
         {
@@ -166,9 +178,18 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("##textEntry", "Click here and type", ref _textEntry, 128);
         ImGui.TextDisabled("Orbit pauses while a tool window is active.");
+        if (!_history.CanUndo) ImGui.BeginDisabled();
+        if (ImGui.Button("Undo")) RunHistoryAction(scene, undo: true);
+        if (!_history.CanUndo) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (!_history.CanRedo) ImGui.BeginDisabled();
+        if (ImGui.Button("Redo")) RunHistoryAction(scene, undo: false);
+        if (!_history.CanRedo) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Create Empty")) CreateEmpty(scene);
         ImGui.Separator();
         ImGui.Text("Hierarchy");
-        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, 185f), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, 145f), ImGuiChildFlags.Borders);
         foreach (var item in scene.Objects)
         {
             var label = $"{item.Name}##{item.Id:N}";
@@ -176,6 +197,32 @@ internal sealed class CharacterStudioEditorUi : IDisposable
                 _selectedObjectId = item.Id;
         }
         ImGui.EndChild();
+
+        if (_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
+            CommitActiveTransformEdit(scene);
+
+        var availableAssets = scene.Objects
+            .Where(item => item.GltfAsset is not null)
+            .Select(item => item.GltfAsset!)
+            .GroupBy(asset => asset.AssetId)
+            .Select(group => group.First())
+            .ToArray();
+        if (_selectedAssetId is null || availableAssets.All(asset => asset.AssetId != _selectedAssetId))
+            _selectedAssetId = availableAssets.FirstOrDefault()?.AssetId;
+        ImGui.Separator();
+        ImGui.Text("Assets");
+        ImGui.BeginChild("Scene assets", new NumericsVector2(0f, 80f), ImGuiChildFlags.Borders);
+        foreach (var asset in availableAssets)
+        {
+            var label = $"{Path.GetFileName(asset.SourcePath)}##asset-{asset.AssetId:N}";
+            if (ImGui.Selectable(label, _selectedAssetId == asset.AssetId))
+                _selectedAssetId = asset.AssetId;
+        }
+        ImGui.EndChild();
+        var selectedAsset = availableAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
+        if (selectedAsset is null) ImGui.BeginDisabled();
+        if (ImGui.Button("Place instance")) PlaceAsset(scene, selectedAsset!);
+        if (selectedAsset is null) ImGui.EndDisabled();
 
         if (_selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
         {
@@ -186,31 +233,152 @@ internal sealed class CharacterStudioEditorUi : IDisposable
 
         ImGui.Separator();
         ImGui.Text($"Selected: {selected.Name}");
+        if (ImGui.Button("Duplicate")) Duplicate(scene, selected);
+        ImGui.SameLine();
+        if (ImGui.Button("Delete")) Delete(scene, selected.Id);
         var transform = selected.Transform;
         var position = new NumericsVector3(transform.Position.X, transform.Position.Y, transform.Position.Z);
         ImGui.Text("Position");
         ImGui.SetNextItemWidth(-1f);
-        if (ImGui.InputFloat3("##position", ref position) && IsFinite(position))
-            transform.Position = new Microsoft.Xna.Framework.Vector3(position.X, position.Y, position.Z);
+        var positionChanged = ImGui.InputFloat3("##position", ref position);
+        TrackTransformInput(scene, selected.Id, transform, positionChanged, () =>
+        {
+            if (IsFinite(position))
+                transform.Position = new Microsoft.Xna.Framework.Vector3(position.X, position.Y, position.Z);
+        });
 
         var euler = ToEulerDegrees(transform.Rotation);
         ImGui.Text("Rotation XYZ (degrees)");
         ImGui.SetNextItemWidth(-1f);
-        if (ImGui.InputFloat3("##rotation", ref euler) && IsFinite(euler))
+        var rotationChanged = ImGui.InputFloat3("##rotation", ref euler);
+        TrackTransformInput(scene, selected.Id, transform, rotationChanged, () =>
         {
-            var radians = MathF.PI / 180f;
-            transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(
-                Microsoft.Xna.Framework.Quaternion.CreateFromYawPitchRoll(
-                    euler.Y * radians, euler.X * radians, euler.Z * radians));
-        }
+            if (IsFinite(euler))
+            {
+                var radians = MathF.PI / 180f;
+                transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(
+                    Microsoft.Xna.Framework.Quaternion.CreateFromYawPitchRoll(
+                        euler.Y * radians, euler.X * radians, euler.Z * radians));
+            }
+        });
 
         var scale = new NumericsVector3(transform.Scale.X, transform.Scale.Y, transform.Scale.Z);
         ImGui.Text("Scale");
         ImGui.SetNextItemWidth(-1f);
-        if (ImGui.InputFloat3("##scale", ref scale) && IsFinite(scale))
-            transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
+        var scaleChanged = ImGui.InputFloat3("##scale", ref scale);
+        TrackTransformInput(scene, selected.Id, transform, scaleChanged, () =>
+        {
+            if (IsFinite(scale))
+                transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
+        });
         ImGui.End();
     }
+
+    private void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform,
+        bool changed, Action applyChange)
+    {
+        if (ImGui.IsItemActivated())
+        {
+            _activeTransformObjectId = objectId;
+            _activeTransformStart = SceneTransformCopy(transform);
+        }
+
+        if (changed) applyChange();
+        if (ImGui.IsItemDeactivatedAfterEdit()) CommitActiveTransformEdit(scene);
+    }
+
+    private void CommitActiveTransformEdit(SceneGraph scene)
+    {
+        if (_activeTransformObjectId is not { } objectId || _activeTransformStart is not { } before)
+        {
+            _activeTransformObjectId = null;
+            _activeTransformStart = null;
+            return;
+        }
+
+        _activeTransformObjectId = null;
+        _activeTransformStart = null;
+        if (scene.Find(objectId) is not { } item) return;
+        var after = SceneTransformCopy(item.Transform);
+        if (TransformsEqual(before, after)) return;
+        item.Transform = SceneTransformCopy(before);
+        _history.Execute(scene, new TransformEditCommand(objectId, before, after));
+    }
+
+    private void RunHistoryAction(SceneGraph scene, bool undo)
+    {
+        CommitActiveTransformEdit(scene);
+        _beforeStructureChange();
+        if (undo) _history.Undo(scene);
+        else _history.Redo(scene);
+        _afterStructureChange();
+        if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
+            _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
+    }
+
+    private void CreateEmpty(SceneGraph scene)
+    {
+        CommitActiveTransformEdit(scene);
+        var item = new SceneObject(Guid.NewGuid(), UniqueName("New Object", scene.Objects.Select(value => value.Name)));
+        RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
+        _selectedObjectId = item.Id;
+    }
+
+    private void Duplicate(SceneGraph scene, SceneObject selected)
+    {
+        CommitActiveTransformEdit(scene);
+        _beforeStructureChange();
+        var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, selected.Id);
+        _history.Execute(scene, new CreateSceneObjectCommand(duplicate));
+        _afterStructureChange();
+        _selectedObjectId = duplicate.Id;
+    }
+
+    private void Delete(SceneGraph scene, Guid objectId)
+    {
+        CommitActiveTransformEdit(scene);
+        RunStructureChange(scene, () => _history.Execute(scene, new DeleteSceneObjectCommand(objectId)));
+        _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
+    }
+
+    private void PlaceAsset(SceneGraph scene, GltfAssetReference asset)
+    {
+        CommitActiveTransformEdit(scene);
+        var existing = scene.Objects.Where(item => item.GltfAsset?.AssetId == asset.AssetId).ToArray();
+        var positionX = existing.Length == 0 ? 0f : existing.Max(item => item.Transform.Position.X) + 100f;
+        var item = SceneObjectFactory.CreateAssetInstance(scene, asset,
+            new Microsoft.Xna.Framework.Vector3(positionX, 0f, 0f));
+        RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
+        _selectedObjectId = item.Id;
+    }
+
+    private void RunStructureChange(SceneGraph scene, Action action)
+    {
+        _beforeStructureChange();
+        action();
+        _afterStructureChange();
+    }
+
+    private static string UniqueName(string basis, IEnumerable<string> existingNames)
+    {
+        var names = existingNames.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!names.Contains(basis)) return basis;
+        for (var suffix = 2; ; suffix++)
+        {
+            var candidate = $"{basis} {suffix}";
+            if (!names.Contains(candidate)) return candidate;
+        }
+    }
+
+    private static Transform SceneTransformCopy(Transform source) => new()
+    {
+        Position = source.Position,
+        Rotation = source.Rotation,
+        Scale = source.Scale
+    };
+
+    private static bool TransformsEqual(Transform first, Transform second) =>
+        first.Position == second.Position && first.Rotation == second.Rotation && first.Scale == second.Scale;
 
     private static NumericsVector3 ToEulerDegrees(Microsoft.Xna.Framework.Quaternion rotation)
     {

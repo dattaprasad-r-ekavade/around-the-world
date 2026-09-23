@@ -112,9 +112,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 39 | Integrate a pinned ImGui.NET version in CharacterStudio with a minimal panel. | Text entry, DPI scaling, rendering, and native dependency loading work; UI focus suppresses camera controls. |
 | [x] | 40 | Add a hierarchy list that selects one scene object. | Each row carries its stable ID, duplicate names remain distinct, and deleted selections clear safely. |
 | [x] | 41 | Add numeric position/rotation/scale fields for the selected object. | Finite numeric edits update the selected transform; scene save/reopen preserves transforms. |
-| [ ] | 42 | Add a command history for transform edits only. | One completed edit undoes/redoes exactly; redo clears after a new edit. |
-| [ ] | 43 | Add create/duplicate/delete commands using the same history. | Undo restores IDs, hierarchy, and references without duplication. |
-| [ ] | 44 | Add an asset list and place-instance command. | An imported asset can be placed twice without source changes. |
+| [x] | 42 | Add a command history for transform edits only. | One completed edit undoes/redoes exactly; redo clears after a new edit. |
+| [x] | 43 | Add create/duplicate/delete commands using the same history. | Undo restores IDs, hierarchy, and references without duplication. |
+| [x] | 44 | Add an asset list and place-instance command. | An imported asset can be placed twice without source changes. |
 | [ ] | 45 | Add character clip selection and scrub controls using the existing animation API. | Controls change only the selected character. |
 | [ ] | 46 | Introduce shared scene ambient/directional lighting for new static and skinned draws. | Changing the light affects both model types consistently; old samples still build. |
 | [ ] | 47 | Add an explicit shader build step if not already required by task 46. | Clean checkout builds/packages shaders; compilation errors fail clearly. |
@@ -318,14 +318,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 39–41 — editor panel, hierarchy selection, and numeric local transforms.
-- Current task: 42 — add undo/redo history for transform edits.
+- Last completed tasks: 42–44 — transform undo/redo, object creation/duplication/deletion, and placing additional instances of scene assets.
+- Current task: 45 — add character clip selection and scrub controls.
 - Current gate: Release B requires assembling, editing, saving, reopening, and capturing a scene through CharacterStudio's UI.
-- Changed files for the latest batch: pinned ImGui.NET integration and MonoGame renderer, CharacterStudio input/focus handling, hierarchy and transform panel, and editor capability/progress documentation.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (56 passed); RPG save/load check; and a 1280×720 runtime capture showing the panel, text entry, hierarchy, and position/rotation/scale controls. Automated mouse/keyboard interaction was unavailable in the desktop session, so selection and field interaction were source-reviewed rather than exercised with synthetic clicks.
-- Results: stable object IDs drive hierarchy selection, stale selections clear, finite transforms edit the selected object, and CharacterStudio's existing scene save path serializes the updated graph. ImGui input capture gates camera and keyboard shortcuts.
-- Blockers: none for tasks 39–41; direct automated pointer/text interaction remains to be verified when desktop input automation is available.
-- Next action: task 42, implement undo/redo for transform edits only and verify redo clearing after a new edit.
+- Changed files for the latest batch: scene command-history API, tested create/duplicate/delete commands, asset-instance factory, CharacterStudio editing controls, and roadmap/progress/capability documentation.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (61 passed); RPG save/load check; and a 1280×720 runtime capture showing history buttons, object commands, asset list, place-instance action, hierarchy, and transforms. The desktop input helper could not initialize, so UI button clicks and field typing were not directly automated; scene command behavior is covered by tests and UI wiring was source-reviewed.
+- Results: transform history records one command at field deactivation and clears redo after a new edit. Duplicate objects retain their GLB and character settings with fresh object/attachment IDs. Deleting a parent detaches its children, and undo restores the original parent and child links. Placed instances reuse the loaded asset reference and preserve its source path.
+- Blockers: none for tasks 42–44; direct automated pointer/text interaction remains to be verified when desktop input automation is available.
+- Next action: task 45, add character clip selection and scrubbing for the selected character only.
 
 Suggested request to an implementing AI:
 
@@ -335,23 +335,23 @@ Suggested request to an implementing AI:
 
 ### How much is built
 
-Reviewed the current working tree, including the existing uncommitted implementation changes. **38 of the original 143 task rows are checked (26.6% by task count); 105 remain unchecked.** This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+Updated against the current working tree on 23 September 2026. **44 of the original 143 task rows are checked (30.8% by task count); 99 remain unchecked.** Tasks 38a–38b are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
 
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | No completed roadmap rows. Existing UI, camera, audio and capture utilities provide useful primitives, but do not establish the planned editor, BEPU controller, timeline or standalone distribution. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–44 establish the first usable CharacterStudio controls: hierarchy, transform editing/history, object operations, and placement from assets already referenced by the scene. Clip selection, lighting, shadows, diagnostics, physics, gameplay, timeline, and standalone distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
-- `dotnet test Ember.sln --no-build --nologo`: PASS, 55 passed, 0 failed, 0 skipped.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 61 passed, 0 failed, 0 skipped.
 - `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
 
-These were fresh build/CPU checks at the time of the review. Subsequent task 37–38 screenshots and scene reopen checks are recorded in `ENGINE_PROGRESS.md`; clean-machine packaging, a resource soak, and performance benchmarks remain unverified.
+The latest batch also produced a 1280×720 runtime capture of the expanded editor panel. Clean-machine packaging, a resource soak, direct automated UI input, and performance benchmarks remain unverified.
 
 ### Recommended changes, in priority order
 
@@ -359,7 +359,7 @@ These were fresh build/CPU checks at the time of the review. Subsequent task 37�
 
 **2. Failed-open save protection.** Addressed in CharacterStudio: S targets an opened scene only after a successful load; a failed open disables saving back to that path, including when `--save` names the same invalid source. An explicit different `--save` path still writes the recovery scene. A runtime check confirmed the invalid source's SHA-256 stayed unchanged while Save As produced version-2 JSON.
 
-**3. Define a project/content root before task 44's asset browser.** `GltfAssetReference` calls its paths project-relative, while CharacterStudio resolves them against `AppContext.BaseDirectory`. Bundled samples work because their content is copied beside the executable; arbitrary external projects have no explicit root contract. Add one resolver used by open, reimport and packaging, with diagnostics containing asset ID and resolved path. Acceptance: an external project reopens and reimports from a different working directory, then still works after the complete project folder is moved. Preserve stable IDs and relative serialized paths. Keep this a small project-root contract, not a general asset database.
+**3. Define a project/content root before adding a general filesystem asset browser.** Task 44's asset list intentionally shows GLBs already referenced by the open scene and places more instances of those loaded assets. `GltfAssetReference` calls its paths project-relative, while CharacterStudio resolves them against `AppContext.BaseDirectory`; arbitrary external projects still have no explicit root contract. Add one resolver used by open, reimport and packaging, with diagnostics containing asset ID and resolved path. Acceptance: an external project reopens and reimports from a different working directory, then still works after the complete project folder is moved. Preserve stable IDs and relative serialized paths. Keep this a small project-root contract, not a general asset database.
 
 **4. Tighten importer and animation-bound claims before relying on them.** `GltfSkinnedCharacterData.Import` collects the one skinned mesh but does not import or explicitly reject additional unskinned mesh nodes in the same GLB. This can omit authored geometry despite the plan's no-silent-partial-import rule. Add a negative fixture and reject this combination until intentionally supported. Separately, `GltfAnimationBounds.SampleClip` uses uniform samples plus padding: dense coverage of the bundled Fox clips is evidence for that fixture, not a proof for every accepted clip or blend. Before animated culling is introduced, add fast/short-key-interval and crossfade fixtures, include attachment extents where needed, and retain an uncullable fallback for unverified poses. Do not label all STEP/LINEAR clips conservatively bounded solely because they parse.
 
@@ -373,6 +373,6 @@ These were fresh build/CPU checks at the time of the review. Subsequent task 37�
 
 ### Suggested next sequence
 
-Release A tasks 38a–38b are complete; start task 39. Resolve the project-root contract before task 44 and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A and editor foundation tasks 39–44 are complete; start task 45. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
-This section records review findings and recommendations. It does not mark task rows complete; each remains unchecked until its acceptance check passes. Existing source changes were preserved.
+This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.

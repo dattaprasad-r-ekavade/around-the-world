@@ -312,3 +312,20 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio runtime capture | PASS — editor overlay rendered on the 1280×720 showcase; native ImGui dependency loaded |
 | Interactive mouse/keyboard verification | NOT RUN — desktop input automation helper failed to initialize; select/edit behavior was source-reviewed |
+
+## Tasks 42–44 — add scene edit history and asset placement
+
+- Task 42: added a bounded 128-entry `SceneCommandHistory` for transform edits. CharacterStudio records one before/after transform when an ImGui numeric field is deactivated; Undo and Redo restore the whole position/rotation/scale value, and a new edit clears redo.
+- Task 43: added shared history commands for creating, duplicating, and deleting scene objects. Duplicate instances retain the loaded GLB reference and character settings but get fresh object and attachment GUIDs. Deleting an object detaches direct children; undo restores the object, original parent, and child links without copying referenced asset data.
+- Task 44: added an asset list limited to GLBs already referenced in the current scene and a place-instance action. New objects share the source `GltfAssetReference` and are spaced along the X axis from their same-asset instances. A general project-folder scanner remains deferred until CharacterStudio has an explicit project-root contract.
+- The `captures/scene-editor-batch-42-44.png` runtime image shows the hierarchy, history buttons, object actions, in-scene asset list, placement button, and transform controls over the Release A showcase. The desktop input automation helper was unavailable, so UI button clicks and text-field typing were not exercised; command behavior is covered by CPU tests and UI wiring was source-reviewed.
+
+### Tasks 42–44 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 61 tests, 0 failed; includes transform undo/redo, redo clearing, create/duplicate/delete restoration, and shared asset-instance references |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio runtime capture | PASS — `captures/scene-editor-batch-42-44.png`, 1280×720; native UI library loaded and the editor controls rendered |
+| Interactive editor clicks and typing | NOT RUN — desktop input automation helper failed to initialize |

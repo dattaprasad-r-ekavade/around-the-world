@@ -25,9 +25,10 @@ of it:
 **`samples/CharacterStudio`** is the engine's scene-preview sample. Its Release A showcase
 loads a static environment GLB and two scene instances sharing a skinned character GLB, with
 independent clip state, a saved hand attachment, versioned scene open/save, and screenshot
-capture. Its editor panel lists scene objects and edits the selected object's local position,
-rotation, and scale; undo/history, object creation, and broader lighting remain on the roadmap.
-The supported GLB subset is documented in
+capture. Its editor panel lists scene objects, edits local transforms with undo/redo, creates,
+duplicates and deletes objects, and places new instances of GLBs already referenced by the scene.
+A general project asset browser, character clip controls, and broader lighting remain on the
+roadmap. The supported GLB subset is documented in
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a

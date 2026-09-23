@@ -30,6 +30,7 @@ public sealed class CharacterStudioGame : EngineHost
 
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
+    private readonly SceneCommandHistory _editorHistory = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
     private readonly string? _sceneSavePath;
@@ -135,7 +136,8 @@ public sealed class CharacterStudioGame : EngineHost
             IsMouseVisible = true;
             Window.TextInput += HandleTextInput;
             AttachCanvas();
-            _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight);
+            _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight,
+                _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange);
             _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 VertexColorEnabled = false,
@@ -544,6 +546,10 @@ public sealed class CharacterStudioGame : EngineHost
             state.StoreSettings(sceneObject.CharacterSettings ??= new GltfCharacterSettings());
         }
     }
+
+    private void BeforeSceneStructureChange() => CaptureCharacterSettings();
+
+    private void AfterSceneStructureChange() => _preview?.Current.RebuildCharacterInstances(_sceneData);
 
     private void SaveScene()
     {
