@@ -78,6 +78,130 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesPerCharacterPlaybackAndAttachmentReferences()
+    {
+        var asset = new GltfAssetReference(Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"),
+            "Assets/Characters/fox.glb");
+        var firstId = Guid.Parse("11111111-2222-3333-4444-555555555555");
+        var secondId = Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee");
+        var attachmentId = Guid.Parse("12345678-9abc-def0-1234-56789abcdef0");
+        var offset = Matrix.CreateScale(2f, 3f, 4f) * Matrix.CreateRotationY(0.4f)
+            * Matrix.CreateTranslation(1f, 2f, 3f);
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(firstId, "Walker")
+        {
+            GltfAsset = asset,
+            CharacterSettings = new GltfCharacterSettings
+            {
+                ClipName = "Walk",
+                Time = 0.35f,
+                Speed = 1.5f,
+                Loop = false,
+                IsPlaying = true,
+                CrossfadeClipName = "Run",
+                BlendAmount = 0.4f
+            }
+        });
+        scene.Find(firstId)!.CharacterSettings!.Attachments.Add(
+            new GltfBoneAttachmentReference(attachmentId, "b_RightHand_08", offset));
+        scene.Add(new SceneObject(secondId, "Runner")
+        {
+            GltfAsset = asset,
+            CharacterSettings = new GltfCharacterSettings
+            {
+                ClipName = "Run",
+                Time = 0.6f,
+                Speed = 0.75f,
+                Loop = true,
+                IsPlaying = false
+            }
+        });
+
+        var path = TemporaryPath();
+        try
+        {
+            SceneFile.SaveAtomic(scene, path);
+            var json = File.ReadAllText(path);
+            var loaded = SceneFile.Load(path);
+            var first = loaded.Find(firstId)!.CharacterSettings!;
+            var second = loaded.Find(secondId)!.CharacterSettings!;
+
+            Assert.Contains("\"Version\": 2", json, StringComparison.Ordinal);
+            Assert.Equal("Walk", first.ClipName);
+            Assert.Equal(0.35f, first.Time);
+            Assert.Equal(1.5f, first.Speed);
+            Assert.False(first.Loop);
+            Assert.True(first.IsPlaying);
+            Assert.Equal("Run", first.CrossfadeClipName);
+            Assert.Equal(0.4f, first.BlendAmount);
+            var attachment = Assert.Single(first.Attachments);
+            Assert.Equal(attachmentId, attachment.Id);
+            Assert.Equal("b_RightHand_08", attachment.BoneName);
+            Assert.Equal(offset, attachment.LocalOffset);
+            Assert.Equal("Run", second.ClipName);
+            Assert.Equal(0.6f, second.Time);
+            Assert.Equal(0.75f, second.Speed);
+            Assert.True(second.Loop);
+            Assert.False(second.IsPlaying);
+            Assert.DoesNotContain("TriangleIndices", json, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
+    public void VersionOneSceneLoadsWithoutCharacterSettingsAndUpgradesOnSave()
+    {
+        var path = TemporaryPath();
+        try
+        {
+            File.WriteAllText(path,
+                "{\"Version\":1,\"Objects\":[{\"Id\":\"30303030-3030-3030-3030-303030303030\",\"Name\":\"Legacy\",\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}");
+            var loaded = SceneFile.Load(path);
+
+            Assert.Null(loaded.Find(Guid.Parse("30303030-3030-3030-3030-303030303030"))!.CharacterSettings);
+            SceneFile.SaveAtomic(loaded, path);
+            Assert.Contains("\"Version\": 2", File.ReadAllText(path), StringComparison.Ordinal);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
+    public void SceneSaveRejectsInvalidCharacterPlaybackAndDuplicateAttachmentIds()
+    {
+        var asset = new GltfAssetReference(Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"),
+            "Assets/Characters/fox.glb");
+        var attachmentId = Guid.Parse("12345678-9abc-def0-1234-56789abcdef0");
+        var scene = new SceneGraph();
+        var first = new SceneObject(Guid.Parse("11111111-2222-3333-4444-555555555555"), "First")
+        {
+            GltfAsset = asset,
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Walk", IsPlaying = true }
+        };
+        var second = new SceneObject(Guid.Parse("aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"), "Second")
+        {
+            GltfAsset = asset,
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Run" }
+        };
+        first.CharacterSettings.Attachments.Add(
+            new GltfBoneAttachmentReference(attachmentId, "b_RightHand_08", Matrix.Identity));
+        second.CharacterSettings.Attachments.Add(
+            new GltfBoneAttachmentReference(attachmentId, "b_LeftHand_08", Matrix.Identity));
+        scene.Add(first);
+        scene.Add(second);
+
+        Assert.Throws<InvalidDataException>(() => SceneFile.SaveAtomic(scene, TemporaryPath()));
+        first.CharacterSettings.Time = float.NaN;
+        second.CharacterSettings.Attachments.Clear();
+        Assert.Throws<InvalidDataException>(() => SceneFile.SaveAtomic(scene, TemporaryPath()));
+    }
+
+    [Fact]
     public void GltfAssetReferenceRejectsAbsoluteAndParentTraversalPaths()
     {
         var assetId = Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567");

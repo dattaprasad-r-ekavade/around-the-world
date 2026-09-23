@@ -321,6 +321,57 @@ public sealed class GltfAnimationTests
         Assert.Throws<ArgumentException>(() => new GltfBoneAttachment(skin, "b_RightHand_08", badOffset));
     }
 
+    [Fact]
+    public void SampledAnimatedBoundsContainDenseSamplesOfEveryFoxClip()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var character = GltfSkinnedCharacterData.Import(model);
+
+        foreach (var clip in character.Animations)
+        {
+            var bounds = GltfAnimationBounds.SampleClip(character, clip);
+            var pose = character.CreatePose();
+            var denseIntervals = Math.Max(1, (int)Math.Ceiling(clip.Duration * 120f));
+            for (var sampleIndex = 0; sampleIndex <= denseIntervals; sampleIndex++)
+            {
+                clip.Evaluate(pose, clip.Duration * sampleIndex / denseIntervals);
+                foreach (var primitive in character.Primitives)
+                foreach (var vertex in primitive.Mesh.Vertices)
+                {
+                    var weights = vertex.JointWeights;
+                    var deformedMeshPosition = Vector3.Zero;
+                    for (var influence = 0; influence < 4; influence++)
+                    {
+                        var weight = weights.GetWeight(influence);
+                        if (weight <= 0f) continue;
+                        deformedMeshPosition += Vector3.Transform(vertex.Position,
+                            pose.SkinMatrices[weights.GetJointIndex(influence)]) * weight;
+                    }
+
+                    var characterPosition = Vector3.Transform(deformedMeshPosition, pose.MeshNodeWorldMatrix);
+                    Assert.True(bounds.Contains(characterPosition, 0.0001f),
+                        $"{clip.Name} bound missed vertex {characterPosition} at {clip.Duration * sampleIndex / denseIntervals:0.000}s.");
+                }
+            }
+        }
+    }
+
+    [Fact]
+    public void AnimatedBoundsRejectInvalidSamplingAndDifferentSkin()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var character = GltfSkinnedCharacterData.Import(model);
+        var clip = character.Animations.Single(animation => animation.Name == "Walk");
+        var otherCharacter = GltfSkinnedCharacterData.Import(model);
+        var otherClip = otherCharacter.Animations.Single(animation => animation.Name == "Walk");
+
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            GltfAnimationBounds.SampleClip(character, clip, sampleIntervalSeconds: 0f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            GltfAnimationBounds.SampleClip(character, clip, marginFraction: float.NaN));
+        Assert.Throws<ArgumentException>(() => GltfAnimationBounds.SampleClip(character, otherClip));
+    }
+
     private static GltfSkinData ImportFoxSkin(ModelRoot model) =>
         GltfSkinData.Import(model, model.LogicalNodes.Single(node => node.Name == "fox"));
 

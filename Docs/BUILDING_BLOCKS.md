@@ -244,8 +244,8 @@ clip, time, speed, loop, and pause state. If `--second-clip` is omitted, Charact
 another available clip. `--crossfade Run --blend 0.5` samples a second clip and mixes both local
 poses; callers control the blend amount over time. `--attach-hand` draws a colored preview cube
 on the first instance's `b_RightHand_08` joint using a local offset. This is a rendering/API
-demonstration; it does not yet persist per-character clip settings or attachments in scene files.
-The preview still loads one unique GLB asset per scene and supports only one named attachment.
+demonstration. Scene format version 2 persists each character's playback state and named attachment
+references. The preview still loads one unique GLB asset per scene.
 
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the
@@ -260,6 +260,19 @@ as metadata beside the instance transform; it never serializes the imported vert
 textures into scene JSON. Multiple instances may share one ID and path. The current
 CharacterStudio preview loads one unique GLB per scene and supports multiple scene objects sharing
 that asset, each with its own runtime character state.
+
+`GltfAnimationBounds.SampleClip(character, clip)` deforms every source vertex through its four
+normalized skin influences at intervals no larger than 1/30 second, then adds a margin equal to
+the larger of 10% of the largest extent or 0.05 metres. CharacterStudio unions these per-clip
+envelopes when it frames an animated character. The bounds cover the imported STEP/LINEAR clips;
+a procedural pose without a matching sampled envelope must not be culled using these bounds.
+The current renderer does not yet cull animated characters.
+
+Scene format version 2 optionally stores each character object's clip name, time, speed, loop and
+playing state, crossfade clip/blend, and stable bone-attachment IDs with joint-local matrices.
+Version-1 files still load and are upgraded on the next save. CharacterStudio's `--save <path>`
+stores the initial selected state, **S** saves current playback times, and `--open <path>` restores
+the per-instance settings and attached preview props.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference

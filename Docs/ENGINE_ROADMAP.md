@@ -98,8 +98,10 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 34 | Draw two characters sharing assets with different playback states. | Pausing/seeking one does not change the other. |
 | [x] | 35 | Add a two-clip local-pose crossfade. | Blend endpoints equal their source poses and the midpoint is smooth. |
 | [x] | 36 | Add one named bone attachment with a local offset. | A visible hand prop follows the character throughout its animation. |
-| [ ] | 37 | Add conservative animated bounds, initially sampled per clip with a documented margin. | Limbs remain visible throughout supported clips; unsupported procedural poses can disable culling. |
-| [ ] | 38 | Save character asset, clip, playback settings, and attachment references. | Reopening the scene restores both characters and their settings. |
+| [x] | 37 | Add conservative animated bounds, initially sampled per clip with a documented margin. | Limbs remain visible throughout supported clips; unsupported procedural poses can disable culling. |
+| [x] | 38 | Save character asset, clip, playback settings, and attachment references. | Reopening the scene restores both characters and their settings. |
+| [ ] | 38a | Load one static environment GLB alongside shared skinned-character instances in CharacterStudio. | A saved scene renders two independently animated Fox instances and a distinct environment asset at their authored transforms. |
+| [ ] | 38b | Build and reopen the Release A showcase scene with its environment, characters, and hand prop. | Reopening restores all transforms, clip states, and attachment placement in a captured 1280×720 scene. |
 
 **Release A: Character Studio alpha.** Two independently animated characters, one environment, one attachment, save/load, and screenshot capture must work before continuing.
 
@@ -316,13 +318,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 24 (tasks 16–23 remain complete from previous batches).
-- Current task: 25.
-- Changed files: new `src/Ember.Engine/Assets/ReloadableAsset.cs`; CharacterStudio game and its preview resource bundle/status UI; new `tests/Ember.Engine.Tests/ReloadableAssetTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
-- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio preview screenshot.
-- Results: 31 CPU tests passed, including valid GLB replacement and corrupt replacement preservation; solution build passed with 0 warnings and 0 errors; RPG check passed; CharacterStudio preview/status strip rendered and exited cleanly.
-- Blockers: none recorded.
-- Next action: validate required GLB extensions and reject unsupported required features before partial rendering.
+- Last completed tasks: 38.
+- Current task: 38a.
+- Current gate: Release A remains incomplete until tasks 38a–38b add and verify a separate environment GLB beside the character instances.
+- Changed files for the latest batch: sampled skinned-animation bounds, version-2 scene character settings and attachment records, CharacterStudio save/load wiring, focused CPU tests, and the building-block/progress notes.
+- Checks: full solution build, full CPU test suite, RPG save/load check, dense 120 Hz deformation coverage for every bundled Fox clip, and CharacterStudio save/reopen screenshots with two independently configured characters and an attachment.
+- Results: task 37's all-clip sampled bounds contain every dense-check vertex; task 38 restores both characters' distinct clip/time/pause state and the saved attachment reference. Scene version 1 remains readable and saves as version 2.
+- Blockers: none for tasks 37–38. The separate environment requirement is now tracked as tasks 38a–38b.
+- Next action: implement task 38a, then verify the combined showcase and complete the Release A gate before task 39.
 
 Suggested request to an implementing AI:
 

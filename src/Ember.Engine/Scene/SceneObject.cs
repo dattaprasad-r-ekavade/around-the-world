@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Microsoft.Xna.Framework;
 
 namespace Ember.Scene;
 
@@ -56,4 +57,43 @@ public sealed class SceneObject
     public Transform Transform { get; set; } = new();
     public Guid? ParentId { get; internal set; }
     public GltfAssetReference? GltfAsset { get; set; }
+    public GltfCharacterSettings? CharacterSettings { get; set; }
+}
+
+/// <summary>Per-instance skeletal clip, playback, and attachment settings saved with a scene object.</summary>
+public sealed class GltfCharacterSettings
+{
+    public string? ClipName { get; set; }
+    public float Time { get; set; }
+    public float Speed { get; set; } = 1f;
+    public bool Loop { get; set; } = true;
+    public bool IsPlaying { get; set; }
+    public string? CrossfadeClipName { get; set; }
+    public float BlendAmount { get; set; } = 0.5f;
+    public List<GltfBoneAttachmentReference> Attachments { get; } = new();
+}
+
+/// <summary>Stable scene reference to a character joint and a prop's joint-local transform.</summary>
+public sealed class GltfBoneAttachmentReference
+{
+    public GltfBoneAttachmentReference(Guid id, string boneName, Matrix localOffset)
+    {
+        if (id == Guid.Empty) throw new ArgumentException("Attachment ID cannot be empty.", nameof(id));
+        if (string.IsNullOrWhiteSpace(boneName)) throw new ArgumentException("Bone name is required.", nameof(boneName));
+        if (!IsFinite(localOffset)) throw new ArgumentException("Attachment offset must be finite.", nameof(localOffset));
+
+        Id = id;
+        BoneName = boneName;
+        LocalOffset = localOffset;
+    }
+
+    public Guid Id { get; }
+    public string BoneName { get; }
+    public Matrix LocalOffset { get; }
+
+    private static bool IsFinite(Matrix matrix) =>
+        float.IsFinite(matrix.M11) && float.IsFinite(matrix.M12) && float.IsFinite(matrix.M13) && float.IsFinite(matrix.M14)
+        && float.IsFinite(matrix.M21) && float.IsFinite(matrix.M22) && float.IsFinite(matrix.M23) && float.IsFinite(matrix.M24)
+        && float.IsFinite(matrix.M31) && float.IsFinite(matrix.M32) && float.IsFinite(matrix.M33) && float.IsFinite(matrix.M34)
+        && float.IsFinite(matrix.M41) && float.IsFinite(matrix.M42) && float.IsFinite(matrix.M43) && float.IsFinite(matrix.M44);
 }

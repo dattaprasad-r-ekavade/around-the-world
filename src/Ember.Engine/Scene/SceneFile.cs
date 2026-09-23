@@ -10,7 +10,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -69,12 +69,13 @@ public static class SceneFile
 
     private static SceneGraph FromDocument(SceneDocument document)
     {
-        if (document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected {CurrentVersion}.");
+        if (document.Version != 1 && document.Version != CurrentVersion)
+            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1 or {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
-        foreach (var data in document.Objects) ValidateData(data);
+        foreach (var data in document.Objects) ValidateData(data, document.Version);
         ValidateAssetReferences(document.Objects);
+        ValidateAttachmentIds(document.Objects);
 
         var scene = new SceneGraph();
         var parents = new Dictionary<Guid, Guid?>();
@@ -86,7 +87,8 @@ public static class SceneFile
             {
                 Enabled = data.Enabled,
                 Transform = ToTransform(data),
-                GltfAsset = ToGltfAsset(data)
+                GltfAsset = ToGltfAsset(data),
+                CharacterSettings = ToCharacterSettings(data.Character)
             };
             scene.Add(item);
             parents.Add(data.Id, data.ParentId);
@@ -125,6 +127,7 @@ public static class SceneFile
                     ParentId = value.ParentId,
                     GltfAssetId = value.GltfAsset?.AssetId,
                     GltfAssetPath = value.GltfAsset?.SourcePath,
+                    Character = ToCharacterData(value.CharacterSettings),
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
                     Scale = [transform.Scale.X, transform.Scale.Y, transform.Scale.Z]
@@ -132,14 +135,55 @@ public static class SceneFile
             })
             .ToList();
 
-        foreach (var data in objects) ValidateData(data);
+        foreach (var data in objects) ValidateData(data, CurrentVersion);
         foreach (var data in objects)
             if (data.ParentId is not null && objects.All(item => item.Id != data.ParentId.Value))
                 throw new InvalidDataException($"Object {data.Id} refers to missing parent {data.ParentId}.");
 
         ValidateAssetReferences(objects);
+        ValidateAttachmentIds(objects);
         ValidateAcyclic(objects);
         return new SceneDocument { Version = CurrentVersion, Objects = objects };
+    }
+
+    private static GltfCharacterSettings? ToCharacterSettings(SceneCharacterData? data)
+    {
+        if (data is null) return null;
+        var settings = new GltfCharacterSettings
+        {
+            ClipName = data.ClipName,
+            Time = data.Time,
+            Speed = data.Speed,
+            Loop = data.Loop,
+            IsPlaying = data.IsPlaying,
+            CrossfadeClipName = data.CrossfadeClipName,
+            BlendAmount = data.BlendAmount
+        };
+        foreach (var attachment in data.Attachments!)
+            settings.Attachments.Add(new GltfBoneAttachmentReference(
+                attachment.Id, attachment.BoneName!, ToMatrix(attachment.LocalOffset!)));
+        return settings;
+    }
+
+    private static SceneCharacterData? ToCharacterData(GltfCharacterSettings? settings)
+    {
+        if (settings is null) return null;
+        return new SceneCharacterData
+        {
+            ClipName = settings.ClipName,
+            Time = settings.Time,
+            Speed = settings.Speed,
+            Loop = settings.Loop,
+            IsPlaying = settings.IsPlaying,
+            CrossfadeClipName = settings.CrossfadeClipName,
+            BlendAmount = settings.BlendAmount,
+            Attachments = settings.Attachments.Select(attachment => new SceneAttachmentData
+            {
+                Id = attachment.Id,
+                BoneName = attachment.BoneName,
+                LocalOffset = ToArray(attachment.LocalOffset)
+            }).ToList()
+        };
     }
 
     private static GltfAssetReference? ToGltfAsset(SceneObjectData data) =>
@@ -172,7 +216,7 @@ public static class SceneFile
         Scale = new Vector3(data.Scale![0], data.Scale[1], data.Scale[2])
     };
 
-    private static void ValidateData(SceneObjectData data)
+    private static void ValidateData(SceneObjectData data, int documentVersion)
     {
         if (data is null) throw new InvalidDataException("Scene contains a null object.");
         if (data.Id == Guid.Empty) throw new InvalidDataException("Scene object ID cannot be empty.");
@@ -204,7 +248,61 @@ public static class SceneFile
         var rotationLength = MathF.Sqrt(data.Rotation.Sum(value => value * value));
         if (rotationLength < 0.000001f)
             throw new InvalidDataException($"Object {data.Id} has a zero-length rotation.");
+
+        if (data.Character is { } character)
+        {
+            if (documentVersion < 2)
+                throw new InvalidDataException($"Object {data.Id} character settings require scene version 2.");
+            if (!data.GltfAssetId.HasValue)
+                throw new InvalidDataException($"Object {data.Id} has character settings but no GLB asset reference.");
+            if (character.ClipName is not null && string.IsNullOrWhiteSpace(character.ClipName))
+                throw new InvalidDataException($"Object {data.Id} has an empty animation clip name.");
+            if (character.CrossfadeClipName is not null
+                && (string.IsNullOrWhiteSpace(character.CrossfadeClipName) || character.ClipName is null))
+                throw new InvalidDataException($"Object {data.Id} has invalid crossfade clip settings.");
+            if (!float.IsFinite(character.Time) || character.Time < 0f
+                || !float.IsFinite(character.Speed)
+                || !float.IsFinite(character.BlendAmount) || character.BlendAmount < 0f || character.BlendAmount > 1f)
+                throw new InvalidDataException($"Object {data.Id} has invalid character playback values.");
+            if (character.IsPlaying && character.ClipName is null)
+                throw new InvalidDataException($"Object {data.Id} cannot play without an animation clip.");
+            if (character.Attachments is null)
+                throw new InvalidDataException($"Object {data.Id} has no attachment list.");
+            foreach (var attachment in character.Attachments)
+            {
+                if (attachment is null || attachment.Id == Guid.Empty || string.IsNullOrWhiteSpace(attachment.BoneName))
+                    throw new InvalidDataException($"Object {data.Id} contains an invalid attachment reference.");
+                if (attachment.LocalOffset is null || attachment.LocalOffset.Length != 16
+                    || attachment.LocalOffset.Any(value => !float.IsFinite(value)))
+                    throw new InvalidDataException($"Object {data.Id} attachment {attachment.Id} has an invalid local offset matrix.");
+            }
+        }
     }
+
+    private static void ValidateAttachmentIds(IEnumerable<SceneObjectData> objects)
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var data in objects)
+        foreach (var attachment in data.Character?.Attachments ?? [])
+        {
+            if (!ids.Add(attachment.Id))
+                throw new InvalidDataException($"Duplicate character attachment ID: {attachment.Id}.");
+        }
+    }
+
+    private static float[] ToArray(Matrix value) =>
+    [
+        value.M11, value.M12, value.M13, value.M14,
+        value.M21, value.M22, value.M23, value.M24,
+        value.M31, value.M32, value.M33, value.M34,
+        value.M41, value.M42, value.M43, value.M44
+    ];
+
+    private static Matrix ToMatrix(float[] values) => new(
+        values[0], values[1], values[2], values[3],
+        values[4], values[5], values[6], values[7],
+        values[8], values[9], values[10], values[11],
+        values[12], values[13], values[14], values[15]);
 
     private static void ValidateAcyclic(IReadOnlyList<SceneObjectData> objects)
     {
@@ -237,8 +335,28 @@ public static class SceneFile
         public Guid? ParentId { get; set; }
         public Guid? GltfAssetId { get; set; }
         public string? GltfAssetPath { get; set; }
+        public SceneCharacterData? Character { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }
+    }
+
+    private sealed class SceneCharacterData
+    {
+        public string? ClipName { get; set; }
+        public float Time { get; set; }
+        public float Speed { get; set; } = 1f;
+        public bool Loop { get; set; } = true;
+        public bool IsPlaying { get; set; }
+        public string? CrossfadeClipName { get; set; }
+        public float BlendAmount { get; set; } = 0.5f;
+        public List<SceneAttachmentData>? Attachments { get; set; } = new();
+    }
+
+    private sealed class SceneAttachmentData
+    {
+        public Guid Id { get; set; }
+        public string? BoneName { get; set; }
+        public float[]? LocalOffset { get; set; }
     }
 }

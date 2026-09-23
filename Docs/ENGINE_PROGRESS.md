@@ -255,4 +255,21 @@ The Fox fixture's non-symmetric hip rest transform and parented mesh-node test m
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio pair and crossfade screenshot captures | PASS — both character instances and crossfade render; colored attachment prop is visible |
 
-The blend amount is currently supplied by the caller rather than advanced by a timed transition controller. CharacterStudio still previews one unique GLB per scene; task 38 will add persistence for character playback and attachment references. Animated clip bounds remain task 37.
+The blend amount is currently supplied by the caller rather than advanced by a timed transition controller. CharacterStudio still previews one unique GLB per scene.
+
+## Tasks 37–38 — frame animated characters and persist per-instance state
+
+- Task 37: added `GltfAnimationBounds.SampleClip`, which evaluates weighted, deformed vertices across each supported clip at intervals no larger than 1/30 second. It expands each sampled AABB by 10% of its largest extent or 0.05 metres, whichever is larger. CharacterStudio unions the per-clip bounds when framing a character so its animated limbs fit the preview.
+- Task 38: scene format version 2 stores each character instance's clip, time, speed, loop/playing flags, optional crossfade clip/blend, and stable bone attachment IDs/joint-local offsets. Version-1 scenes remain readable. CharacterStudio applies command-line settings before `--save`, restores serialized settings through `--open`, and **S** records current playback state to the selected scene path.
+- Captured `captures/fox-survey-bounds.png`; the complete Fox remains visible at Survey 2.00s. Saved and reopened `captures/character-studio-task38.json`; the 1280×720 reopen capture restores Walk at 0.35s, Run at 0.60s, both paused, plus the hand attachment.
+
+### Tasks 37–38 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --no-restore` | PASS — 55 tests, including dense 120 Hz vertex coverage for every Fox clip, invalid bound parameters, scene version-1 upgrade, settings/attachment round-trip, and validation |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio saved-scene reopen | PASS — both distinct character playback states and the attached prop render from version-2 JSON |
+
+The sampled bounds describe supported imported clips; they do not make arbitrary procedural poses safe to cull. The renderer currently performs no animated-character culling. The Release A scene still lacks support for a second, environment GLB, so Stage 5 is held until roadmap tasks 38a–38b are implemented.
