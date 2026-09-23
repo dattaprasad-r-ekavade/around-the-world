@@ -205,4 +205,21 @@ The CPU test exercises the shared replacement owner and the real GLB importer. G
 | `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 
-The Fox fixture provides a non-symmetric hip rest transform and parented mesh-node test so joint-order mistakes and dropped mesh placement are visible before GPU skinning is implemented.
+The Fox fixture's non-symmetric hip rest transform and parented mesh-node test make joint-order mistakes and dropped mesh placement visible in CPU tests and the bind-pose preview.
+
+## Tasks 29–30 — pose evaluation and first skinned draw
+
+- Task 29: added `GltfSkinPose`, with independently owned local-transform and skin-matrix arrays. Pose evaluation composes ancestor transforms and computes row-vector skin matrices; singular mesh transforms and nonfinite/zero rotations fail clearly.
+- Task 30: added CPU skinned-primitive import and `SkinnedMeshGpuBuffer`. CharacterStudio's `--fox` option renders the bundled Fox in bind pose using MonoGame `SkinnedEffect`; graphics profile and its 72-joint limit are checked before upload. The renderer supports one skinned mesh node, four influences, triangles, and the documented base-color subset.
+- Captured `captures/fox-skin-bind-pose.png`; the whole low-poly character is framed and rendered with its authored orange/white materials.
+
+### Tasks 29–30 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo` | PASS — all 42 tests, including bind-pose vertices, independent poses, Fox skinned-asset import, and renderer limits |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio `--fox` screenshot capture | PASS — Fox bind pose visible at 1280×720 |
+
+Animation track import/playback, multiple independently animated characters, and skinned scene-file persistence remain upcoming tasks.

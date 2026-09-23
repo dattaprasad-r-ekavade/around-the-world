@@ -4,6 +4,7 @@ using System.Linq;
 using System.Collections.Generic;
 using Ember.Assets;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -257,6 +258,99 @@ public sealed class GltfSceneImporterTests
         Assert.Contains("four joint influences", extraSetException.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void FoxBindPoseLeavesVerticesUnchangedAndPoseInstancesDoNotShareTransforms()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var meshNode = model.LogicalNodes.Single(node => node.Name == "fox");
+        var skin = GltfSkinData.Import(model, meshNode);
+        var firstPose = skin.CreatePose();
+        var secondPose = skin.CreatePose();
+        Assert.Equal(24, firstPose.JointCount);
+        foreach (var matrix in firstPose.SkinMatrices)
+            AssertMatrixClose(Matrix.Identity, matrix);
+
+        var primitive = Assert.Single(meshNode.Mesh!.Primitives);
+        var positions = primitive.GetVertexAccessor("POSITION").AsVector3Array();
+        var weights = GltfSkinWeightData.Import(primitive, positions.Count, firstPose.JointCount);
+        foreach (var vertexIndex in new[] { 0, 127, 855, 1727 })
+        {
+            var source = positions[vertexIndex];
+            var sourcePosition = new Vector3(source.X, source.Y, source.Z);
+            var influence = weights.Vertices[vertexIndex];
+            var skinnedPosition = Vector3.Zero;
+            for (var slot = 0; slot < 4; slot++)
+            {
+                skinnedPosition += Vector3.Transform(sourcePosition,
+                    firstPose.SkinMatrices[influence.GetJointIndex(slot)]) * influence.GetWeight(slot);
+            }
+
+            AssertVectorClose(sourcePosition, skinnedPosition);
+        }
+
+        var hipNodeIndex = skin.JointNodeIndices[2];
+        var secondHipRest = secondPose.GetLocalTransform(hipNodeIndex);
+        var firstHipRest = firstPose.GetLocalTransform(hipNodeIndex);
+        firstPose.SetLocalTransform(hipNodeIndex, firstHipRest with
+        {
+            Position = firstHipRest.Position + new Vector3(6f, 0f, 0f)
+        });
+        firstPose.ComputeSkinMatrices();
+
+        Assert.Equal(secondHipRest, secondPose.GetLocalTransform(hipNodeIndex));
+        AssertMatrixClose(Matrix.Identity, secondPose.SkinMatrices[2]);
+        Assert.True(MathF.Abs(firstPose.SkinMatrices[2].M41) > 1f);
+    }
+
+    [Fact]
+    public void ImportsFoxSkinnedVerticesAndGeneratesMissingNormals()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var meshNode = model.LogicalNodes.Single(node => node.Name == "fox");
+        var skin = GltfSkinData.Import(model, meshNode);
+        var primitive = Assert.Single(meshNode.Mesh!.Primitives);
+        var material = GltfMaterialData.Import(primitive.Material);
+
+        var mesh = GltfSkinnedMeshData.Import(primitive, skin, material.HasBaseColorImage);
+
+        Assert.Equal(1728, mesh.Vertices.Count);
+        Assert.Equal(1728, mesh.TriangleIndices.Count);
+        AssertVectorClose(new Vector3(-12.592718f, -0.121745f, -88.095f), mesh.LocalBounds.Min);
+        Assert.InRange(MathF.Abs(mesh.Vertices[0].Normal.Length() - 1f), 0f, 0.0001f);
+        Assert.Contains(mesh.Vertices, vertex => vertex.TextureCoordinate0 != Vector2.Zero);
+        Assert.InRange(mesh.Vertices[0].JointWeights.GetJointIndex(0), 0, 23);
+    }
+
+    [Fact]
+    public void SkinnedEffectCompatibilityChecksProfileAndBoneLimitBeforeAllocation()
+    {
+        SkinnedEffectCompatibility.Validate(GraphicsProfile.Reach, 24);
+        SkinnedEffectCompatibility.Validate(GraphicsProfile.HiDef, 72);
+
+        var tooManyBones = Assert.Throws<NotSupportedException>(() =>
+            SkinnedEffectCompatibility.Validate(GraphicsProfile.HiDef, 73));
+        Assert.Contains("at most 72 joints", tooManyBones.Message, StringComparison.Ordinal);
+
+        Assert.Throws<NotSupportedException>(() =>
+            SkinnedEffectCompatibility.Validate((GraphicsProfile)999, 24));
+    }
+
+    [Fact]
+    public void ImportsFoxAsOneCompleteSkinnedCharacterAsset()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+
+        var character = GltfSkinnedCharacterData.Import(model);
+
+        Assert.Equal(24, character.Skin.JointNodeIndices.Count);
+        var primitive = Assert.Single(character.Primitives);
+        Assert.Equal(1728, primitive.Mesh.Vertices.Count);
+        Assert.True(primitive.Material.HasBaseColorImage);
+        Assert.Equal(primitive.Mesh.LocalBounds.Min, character.LocalBounds.Min);
+        Assert.Equal(primitive.Mesh.LocalBounds.Max, character.LocalBounds.Max);
+        Assert.Equal(24, character.CreatePose().JointCount);
+    }
+
     private static string FixturePath() => Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
     private static string FoxFixturePath() => Path.Combine(AppContext.BaseDirectory, "Assets", "Fox.glb");
 
@@ -288,5 +382,12 @@ public sealed class GltfSceneImporterTests
         Assert.InRange(Math.Abs(expected.M41 - actual.M41), 0f, 0.0001f);
         Assert.InRange(Math.Abs(expected.M42 - actual.M42), 0f, 0.0001f);
         Assert.InRange(Math.Abs(expected.M43 - actual.M43), 0f, 0.0001f);
+    }
+
+    private static void AssertVectorClose(Vector3 expected, Vector3 actual)
+    {
+        Assert.InRange(MathF.Abs(expected.X - actual.X), 0f, 0.0001f);
+        Assert.InRange(MathF.Abs(expected.Y - actual.Y), 0f, 0.0001f);
+        Assert.InRange(MathF.Abs(expected.Z - actual.Z), 0f, 0.0001f);
     }
 }

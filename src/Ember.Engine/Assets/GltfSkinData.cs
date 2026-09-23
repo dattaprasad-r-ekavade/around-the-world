@@ -58,6 +58,8 @@ public sealed class GltfSkinData
     /// <summary>Inverse bind matrices in the original glTF skin joint order.</summary>
     public IReadOnlyList<Matrix> InverseBindMatrices { get; }
 
+    public GltfSkinPose CreatePose() => new(this);
+
     public static GltfSkinData Import(ModelRoot model, Node meshNode)
     {
         if (model is null) throw new ArgumentNullException(nameof(model));

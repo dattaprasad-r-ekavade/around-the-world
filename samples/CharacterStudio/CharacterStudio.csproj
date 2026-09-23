@@ -17,6 +17,7 @@
 
   <ItemGroup>
     <Content Include="Assets\TextureCoordinateTest.glb" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\Fox.glb" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

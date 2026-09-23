@@ -90,8 +90,8 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 26 | Add one licensed rigged GLB with a known bind pose and animation; record its hierarchy and expected clip duration. | The source application/reference viewer displays the expected pose and clip. |
 | [x] | 27 | Import joint hierarchy, inverse-bind matrices, and rest local transforms into immutable data. | CPU fixtures verify joint ordering and bind transforms, including mesh-node transforms. |
 | [x] | 28 | Import joint indices/weights with explicit supported limits and validation. | Invalid joints/weights fail; accepted weights are normalized; excess influences are reported. |
-| [ ] | 29 | Add per-instance pose arrays and calculate skin matrices from a supplied pose. | Bind-pose fixtures produce expected transformed vertices; instances do not share mutable arrays. |
-| [ ] | 30 | Add the skinning draw path; validate SkinnedEffect/profile limits before choosing it. | The character's bind pose visually matches the reference; oversized skeletons fail clearly. |
+| [x] | 29 | Add per-instance pose arrays and calculate skin matrices from a supplied pose. | Bind-pose fixtures produce expected transformed vertices; instances do not share mutable arrays. |
+| [x] | 30 | Add the skinning draw path; validate SkinnedEffect/profile limits before choosing it. | The character's bind pose visually matches the reference; oversized skeletons fail clearly. |
 | [ ] | 31 | Import STEP/LINEAR translation, quaternion rotation, and scale animation tracks. | Clip duration/key values match the fixture; unsupported interpolation is rejected. |
 | [ ] | 32 | Evaluate one clip at an absolute time, using rest values for missing channels. | Start/middle/end fixtures pass, including shortest-path rotation interpolation. |
 | [ ] | 33 | Add play, pause, loop, seek, and speed controls through sample commands. | Seeking to a time matches sequential playback at that time; loop boundaries are correct. |

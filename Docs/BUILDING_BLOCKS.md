@@ -208,15 +208,24 @@ so the SharpGLTF model can be released independently; unresolved image reference
 This initial slice does not import metallic / roughness, normal, emissive, alpha-cutout, or
 animation data.
 
-### CPU skin data
+### Skinned-character data and bind-pose drawing
 
-`GltfSkinData.Import(model, meshNode)` reads one skinned mesh's immutable node records, rest
-local transforms, joint-order mapping, inverse-bind matrices, and mesh-node rest world matrix.
+`GltfSkinnedCharacterData.Import(model)` currently accepts one skinned mesh node in the default
+scene. `GltfSkinData.Import(model, meshNode)` reads immutable node records, rest local
+transforms, skin-order joint mapping, inverse-bind matrices, and the mesh-node rest world matrix.
 It includes non-joint ancestors so transforms above either the skeleton or mesh are retained.
 `GltfSkinWeightData.Import(primitive, vertexCount, jointCount)` reads `JOINTS_0` and
 `WEIGHTS_0`, validates references and values, and normalizes each vertex's weights. The current
-limit is four influences per vertex; additional joint/weight sets fail clearly. This is CPU
-asset data only: the scene importer and renderer do not yet play or draw skinned characters.
+limit is four influences per vertex; additional joint/weight sets fail clearly. Skinned
+primitives support triangles, POSITION, optional NORMAL (computed when absent), optional
+TEXCOORD_0 when untextured, and OPAQUE base-color materials.
+
+Each `GltfSkinPose` owns its mutable local transforms and calculates skin matrices from a pose.
+`SkinnedMeshGpuBuffer` uploads the four influence slots and draws through MonoGame's
+`SkinnedEffect`; this path validates Reach/HiDef and the current 72-joint limit before upload.
+CharacterStudio's `--fox` option loads the bundled Fox fixture and draws its bind pose. Animation
+track import and playback are still pending, and the static `GltfSceneImporter` continues to
+reject skinned nodes rather than silently omitting their deformation.
 
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the
