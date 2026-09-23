@@ -330,3 +330,51 @@ For each chosen feature, append tasks with the same four columns. Each task need
 Suggested request to an implementing AI:
 
 > Read Docs/ENGINE_ROADMAP.md. Complete the first unchecked task whose prerequisites are finished. If the user requests a consecutive batch, do those tasks in order and pass each task's acceptance check before marking its row. Follow the implementation rules, update the handoff, and do not claim untested behavior works.
+
+## Plan review — 23 September 2026
+
+### How much is built
+
+Reviewed the current working tree, including the existing uncommitted implementation changes. **38 of the original 143 task rows are checked (26.6% by task count); 105 remain unchecked.** This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+
+| Area | Current evidence and status |
+| --- | --- |
+| Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
+| Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. Multiple instances of the same asset work; multiple distinct assets in CharacterStudio do not. |
+| Stage 4: characters (26–38) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A is still incomplete because the environment and characters cannot be loaded together. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | No completed roadmap rows. Existing UI, camera, audio and capture utilities provide useful primitives, but do not establish the planned editor, BEPU controller, timeline or standalone distribution. |
+| Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
+
+Verification run for this review:
+
+- `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 55 passed, 0 failed, 0 skipped.
+- `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
+
+These were fresh build/CPU checks at the time of the review. Subsequent task 37–38 screenshots and scene reopen checks are recorded in `ENGINE_PROGRESS.md`; clean-machine packaging, a resource soak, and performance benchmarks remain unverified.
+
+### Recommended changes, in priority order
+
+**1. Close the Release A scheduling gap before task 39.** Adopted as ordered tasks 38a–38b in Stage 4. They remain unchecked until their own acceptance checks pass; split further if the three-source-file rule requires it.
+
+Source evidence: `CharacterStudioGame.ResolveSceneAsset` explicitly rejects a second unique asset ID. `PreviewResources.Load` chooses either the skinned or static branch and currently treats every asset-bearing scene object as an instance of that one loaded asset. Merely deleting the rejection will not implement multi-asset scenes.
+
+**2. Failed-open save protection.** Addressed in CharacterStudio: S targets an opened scene only after a successful load; a failed open disables saving back to that path, including when `--save` names the same invalid source. An explicit different `--save` path still writes the recovery scene. A runtime check confirmed the invalid source's SHA-256 stayed unchanged while Save As produced version-2 JSON.
+
+**3. Define a project/content root before task 44's asset browser.** `GltfAssetReference` calls its paths project-relative, while CharacterStudio resolves them against `AppContext.BaseDirectory`. Bundled samples work because their content is copied beside the executable; arbitrary external projects have no explicit root contract. Add one resolver used by open, reimport and packaging, with diagnostics containing asset ID and resolved path. Acceptance: an external project reopens and reimports from a different working directory, then still works after the complete project folder is moved. Preserve stable IDs and relative serialized paths. Keep this a small project-root contract, not a general asset database.
+
+**4. Tighten importer and animation-bound claims before relying on them.** `GltfSkinnedCharacterData.Import` collects the one skinned mesh but does not import or explicitly reject additional unskinned mesh nodes in the same GLB. This can omit authored geometry despite the plan's no-silent-partial-import rule. Add a negative fixture and reject this combination until intentionally supported. Separately, `GltfAnimationBounds.SampleClip` uses uniform samples plus padding: dense coverage of the bundled Fox clips is evidence for that fixture, not a proof for every accepted clip or blend. Before animated culling is introduced, add fast/short-key-interval and crossfade fixtures, include attachment extents where needed, and retain an uncullable fallback for unverified poses. Do not label all STEP/LINEAR clips conservatively bounded solely because they parse.
+
+**5. Bring measurement forward, while keeping the populated-world benchmark in Stage 13.** Task 50 already introduces diagnostics; use it to establish reference hardware, resolution and an initial representative mixed scene. Record draw counts, frame-time percentiles, import/reimport latency and owned resources. Then measure task 79's activation queue under deliberately slow loads. Keep tasks 119/127 for the richer outdoor benchmark. Current CharacterStudio loading samples every vertex across every animation synchronously, so import cost should be measured as well as steady-state rendering. Set budgets from measurements rather than adding speculative performance promises.
+
+**6. Make the first gameplay proof earlier and make deferred prerequisites explicit.** Keep Release A and the editor foundation first, but consider moving Stage 7's cinematic export branch after a minimal RPG interaction proof if the RPG is the main delivery goal. At the end of Stage 6, demonstrate movement, a door or interaction target, a simple inventory change and save/restart in one small level using existing Ember.Rpg primitives. This is a smoke test, not an early replacement for Stages 9–12. Before task 137's settlement, explicitly decide whether authored ramps are sufficient or promote step climbing from the optional list into required tasks. Likewise, record whether third-person alone satisfies the intended RPG slice or whether a first-person mode is required. If reordering is adopted, update stage prerequisites and the first-unchecked-task rule together.
+
+**7. Specify the minimum authoring workflow needed by task 62.** Before play-on-clone, add small rows for assigning a collider and compiled behavior to a scene object, persisting those settings, and validating their references. Tasks 51–61 can otherwise succeed using hard-coded sample setup while leaving no authored scene that task 62 can clone into a playable state. Acceptance: save/reopen a level with a floor collider and one interaction behavior, start play, observe both, stop, and confirm the authored state is restored. Reuse the existing scene model and avoid introducing a broad component framework in advance.
+
+**8. Separate task completion from release-gate evidence.** Add a compact gate checklist with date, command/scenario, artifact path, resource measurements where relevant, and result. In particular, keep Release A explicitly blocked until the combined environment scene passes, and record the Stage 2 reload/resource gate separately from CPU disposal fixtures. Attachments currently persist a bone name and local offset and render as a preview cube; task 99 should explicitly add an equipment asset reference rather than assume arbitrary prop persistence already exists. Update README's consumer list and capabilities after Release A so CharacterStudio and the supported import subset are discoverable.
+
+### Suggested next sequence
+
+Complete ordered tasks 38a–38b and the Release A gate before starting task 39. Resolve the project-root contract before task 44 and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+
+This section records review findings and recommendations. It does not mark task rows complete; each remains unchecked until its acceptance check passes. Existing source changes were preserved.

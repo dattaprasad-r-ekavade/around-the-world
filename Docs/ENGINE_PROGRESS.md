@@ -273,3 +273,8 @@ The blend amount is currently supplied by the caller rather than advanced by a t
 | CharacterStudio saved-scene reopen | PASS — both distinct character playback states and the attached prop render from version-2 JSON |
 
 The sampled bounds describe supported imported clips; they do not make arbitrary procedural poses safe to cull. The renderer currently performs no animated-character culling. The Release A scene still lacks support for a second, environment GLB, so Stage 5 is held until roadmap tasks 38a–38b are implemented.
+
+## Save-safety follow-up — failed scene open
+
+- CharacterStudio now selects an in-place **S** save target only after `--open` succeeds. If the source is malformed or uses an unsupported scene version, saving back to that same path is blocked; an explicit different `--save` path remains available for recovery.
+- Runtime validation used a version-99 scene: same-path `--open`/`--save` kept the source SHA-256 unchanged and displayed the preservation message; a different `--save` path wrote a separate version-2 recovery scene while preserving the invalid source.

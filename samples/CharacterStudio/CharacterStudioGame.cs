@@ -37,6 +37,7 @@ public sealed class CharacterStudioGame : EngineHost
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
     private string? _assetPath;
+    private string? _blockedSaveReason;
     private string _reimportStatus = "R: reimport current GLB | S: save scene";
     private BasicEffect _studioEffect = null!;
     private SkinnedEffect? _skinnedEffect;
@@ -49,7 +50,6 @@ public sealed class CharacterStudioGame : EngineHost
     {
         _savePath = ParseOption(args, "--save");
         var openPath = ParseOption(args, "--open");
-        _sceneSavePath = _savePath ?? openPath;
         var requestedAnimation = ParseOption(args, "--clip");
         var requestedAnimationTime = ParseFiniteFloatOption(args, "--time");
         var requestedAnimationSpeed = ParseFiniteFloatOption(args, "--speed") ?? 1f;
@@ -94,6 +94,7 @@ public sealed class CharacterStudioGame : EngineHost
             secondTime, secondSpeed, pauseSecond, !secondNoLoop, crossfadeClip,
             blendAmount, attachHand, hasSecondOptions);
 
+        var openedExistingScene = false;
         if (openPath is null)
         {
             _sceneData = CreateDefaultScene(ResolveDefaultAsset(args), pair);
@@ -104,13 +105,25 @@ public sealed class CharacterStudioGame : EngineHost
             {
                 _sceneData = SceneFile.Load(openPath);
                 if (pair) AddPairIfNeeded(_sceneData);
+                openedExistingScene = true;
             }
             catch (Exception exception)
             {
                 _sceneData = CreateDefaultScene(ResolveDefaultAsset(args), pair);
                 _faults.Add($"open {openPath}: {exception.Message}");
+                _reimportStatus = "Open failed; recovery scene is unsaved unless you use --save to another path.";
             }
         }
+
+        // Never let S overwrite a malformed or unsupported source with the fallback scene.
+        // An explicit --save path remains available for recovery/Save As.
+        var saveTargetsFailedSource = !openedExistingScene && openPath is not null && _savePath is not null
+            && PathsReferToSameFile(openPath, _savePath);
+        _sceneSavePath = saveTargetsFailedSource
+            ? null
+            : _savePath ?? (openedExistingScene ? openPath : null);
+        if (saveTargetsFailedSource)
+            _blockedSaveReason = "Invalid source preserved; choose a different --save path.";
 
         ApplyCommandLineSettings();
     }
@@ -511,7 +524,7 @@ public sealed class CharacterStudioGame : EngineHost
     {
         if (_sceneSavePath is null)
         {
-            _reimportStatus = "Pass --save <path> to enable S: save scene";
+            _reimportStatus = _blockedSaveReason ?? "Pass --save <path> to enable S: save scene";
             return;
         }
 
@@ -526,6 +539,19 @@ public sealed class CharacterStudioGame : EngineHost
         {
             _reimportStatus = $"Scene save failed: {exception.Message}";
             Console.WriteLine($"CharacterStudio scene save failed: {exception.Message}");
+        }
+    }
+
+    private static bool PathsReferToSameFile(string first, string second)
+    {
+        try
+        {
+            return string.Equals(Path.GetFullPath(first), Path.GetFullPath(second),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
         }
     }
 
