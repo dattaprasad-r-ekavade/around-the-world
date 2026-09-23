@@ -1,6 +1,7 @@
 # Ember: small-step implementation plan
 
-Status: planning only. Implement one unchecked task per session, in order.
+Status: in progress. Implement the first unchecked task. When the user requests a batch,
+implement consecutive tasks in order; mark each row done only after that task's own check passes.
 
 **Product target:** a single-player, cell-based 3D RPG engine supporting Morrowind-style mechanics and visual fidelity, with a Vice City-like map footprint and separately loaded interiors. The map comparison describes extent, not vehicles, traffic, or crowd simulation. Actual dimensions and active-object budgets must be chosen through benchmarks; they are not performance promises.
 
@@ -67,9 +68,9 @@ Start here. Do not build an editor or importer yet.
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 16 | Add one redistributable static GLB fixture and its license/source; document expected dimensions and orientation. | Asset provenance is recorded and its authored appearance is available for comparison. |
-| [ ] | 17 | Evaluate SharpGLTF by reading fixture nodes and primitives; pin the compatible version. | A CPU test reads expected counts/transforms; chosen version and license are recorded. |
-| [ ] | 18 | Define Ember-owned mesh data for positions, normals, UV0, and triangle indices. Convert one primitive. | Numeric fixture checks match expected vertices and indices; unsupported topology is rejected. |
+| [x] | 16 | Add one redistributable static GLB fixture and its license/source; document expected dimensions and orientation. | Asset provenance is recorded and its authored appearance is available for comparison. |
+| [x] | 17 | Evaluate SharpGLTF by reading fixture nodes and primitives; pin the compatible version. | A CPU test reads expected counts/transforms; chosen version and license are recorded. |
+| [x] | 18 | Define Ember-owned mesh data for positions, normals, UV0, and triangle indices. Convert one primitive. | Numeric fixture checks match expected vertices and indices; unsupported topology is rejected. |
 | [ ] | 19 | Upload that mesh to vertex/index buffers and draw it with an explicit world matrix. | The fixture renders at its authored size/origin; buffers are disposed on unload. |
 | [ ] | 20 | Import the GLB node hierarchy into scene objects. | Rotated/scaled child meshes match reference transforms and visual placement. |
 | [ ] | 21 | Import base-color factors and PNG/JPEG base-color textures for opaque materials only. | A textured reference object has correct UV orientation and tint; unsupported material modes are reported. |
@@ -315,14 +316,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 15.
-- Current task: 16.
-- Changed files: `src/Ember.Engine/Engine/EngineHost.cs`, `src/Ember.Engine/Audio/AmbientAudio.cs`, `src/Ember.Engine/Scene/SceneResourceScope.cs`, `samples/Campaign/CampaignGame.cs`, `samples/CharacterStudio/CharacterStudioGame.cs`, `tests/Ember.Engine.Tests/SceneResourceScopeTests.cs`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
-- Checks run: `dotnet test Ember.sln --nologo`; `dotnet build Ember.sln --nologo`; RPG check; screenshot capture runs for CharacterStudio, FirstLight, and Campaign.
-- Results: 17 tests passed; build passed with 0 warnings and 0 errors; RPG check passed; all three samples rendered and exited successfully.
+- Last completed tasks: 16–18.
+- Current task: 19.
+- Changed files: `src/Ember.Engine/Assets/StaticMeshData.cs`, `src/Ember.Engine/Assets/GltfPrimitiveImporter.cs`, `src/Ember.Engine/Ember.Engine.csproj`, `tests/Ember.Engine.Tests/Assets/TextureCoordinateTest.glb`, `tests/Ember.Engine.Tests/Assets/README.md`, `tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj`, `tests/Ember.Engine.Tests/GltfPrimitiveImporterTests.cs`, `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
+- Checks run: `dotnet test Ember.sln --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`.
+- Results: 20 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed.
 - Blockers: none recorded.
-- Next action: run task 16 and add one licensed static GLB fixture with documented dimensions and orientation.
+- Next action: upload the imported mesh to GPU buffers and draw it with an explicit world matrix.
 
 Suggested request to an implementing AI:
 
-> Read Docs/ENGINE_ROADMAP.md. Complete only the first unchecked task whose prerequisites are finished. Follow the implementation rules, run the acceptance check, and update its checkbox and the handoff. If it is too large for one small change, split it into atomic subtasks first. Do not start the next task or claim untested behavior works.
+> Read Docs/ENGINE_ROADMAP.md. Complete the first unchecked task whose prerequisites are finished. If the user requests a consecutive batch, do those tasks in order and pass each task's acceptance check before marking its row. Follow the implementation rules, update the handoff, and do not claim untested behavior works.

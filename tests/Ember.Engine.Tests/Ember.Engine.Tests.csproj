@@ -21,4 +21,8 @@
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\TextureCoordinateTest.glb" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

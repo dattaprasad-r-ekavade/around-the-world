@@ -162,6 +162,21 @@ measured once and scaled to a unit, and `scale` then means metres rather than "w
 artist exported". `Errors` collects load failures instead of throwing — draw them on screen in
 a debug build.
 
+### `StaticMeshData` / `GltfPrimitiveImporter`
+
+Read a single static glTF triangle primitive into engine-owned CPU data:
+
+```csharp
+var model = ModelRoot.Load("Content/Props/crate.glb");
+var mesh = GltfPrimitiveImporter.Import(model.LogicalMeshes[0].Primitives[0]);
+```
+
+`StaticMeshData` stores each vertex's position, normal, and `TEXCOORD_0`, plus triangle
+indices. The importer requires all three attributes and `TRIANGLES` topology; unsupported
+attributes/topologies fail with a clear exception. It preserves the source coordinates and
+authored size. It does not apply node transforms, materials, textures, or GPU uploads yet, and
+it does not use `ModelCache`'s normalization. SharpGLTF.Core is pinned at 1.0.7 for this path.
+
 ### `BillboardRenderer`
 
 Camera-facing cutout quads, for sprites standing in a 3D world.

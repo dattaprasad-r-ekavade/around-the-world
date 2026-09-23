@@ -109,3 +109,19 @@ This file records only the starting health of the repository. It does not claim 
 | Campaign screenshot capture | PASS — startup, rendering, capture, and shutdown completed after ambient playback was changed to stop-only |
 
 These checks confirm the disposal paths run without errors in the sample shutdown flow. The project does not expose a graphics-driver live-resource counter, so this is not a measured GPU-memory leak benchmark.
+
+## Tasks 16–18 — static GLB and CPU mesh data
+
+- Task 16: added the Khronos `TextureCoordinateTest.glb` fixture under `tests/Ember.Engine.Tests/Assets`. Its CC0-1.0 source, attribution, SHA-256, reference viewer, dimensions, and glTF orientation are recorded beside it. The fixture has five identity-transform nodes and five meshes; the first mesh is a 1 m square facing +Z.
+- Task 17: pinned SharpGLTF.Core 1.0.7 in `Ember.Engine`. A CPU test reads the fixture's scene, node names and identity transforms, mesh/primitive counts, attributes, and index count. The selected version targets .NET 8 or later and is MIT-licensed; its compatibility is verified by the .NET 9 solution build and tests.
+- Task 18: added `StaticMeshVertex`, immutable `StaticMeshData`, and `GltfPrimitiveImporter`. The importer copies positions, normals, TEXCOORD_0, and triangle indices into Ember-owned CPU data. It rejects non-triangle topology, missing attributes, mismatched attribute counts, malformed index counts, nonfinite values, and indices outside the vertex array.
+
+### Task 16–18 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo` | PASS — 20 tests, no graphics device/window |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings, 0 errors; all samples compile |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+
+The current mesh path is CPU-only. It does not upload buffers, apply node transforms, or import materials and textures. `TextureCoordinateTest.glb` intentionally includes one primitive without UV0 so the failure path stays covered.
