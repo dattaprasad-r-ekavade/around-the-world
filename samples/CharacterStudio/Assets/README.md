@@ -38,3 +38,13 @@ read from the asset are Survey 3.416667 s, Walk 0.708333 s, and Run 1.158333 s. 
 joint count, representative rest-pose hierarchy, and those durations.
 
 SHA-256: `D97044E701822BAC5A62696459B27D7B375AADA5DE8574ED4362EDBBA94771F7`
+
+## Release A courtyard fixture
+
+`ReleaseACourtyard.glb` is an original, low-poly static environment authored for the
+CharacterStudio Release A showcase. It has four opaque, untextured material groups, four
+mesh nodes, triangle topology, and POSITION/NORMAL attributes. Its authored bounds are
+approximately X [-105, 105], Y [-3, 63], Z [-78, 62] metres in glTF's right-handed, Y-up
+coordinates. The scene contains a courtyard floor, low sandstone walls, trim, and display
+stones so two Fox instances and the hand attachment remain visible. No external model or
+texture is embedded.

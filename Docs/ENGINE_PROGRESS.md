@@ -255,7 +255,7 @@ The Fox fixture's non-symmetric hip rest transform and parented mesh-node test m
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio pair and crossfade screenshot captures | PASS — both character instances and crossfade render; colored attachment prop is visible |
 
-The blend amount is currently supplied by the caller rather than advanced by a timed transition controller. CharacterStudio still previews one unique GLB per scene.
+The blend amount is currently supplied by the caller rather than advanced by a timed transition controller. At this milestone CharacterStudio still loaded one unique GLB per scene; tasks 38a–38b below later add and verify a separate static environment beside the shared character asset.
 
 ## Tasks 37–38 — frame animated characters and persist per-instance state
 
@@ -272,9 +272,26 @@ The blend amount is currently supplied by the caller rather than advanced by a t
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio saved-scene reopen | PASS — both distinct character playback states and the attached prop render from version-2 JSON |
 
-The sampled bounds describe supported imported clips; they do not make arbitrary procedural poses safe to cull. The renderer currently performs no animated-character culling. The Release A scene still lacks support for a second, environment GLB, so Stage 5 is held until roadmap tasks 38a–38b are implemented.
+The sampled bounds describe supported imported clips; they do not make arbitrary procedural poses safe to cull. The renderer currently performs no animated-character culling. At this milestone the Release A scene still lacked a separate environment GLB; that gap is closed by tasks 38a–38b below.
 
 ## Save-safety follow-up — failed scene open
 
 - CharacterStudio now selects an in-place **S** save target only after `--open` succeeds. If the source is malformed or uses an unsupported scene version, saving back to that same path is blocked; an explicit different `--save` path remains available for recovery.
 - Runtime validation used a version-99 scene: same-path `--open`/`--save` kept the source SHA-256 unchanged and displayed the preservation message; a different `--save` path wrote a separate version-2 recovery scene while preserving the invalid source.
+
+## Tasks 38a–38b — load and reopen the Release A showcase
+
+- Task 38a: CharacterStudio now resolves each distinct scene asset ID once and keeps that GLB's imported scene, GPU buffers, and textures together. Each scene instance draws through its referenced asset, so a static environment can share a scene with multiple instances of one skinned character. Character status and command-line playback options consider only skinned objects; `R` stages a reload of all scene assets while preserving the prior preview if any replacement fails.
+- Added original `Assets/ReleaseACourtyard.glb`, an opaque, untextured four-mesh static environment, and `Scenes/ReleaseAShowcase.json`: one courtyard object plus two Fox instances at separate transforms. The Walk instance begins at 0.35 s playing with a hand attachment; the Run instance begins at 0.60 s paused.
+- Task 38b: opened and saved the sample showcase, then opened the saved version again. The second capture restores the courtyard, both transforms, Walk/Run settings, and the `b_RightHand_08` attachment. Both screenshots are 1280×720.
+- Added a CPU scene round-trip test for one unique environment asset and two character objects sharing a separate asset reference. README now lists CharacterStudio and describes its current supported workflow and upcoming authoring scope.
+
+### Tasks 38a–38b checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 56 tests, 0 failed |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio open/save capture | PASS — `captures/release-a-before-reopen.png`; courtyard and two independently configured Fox instances render together |
+| CharacterStudio saved-scene reopen | PASS — `captures/release-a-after-reopen.png`; both clip states, authored transforms, and hand attachment restored |

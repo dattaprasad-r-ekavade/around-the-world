@@ -100,10 +100,10 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 36 | Add one named bone attachment with a local offset. | A visible hand prop follows the character throughout its animation. |
 | [x] | 37 | Add conservative animated bounds, initially sampled per clip with a documented margin. | Limbs remain visible throughout supported clips; unsupported procedural poses can disable culling. |
 | [x] | 38 | Save character asset, clip, playback settings, and attachment references. | Reopening the scene restores both characters and their settings. |
-| [ ] | 38a | Load one static environment GLB alongside shared skinned-character instances in CharacterStudio. | A saved scene renders two independently animated Fox instances and a distinct environment asset at their authored transforms. |
-| [ ] | 38b | Build and reopen the Release A showcase scene with its environment, characters, and hand prop. | Reopening restores all transforms, clip states, and attachment placement in a captured 1280×720 scene. |
+| [x] | 38a | Load one static environment GLB alongside shared skinned-character instances in CharacterStudio. | A saved scene renders two independently animated Fox instances and a distinct environment asset at their authored transforms. |
+| [x] | 38b | Build and reopen the Release A showcase scene with its environment, characters, and hand prop. | Reopening restores all transforms, clip states, and attachment placement in a captured 1280×720 scene. |
 
-**Release A: Character Studio alpha.** Two independently animated characters, one environment, one attachment, save/load, and screenshot capture must work before continuing.
+**Release A: Character Studio alpha — PASS (23 September 2026).** The saved courtyard showcase contains two independently configured Fox instances, a distinct environment GLB, a hand attachment, and survives reopen. Evidence: `captures/release-a-before-reopen.png` and `captures/release-a-after-reopen.png`.
 
 ## Stage 5 — Usable scene tools and lighting
 
@@ -318,14 +318,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 38.
-- Current task: 38a.
-- Current gate: Release A remains incomplete until tasks 38a–38b add and verify a separate environment GLB beside the character instances.
-- Changed files for the latest batch: sampled skinned-animation bounds, version-2 scene character settings and attachment records, CharacterStudio save/load wiring, focused CPU tests, and the building-block/progress notes.
-- Checks: full solution build, full CPU test suite, RPG save/load check, dense 120 Hz deformation coverage for every bundled Fox clip, and CharacterStudio save/reopen screenshots with two independently configured characters and an attachment.
-- Results: task 37's all-clip sampled bounds contain every dense-check vertex; task 38 restores both characters' distinct clip/time/pause state and the saved attachment reference. Scene version 1 remains readable and saves as version 2.
-- Blockers: none for tasks 37–38. The separate environment requirement is now tracked as tasks 38a–38b.
-- Next action: implement task 38a, then verify the combined showcase and complete the Release A gate before task 39.
+- Last completed tasks: 38a–38b; Release A passed on 23 September 2026.
+- Current task: 39 — integrate a pinned ImGui.NET version in CharacterStudio.
+- Current gate: Release A is complete; its combined static-environment/animated-character save-and-reopen evidence is recorded below.
+- Changed files for the latest batch: per-asset CharacterStudio preview loading/drawing, original courtyard GLB and showcase scene, distinct-asset scene round-trip coverage, and capability/progress documentation.
+- Checks: `dotnet build Ember.sln --no-restore --nologo` (0 warnings, 0 errors); `dotnet test Ember.sln --no-build --nologo` (56 passed); RPG save/load check; and two 1280×720 CharacterStudio captures, before and after saved-scene reopen.
+- Results: one static courtyard asset and two instances sharing Fox loaded together. Walk remained playing at its saved time, Run remained paused at its separate time, both authored transforms persisted, and the hand attachment returned on `b_RightHand_08`.
+- Blockers: none for tasks 38a–38b.
+- Next action: task 39, integrating and compatibility-checking the pinned ImGui.NET UI.
 
 Suggested request to an implementing AI:
 
@@ -340,8 +340,8 @@ Reviewed the current working tree, including the existing uncommitted implementa
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
-| Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. Multiple instances of the same asset work; multiple distinct assets in CharacterStudio do not. |
-| Stage 4: characters (26–38) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A is still incomplete because the environment and characters cannot be loaded together. |
+| Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
+| Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
 | Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | No completed roadmap rows. Existing UI, camera, audio and capture utilities provide useful primitives, but do not establish the planned editor, BEPU controller, timeline or standalone distribution. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
@@ -355,9 +355,7 @@ These were fresh build/CPU checks at the time of the review. Subsequent task 37�
 
 ### Recommended changes, in priority order
 
-**1. Close the Release A scheduling gap before task 39.** Adopted as ordered tasks 38a–38b in Stage 4. They remain unchecked until their own acceptance checks pass; split further if the three-source-file rule requires it.
-
-Source evidence: `CharacterStudioGame.ResolveSceneAsset` explicitly rejects a second unique asset ID. `PreviewResources.Load` chooses either the skinned or static branch and currently treats every asset-bearing scene object as an instance of that one loaded asset. Merely deleting the rejection will not implement multi-asset scenes.
+**1. Release A scheduling gap.** Resolved by completed tasks 38a–38b. `PreviewResources` now loads each referenced asset ID once, keeps GPU resources/material textures scoped per asset, and dispatches static or skinned draws per scene object. The authored Release A courtyard scene and its before/reopen captures are the gate evidence.
 
 **2. Failed-open save protection.** Addressed in CharacterStudio: S targets an opened scene only after a successful load; a failed open disables saving back to that path, including when `--save` names the same invalid source. An explicit different `--save` path still writes the recovery scene. A runtime check confirmed the invalid source's SHA-256 stayed unchanged while Save As produced version-2 JSON.
 
@@ -371,10 +369,10 @@ Source evidence: `CharacterStudioGame.ResolveSceneAsset` explicitly rejects a se
 
 **7. Specify the minimum authoring workflow needed by task 62.** Before play-on-clone, add small rows for assigning a collider and compiled behavior to a scene object, persisting those settings, and validating their references. Tasks 51–61 can otherwise succeed using hard-coded sample setup while leaving no authored scene that task 62 can clone into a playable state. Acceptance: save/reopen a level with a floor collider and one interaction behavior, start play, observe both, stop, and confirm the authored state is restored. Reuse the existing scene model and avoid introducing a broad component framework in advance.
 
-**8. Separate task completion from release-gate evidence.** Add a compact gate checklist with date, command/scenario, artifact path, resource measurements where relevant, and result. In particular, keep Release A explicitly blocked until the combined environment scene passes, and record the Stage 2 reload/resource gate separately from CPU disposal fixtures. Attachments currently persist a bone name and local offset and render as a preview cube; task 99 should explicitly add an equipment asset reference rather than assume arbitrary prop persistence already exists. Update README's consumer list and capabilities after Release A so CharacterStudio and the supported import subset are discoverable.
+**8. Separate task completion from release-gate evidence.** Release A now has dated scenario and capture evidence. Keep the Stage 2 reload/resource gate separate from CPU disposal fixtures. Attachments currently persist a bone name and local offset and render as a preview cube; task 99 should explicitly add an equipment asset reference rather than assume arbitrary prop persistence already exists. Keep README's CharacterStudio capability summary current as more of the supported import subset is added.
 
 ### Suggested next sequence
 
-Complete ordered tasks 38a–38b and the Release A gate before starting task 39. Resolve the project-root contract before task 44 and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A tasks 38a–38b are complete; start task 39. Resolve the project-root contract before task 44 and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records review findings and recommendations. It does not mark task rows complete; each remains unchecked until its acceptance check passes. Existing source changes were preserved.

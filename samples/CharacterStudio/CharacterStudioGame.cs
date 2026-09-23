@@ -36,9 +36,8 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly PlaybackOptions _playbackOptions;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
-    private string? _assetPath;
     private string? _blockedSaveReason;
-    private string _reimportStatus = "R: reimport current GLB | S: save scene";
+    private string _reimportStatus = "R: reimport scene GLBs | S: save scene";
     private BasicEffect _studioEffect = null!;
     private SkinnedEffect? _skinnedEffect;
     private AttachmentBoxRenderer? _attachmentRenderer;
@@ -125,7 +124,6 @@ public sealed class CharacterStudioGame : EngineHost
         if (saveTargetsFailedSource)
             _blockedSaveReason = "Invalid source preserved; choose a different --save path.";
 
-        ApplyCommandLineSettings();
     }
 
     protected override void LoadContent()
@@ -147,13 +145,14 @@ public sealed class CharacterStudioGame : EngineHost
             _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
             _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
 
-            _assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
             _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(
-                GraphicsDevice, _assetPath, _sceneData));
-            if (_preview.Current.SkinnedCharacter is not null)
+                GraphicsDevice, ResolveSceneAssets(), _sceneData));
+            ApplyCommandLineSettings();
+            _preview.Current.RebuildCharacterInstances(_sceneData);
+            if (_preview.Current.HasSkinnedCharacters)
             {
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
-                    _preview.Current.SkinnedCharacter.Skin.JointNodeIndices.Count);
+                    _preview.Current.MaximumJointCount);
                 var skinnedEffect = _sceneResources.Own(new SkinnedEffect(GraphicsDevice)
                 {
                     PreferPerPixelLighting = true,
@@ -234,13 +233,16 @@ public sealed class CharacterStudioGame : EngineHost
         foreach (var item in _sceneData.Objects)
         {
             if (!item.Enabled) continue;
+            if (item.GltfAsset is not { } reference) continue;
             var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
             var preview = _preview!.Current;
-            if (preview.SkinnedCharacter is { } character)
+            if (!preview.Assets.TryGetValue(reference.AssetId, out var asset))
+                throw new InvalidOperationException($"No loaded GLB asset exists for scene object '{item.Name}'.");
+            if (asset.SkinnedCharacter is { } character)
             {
                 if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
                     throw new InvalidOperationException($"No character playback state exists for scene object '{item.Name}'.");
-                DrawSkinnedCharacter(preview, character, state, instanceWorld);
+                DrawSkinnedCharacter(asset, character, state, instanceWorld);
                 if (preview.AttachmentsByInstanceId.TryGetValue(item.Id, out var attachments))
                 {
                     var renderer = _attachmentRenderer
@@ -251,9 +253,10 @@ public sealed class CharacterStudioGame : EngineHost
                 continue;
             }
 
-            foreach (var (nodeId, parts) in preview.Scene!.MeshesByNodeId)
+            if (asset.Scene is not { } importedScene) continue;
+            foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
             {
-                var world = preview.Scene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
                 foreach (var part in parts)
                 {
                     var factor = part.Material.BaseColorFactor;
@@ -261,12 +264,12 @@ public sealed class CharacterStudioGame : EngineHost
                     _studioEffect.Alpha = 1f;
                     _studioEffect.TextureEnabled = part.Material.HasBaseColorImage;
                     _studioEffect.Texture = part.Material.HasBaseColorImage
-                        ? preview.Textures[part.Material.BaseColorImageIndex!.Value]
+                        ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
                         : null;
                     GraphicsDevice.RasterizerState = part.Material.DoubleSided
                         ? RasterizerState.CullNone
                         : RasterizerState.CullCounterClockwise;
-                    preview.MeshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
+                    asset.MeshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
                 }
             }
         }
@@ -319,7 +322,7 @@ public sealed class CharacterStudioGame : EngineHost
     private static void AddPairIfNeeded(SceneGraph scene)
     {
         if (scene.Find(PairPreviewInstanceId) is not null) return;
-        var characters = scene.Objects.Where(item => item.GltfAsset is not null).ToArray();
+        var characters = scene.Objects.Where(item => item.GltfAsset?.AssetId == FoxAsset.AssetId).ToArray();
         if (characters.Length != 1) return;
 
         var source = characters[0];
@@ -335,46 +338,45 @@ public sealed class CharacterStudioGame : EngineHost
         });
     }
 
-    private GltfAssetReference ResolveSceneAsset()
+    private Dictionary<Guid, string> ResolveSceneAssets()
     {
-        GltfAssetReference? result = null;
+        var result = new Dictionary<Guid, string>();
+        var references = new Dictionary<Guid, GltfAssetReference>();
         foreach (var item in _sceneData.Objects)
         {
             if (item.GltfAsset is not { } reference) continue;
-            if (result is null)
-            {
-                result = reference;
-                continue;
-            }
-
-            if (result.AssetId != reference.AssetId)
-                throw new NotSupportedException("CharacterStudio currently previews one unique GLB asset per scene.");
-            if (!string.Equals(result.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+            if (references.TryGetValue(reference.AssetId, out var existing)
+                && !string.Equals(existing.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to conflicting paths.");
+            references[reference.AssetId] = reference;
         }
 
-        return result ?? DefaultAsset;
+        if (references.Count == 0) references.Add(DefaultAsset.AssetId, DefaultAsset);
+        foreach (var (assetId, reference) in references)
+            result.Add(assetId, Path.GetFullPath(reference.SourcePath, AppContext.BaseDirectory));
+        return result;
     }
 
     private Bounds3? GetSceneBounds()
     {
         if (_preview is null) return null;
         Bounds3? result = null;
-        var importedScene = _preview.Current.Scene;
         foreach (var item in _sceneData.Objects)
         {
             if (!item.Enabled) continue;
+            if (item.GltfAsset is not { } reference
+                || !_preview.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
             var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
-            if (_preview.Current.SkinnedCharacter is { } character)
+            if (asset.SkinnedCharacter is { } character)
             {
-                var localBounds = _preview.Current.AnimatedBounds
+                var localBounds = asset.AnimatedBounds
                     ?? character.LocalBounds.Transform(character.Skin.MeshNodeRestWorldMatrix);
                 var bounds = localBounds.Transform(instanceWorld);
                 result = result is { } current ? current.Encapsulate(bounds) : bounds;
                 continue;
             }
 
-            if (importedScene is null) continue;
+            if (asset.Scene is not { } importedScene) continue;
             foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
             {
                 var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
@@ -390,7 +392,7 @@ public sealed class CharacterStudioGame : EngineHost
         return result;
     }
 
-    private void DrawSkinnedCharacter(PreviewResources preview, GltfSkinnedCharacterData character,
+    private void DrawSkinnedCharacter(AssetPreview preview, GltfSkinnedCharacterData character,
         CharacterInstanceState state, Matrix instanceWorld)
     {
         var effect = _skinnedEffect
@@ -461,7 +463,11 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void ApplyCommandLineSettings()
     {
-        var characters = _sceneData.Objects.Where(item => item.GltfAsset is not null).ToArray();
+        var preview = _preview?.Current
+            ?? throw new InvalidOperationException("Character assets must load before command-line playback settings are applied.");
+        var characters = _sceneData.Objects
+            .Where(item => preview.IsSkinnedObject(item))
+            .ToArray();
         if (_playbackOptions.Pair && characters.Length < 2)
             throw new ArgumentException("--pair requires two scene objects that reference a skinned character asset.");
 
@@ -557,16 +563,16 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void ReimportAsset()
     {
-        if (_preview is null || _assetPath is null) return;
+        if (_preview is null) return;
         try
         {
             CaptureCharacterSettings();
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
-                GraphicsDevice, _assetPath, _sceneData));
+                GraphicsDevice, ResolveSceneAssets(), _sceneData));
             if (cleanupError is null)
             {
-                _reimportStatus = "GLB reimport succeeded. | S: save scene";
-                Console.WriteLine($"Reimported GLB asset from {_assetPath}.");
+                _reimportStatus = "Scene GLB reimport succeeded. | S: save scene";
+                Console.WriteLine("Reimported all GLB assets referenced by the scene.");
             }
             else
             {
@@ -724,24 +730,16 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
-    private sealed class PreviewResources : IDisposable
+    private sealed class AssetPreview
     {
-        private readonly SceneResourceScope _resources;
-
-        private PreviewResources(ImportedGltfScene? scene, GltfSkinnedCharacterData? skinnedCharacter,
-            Bounds3? animatedBounds,
-            Dictionary<Guid, CharacterInstanceState> characterInstances,
-            Dictionary<Guid, List<GltfBoneAttachment>> attachmentsByInstanceId, SceneResourceScope resources,
-            Dictionary<StaticMeshData, StaticMeshGpuBuffer> meshBuffers,
+        public AssetPreview(ImportedGltfScene? scene, GltfSkinnedCharacterData? skinnedCharacter,
+            Bounds3? animatedBounds, Dictionary<StaticMeshData, StaticMeshGpuBuffer> meshBuffers,
             Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> skinnedMeshBuffers,
             Dictionary<int, Texture2D> textures)
         {
             Scene = scene;
             SkinnedCharacter = skinnedCharacter;
             AnimatedBounds = animatedBounds;
-            CharacterInstances = characterInstances;
-            AttachmentsByInstanceId = attachmentsByInstanceId;
-            _resources = resources;
             MeshBuffers = meshBuffers;
             SkinnedMeshBuffers = skinnedMeshBuffers;
             Textures = textures;
@@ -750,97 +748,140 @@ public sealed class CharacterStudioGame : EngineHost
         public ImportedGltfScene? Scene { get; }
         public GltfSkinnedCharacterData? SkinnedCharacter { get; }
         public Bounds3? AnimatedBounds { get; }
-        public Dictionary<Guid, CharacterInstanceState> CharacterInstances { get; }
-        public Dictionary<Guid, List<GltfBoneAttachment>> AttachmentsByInstanceId { get; }
         public Dictionary<StaticMeshData, StaticMeshGpuBuffer> MeshBuffers { get; }
         public Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> SkinnedMeshBuffers { get; }
         public Dictionary<int, Texture2D> Textures { get; }
+    }
 
-        public static PreviewResources Load(GraphicsDevice device, string assetPath, SceneGraph sceneData)
+    private sealed class PreviewResources : IDisposable
+    {
+        private readonly SceneResourceScope _resources;
+
+        private PreviewResources(Dictionary<Guid, AssetPreview> assets, SceneResourceScope resources)
+        {
+            Assets = assets;
+            _resources = resources;
+        }
+
+        public Dictionary<Guid, AssetPreview> Assets { get; }
+        public Dictionary<Guid, CharacterInstanceState> CharacterInstances { get; } = new();
+        public Dictionary<Guid, List<GltfBoneAttachment>> AttachmentsByInstanceId { get; } = new();
+        public bool HasSkinnedCharacters => Assets.Values.Any(asset => asset.SkinnedCharacter is not null);
+        public int MaximumJointCount => Assets.Values
+            .Where(asset => asset.SkinnedCharacter is not null)
+            .Max(asset => asset.SkinnedCharacter!.Skin.JointNodeIndices.Count);
+
+        public bool IsSkinnedObject(SceneObject item) => item.GltfAsset is { } reference
+            && Assets.TryGetValue(reference.AssetId, out var asset)
+            && asset.SkinnedCharacter is not null;
+
+        public void RebuildCharacterInstances(SceneGraph sceneData)
+        {
+            CharacterInstances.Clear();
+            AttachmentsByInstanceId.Clear();
+
+            foreach (var group in sceneData.Objects.Where(IsSkinnedObject)
+                         .GroupBy(item => item.GltfAsset!.AssetId))
+            {
+                var asset = Assets[group.Key];
+                var character = asset.SkinnedCharacter!;
+                var characterObjects = group.ToArray();
+                var primaryClipName = characterObjects.FirstOrDefault()?.CharacterSettings?.ClipName;
+                for (var index = 0; index < characterObjects.Length; index++)
+                {
+                    var item = characterObjects[index];
+                    CharacterInstances.Add(item.Id,
+                        CharacterInstanceState.Create(character, item, primaryClipName, index > 0));
+                    if (item.CharacterSettings is { Attachments.Count: > 0 } settings)
+                    {
+                        AttachmentsByInstanceId.Add(item.Id, settings.Attachments
+                            .Select(reference => new GltfBoneAttachment(character.Skin,
+                                reference.BoneName, reference.LocalOffset))
+                            .ToList());
+                    }
+                }
+            }
+        }
+
+        public static PreviewResources Load(GraphicsDevice device,
+            IReadOnlyDictionary<Guid, string> assetPaths, SceneGraph sceneData)
         {
             var resources = new SceneResourceScope();
             try
             {
-                var model = ModelRoot.Load(assetPath);
-                var meshBuffers = new Dictionary<StaticMeshData, StaticMeshGpuBuffer>();
-                var skinnedMeshBuffers = new Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer>();
-                var textures = new Dictionary<int, Texture2D>();
-
-                if (model.LogicalNodes.Any(node => node.Skin is not null))
+                var assets = new Dictionary<Guid, AssetPreview>();
+                foreach (var (assetId, assetPath) in assetPaths)
                 {
-                    var character = GltfSkinnedCharacterData.Import(model);
-                    Bounds3? animatedBounds = null;
-                    foreach (var clip in character.Animations)
-                    {
-                        var clipBounds = GltfAnimationBounds.SampleClip(character, clip);
-                        animatedBounds = animatedBounds is { } current
-                            ? current.Encapsulate(clipBounds)
-                            : clipBounds;
-                    }
+                    var model = ModelRoot.Load(assetPath);
+                    var meshBuffers = new Dictionary<StaticMeshData, StaticMeshGpuBuffer>();
+                    var skinnedMeshBuffers = new Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer>();
+                    var textures = new Dictionary<int, Texture2D>();
 
-                    var characterObjects = sceneData.Objects.Where(item => item.GltfAsset is not null).ToArray();
-                    var characterInstances = new Dictionary<Guid, CharacterInstanceState>();
-                    var attachmentsByInstanceId = new Dictionary<Guid, List<GltfBoneAttachment>>();
-                    var primaryClipName = characterObjects.FirstOrDefault()?.CharacterSettings?.ClipName;
-                    for (var index = 0; index < characterObjects.Length; index++)
+                    if (model.LogicalNodes.Any(node => node.Skin is not null))
                     {
-                        var item = characterObjects[index];
-                        characterInstances.Add(item.Id,
-                            CharacterInstanceState.Create(character, item, primaryClipName, index > 0));
-                        if (item.CharacterSettings is { Attachments.Count: > 0 } settings)
+                        var character = GltfSkinnedCharacterData.Import(model);
+                        Bounds3? animatedBounds = null;
+                        foreach (var clip in character.Animations)
                         {
-                            attachmentsByInstanceId.Add(item.Id, settings.Attachments
-                                .Select(reference => new GltfBoneAttachment(character.Skin,
-                                    reference.BoneName, reference.LocalOffset))
-                                .ToList());
+                            var clipBounds = GltfAnimationBounds.SampleClip(character, clip);
+                            animatedBounds = animatedBounds is { } current
+                                ? current.Encapsulate(clipBounds)
+                                : clipBounds;
                         }
+
+                        foreach (var primitive in character.Primitives)
+                        {
+                            var buffer = resources.Own(new SkinnedMeshGpuBuffer(
+                                device, primitive.Mesh, character.Skin.JointNodeIndices.Count));
+                            skinnedMeshBuffers.Add(primitive.Mesh, buffer);
+
+                            if (primitive.Material.HasBaseColorImage
+                                && primitive.Material.BaseColorImageIndex is { } imageIndex
+                                && !textures.ContainsKey(imageIndex))
+                            {
+                                using var imageStream = new MemoryStream(
+                                    primitive.Material.BaseColorImage.ToArray(), writable: false);
+                                textures.Add(imageIndex, resources.Own(Texture2D.FromStream(device, imageStream)));
+                            }
+                        }
+
+                        assets.Add(assetId, new AssetPreview(null, character, animatedBounds,
+                            meshBuffers, skinnedMeshBuffers, textures));
+                        continue;
                     }
 
-                    foreach (var primitive in character.Primitives)
+                    if (sceneData.Objects.Any(item => item.GltfAsset?.AssetId == assetId
+                            && item.CharacterSettings is not null))
                     {
-                        var buffer = resources.Own(new SkinnedMeshGpuBuffer(
-                            device, primitive.Mesh, character.Skin.JointNodeIndices.Count));
-                        skinnedMeshBuffers.Add(primitive.Mesh, buffer);
+                        throw new NotSupportedException(
+                            $"Character playback settings and attachments require a skinned GLB (asset {assetId}).");
+                    }
 
-                        if (primitive.Material.HasBaseColorImage
-                            && primitive.Material.BaseColorImageIndex is { } imageIndex
+                    var scene = GltfSceneImporter.Import(model);
+                    foreach (var parts in scene.MeshesByNodeId.Values)
+                    foreach (var part in parts)
+                    {
+                        if (!meshBuffers.ContainsKey(part.Mesh))
+                        {
+                            var buffer = resources.Own(new StaticMeshGpuBuffer(device, part.Mesh));
+                            meshBuffers.Add(part.Mesh, buffer);
+                        }
+
+                        if (part.Material.HasBaseColorImage && part.Material.BaseColorImageIndex is { } imageIndex
                             && !textures.ContainsKey(imageIndex))
                         {
-                            using var imageStream = new MemoryStream(
-                                primitive.Material.BaseColorImage.ToArray(), writable: false);
+                            using var imageStream = new MemoryStream(part.Material.BaseColorImage.ToArray(), writable: false);
                             textures.Add(imageIndex, resources.Own(Texture2D.FromStream(device, imageStream)));
                         }
                     }
 
-                    return new PreviewResources(null, character, animatedBounds, characterInstances,
-                        attachmentsByInstanceId, resources, meshBuffers, skinnedMeshBuffers, textures);
+                    assets.Add(assetId, new AssetPreview(scene, null, null,
+                        meshBuffers, skinnedMeshBuffers, textures));
                 }
 
-                if (sceneData.Objects.Any(item => item.CharacterSettings is not null))
-                    throw new NotSupportedException("Character playback settings and attachments require a skinned character asset.");
-
-                var scene = GltfSceneImporter.Import(model);
-                foreach (var parts in scene.MeshesByNodeId.Values)
-                foreach (var part in parts)
-                {
-                    if (!meshBuffers.ContainsKey(part.Mesh))
-                    {
-                        var buffer = resources.Own(new StaticMeshGpuBuffer(device, part.Mesh));
-                        meshBuffers.Add(part.Mesh, buffer);
-                    }
-
-                    if (part.Material.HasBaseColorImage && part.Material.BaseColorImageIndex is { } imageIndex
-                        && !textures.ContainsKey(imageIndex))
-                    {
-                        using var imageStream = new MemoryStream(part.Material.BaseColorImage.ToArray(), writable: false);
-                        var texture = resources.Own(Texture2D.FromStream(device, imageStream));
-                        textures.Add(imageIndex, texture);
-                    }
-                }
-
-                return new PreviewResources(scene, null, null, new Dictionary<Guid, CharacterInstanceState>(),
-                    new Dictionary<Guid, List<GltfBoneAttachment>>(), resources,
-                    meshBuffers, skinnedMeshBuffers, textures);
+                var preview = new PreviewResources(assets, resources);
+                preview.RebuildCharacterInstances(sceneData);
+                return preview;
             }
             catch
             {

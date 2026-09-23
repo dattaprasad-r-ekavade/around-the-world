@@ -18,6 +18,8 @@
   <ItemGroup>
     <Content Include="Assets\TextureCoordinateTest.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\Fox.glb" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\ReleaseACourtyard.glb" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Scenes\ReleaseAShowcase.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>

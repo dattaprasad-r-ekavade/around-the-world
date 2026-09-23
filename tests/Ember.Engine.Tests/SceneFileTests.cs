@@ -78,6 +78,57 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesDistinctEnvironmentAndSharedCharacterAssets()
+    {
+        var environment = new GltfAssetReference(
+            Guid.Parse("aaaaaaaa-1111-4111-8111-111111111111"), "Assets/ReleaseACourtyard.glb");
+        var character = new GltfAssetReference(
+            Guid.Parse("bbbbbbbb-2222-4222-8222-222222222222"), "Assets/Fox.glb");
+        var environmentId = Guid.Parse("cccccccc-3333-4333-8333-333333333333");
+        var firstCharacterId = Guid.Parse("dddddddd-4444-4444-8444-444444444444");
+        var secondCharacterId = Guid.Parse("eeeeeeee-5555-4555-8555-555555555555");
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(environmentId, "Courtyard")
+        {
+            GltfAsset = environment,
+            Transform = new Transform { Position = new Vector3(2f, 0f, -3f) }
+        });
+        scene.Add(new SceneObject(firstCharacterId, "Walker")
+        {
+            GltfAsset = character,
+            Transform = new Transform { Position = new Vector3(-62f, 0f, 2f) },
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Walk", Time = 0.35f, IsPlaying = true }
+        });
+        scene.Add(new SceneObject(secondCharacterId, "Runner")
+        {
+            GltfAsset = character,
+            Transform = new Transform { Position = new Vector3(62f, 0f, 2f) },
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Run", Time = 0.6f }
+        });
+
+        var path = TemporaryPath();
+        try
+        {
+            SceneFile.SaveAtomic(scene, path);
+            var loaded = SceneFile.Load(path);
+
+            Assert.Equal(environment.AssetId, loaded.Find(environmentId)!.GltfAsset!.AssetId);
+            Assert.Equal(environment.SourcePath, loaded.Find(environmentId)!.GltfAsset!.SourcePath);
+            Assert.Equal(character.AssetId, loaded.Find(firstCharacterId)!.GltfAsset!.AssetId);
+            Assert.Equal(character.AssetId, loaded.Find(secondCharacterId)!.GltfAsset!.AssetId);
+            Assert.Equal(new Vector3(-62f, 0f, 2f), loaded.Find(firstCharacterId)!.Transform.Position);
+            Assert.Equal("Walk", loaded.Find(firstCharacterId)!.CharacterSettings!.ClipName);
+            Assert.True(loaded.Find(firstCharacterId)!.CharacterSettings!.IsPlaying);
+            Assert.Equal("Run", loaded.Find(secondCharacterId)!.CharacterSettings!.ClipName);
+            Assert.Equal(0.6f, loaded.Find(secondCharacterId)!.CharacterSettings!.Time);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoadPreservesPerCharacterPlaybackAndAttachmentReferences()
     {
         var asset = new GltfAssetReference(Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"),

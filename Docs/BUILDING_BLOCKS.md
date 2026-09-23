@@ -245,7 +245,9 @@ another available clip. `--crossfade Run --blend 0.5` samples a second clip and 
 poses; callers control the blend amount over time. `--attach-hand` draws a colored preview cube
 on the first instance's `b_RightHand_08` joint using a local offset. This is a rendering/API
 demonstration. Scene format version 2 persists each character's playback state and named attachment
-references. The preview still loads one unique GLB asset per scene.
+references. The preview loads each unique asset ID once and resolves the asset per scene object,
+so static GLBs and shared skinned-character instances can appear together. Each skinned GLB is
+still limited to the importer-supported single skinned mesh node.
 
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the
@@ -257,9 +259,11 @@ pinned at 1.0.7; imported vertices retain source coordinates and authored size a
 Attach a stable, project-relative source reference to a scene object with
 `new GltfAssetReference(assetId, "Assets/Props/guard.glb")`. `SceneFile` saves its ID and path
 as metadata beside the instance transform; it never serializes the imported vertices or
-textures into scene JSON. Multiple instances may share one ID and path. The current
-CharacterStudio preview loads one unique GLB per scene and supports multiple scene objects sharing
-that asset, each with its own runtime character state.
+textures into scene JSON. Multiple instances may share one ID and path, while a scene may also
+reference distinct asset IDs and paths. CharacterStudio loads the GLB for each unique ID once,
+keeps that asset's GPU buffers and textures together, then draws each object through its own
+referenced asset and authored transform. `Scenes/ReleaseAShowcase.json` demonstrates one static
+environment plus two character instances sharing Fox.
 
 `GltfAnimationBounds.SampleClip(character, clip)` deforms every source vertex through its four
 normalized skin influences at intervals no larger than 1/30 second, then adds a margin equal to
@@ -276,8 +280,9 @@ the per-instance settings and attached preview props.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference
-and disposes the retired resource. CharacterStudio uses **R** to reimport the current GLB; its
-status strip reports success or leaves an on-screen error while the old preview remains usable.
+and disposes the retired resource. CharacterStudio uses **R** to reimport all GLBs referenced by
+the scene as one candidate preview; its status strip reports success or leaves an on-screen error
+while the old preview remains usable.
 
 ### `BillboardRenderer`
 

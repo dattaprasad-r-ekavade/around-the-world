@@ -22,6 +22,13 @@ of it:
   `samples/Campaign/Docs/DESIGN.md`). It references the engine the same way any outside game
   would; nothing in `src/` may reference it.
 
+**`samples/CharacterStudio`** is the engine's scene-preview sample. Its Release A showcase
+loads a static environment GLB and two scene instances sharing a skinned character GLB, with
+independent clip state, a saved hand attachment, versioned scene open/save, and screenshot
+capture. It is the first integrated scene workflow; hierarchy editing, numeric transform tools,
+and broader lighting are on the roadmap. The supported GLB subset is documented in
+[`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
+
 **What you get:** a window, a variable timestep, a first-person camera with collision as a
 callback, box and model rendering with two lighting paths, procedurally generated wall, floor,
 timber and cloth textures, procedurally generated character and item sprites, procedurally
