@@ -18,6 +18,10 @@ internal sealed record CharacterEditorInfo(
     IReadOnlyList<string> ClipNames, string? ClipName, float Time, float Duration, bool IsPlaying);
 internal sealed record SequenceEditorInfo(
     string Name, float Time, float Duration, bool IsPlaying, bool PreviewEnabled, string? CameraName);
+internal sealed record SequenceExportEditorInfo(
+    bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
+internal sealed record SequenceExportEditorRequest(
+    string OutputDirectory, float StartTime, float EndTime, int FrameRate, int Width, int Height);
 
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed class CharacterStudioEditorUi : IDisposable
@@ -43,9 +47,19 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Action<bool> _setSequencePlaying;
     private readonly Action<float> _seekSequence;
     private readonly Action<bool> _setSequencePreviewEnabled;
+    private readonly Func<SequenceExportEditorInfo> _getSequenceExportInfo;
+    private readonly Action<SequenceExportEditorRequest> _startSequenceExport;
+    private readonly Action _cancelSequenceExport;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
+    private string _sequenceExportDirectory = Path.Combine(Environment.CurrentDirectory, "SequenceFrames");
+    private int _sequenceExportWidth = 1280;
+    private int _sequenceExportHeight = 720;
+    private int _sequenceExportFrameRate = 30;
+    private float _sequenceExportStartTime;
+    private float _sequenceExportEndTime;
+    private bool _sequenceExportEndTimeInitialized;
     private Guid? _selectedObjectId;
     private Guid? _selectedAssetId;
     private Guid? _activeTransformObjectId;
@@ -82,7 +96,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         Func<bool> isPlaying, Action startPlay, Action stopPlay, Action interact,
         Func<float> getInteractionVolume, Action<float> setInteractionVolume,
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
-        Action<float> seekSequence, Action<bool> setSequencePreviewEnabled)
+        Action<float> seekSequence, Action<bool> setSequencePreviewEnabled,
+        Func<SequenceExportEditorInfo> getSequenceExportInfo,
+        Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -104,6 +120,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _setSequencePlaying = setSequencePlaying ?? throw new ArgumentNullException(nameof(setSequencePlaying));
         _seekSequence = seekSequence ?? throw new ArgumentNullException(nameof(seekSequence));
         _setSequencePreviewEnabled = setSequencePreviewEnabled ?? throw new ArgumentNullException(nameof(setSequencePreviewEnabled));
+        _getSequenceExportInfo = getSequenceExportInfo ?? throw new ArgumentNullException(nameof(getSequenceExportInfo));
+        _startSequenceExport = startSequenceExport ?? throw new ArgumentNullException(nameof(startSequenceExport));
+        _cancelSequenceExport = cancelSequenceExport ?? throw new ArgumentNullException(nameof(cancelSequenceExport));
         _context = ImGui.CreateContext();
         try
         {
@@ -377,6 +396,59 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         ImGui.TextDisabled(sequence.CameraName is null
             ? "No camera cut at this time"
             : $"Camera cut: {sequence.CameraName}");
+        ImGui.End();
+
+        DrawSequenceExportPanel(sequence);
+    }
+
+    private void DrawSequenceExportPanel(SequenceEditorInfo sequence)
+    {
+        var export = _getSequenceExportInfo();
+        if (!_sequenceExportEndTimeInitialized)
+        {
+            _sequenceExportEndTime = sequence.Duration;
+            _sequenceExportEndTimeInitialized = true;
+        }
+
+        ImGui.SetNextWindowPos(new NumericsVector2(800f, 182f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(450f, 330f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("Sequence frame export", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        if (export.IsRunning)
+        {
+            ImGui.Text($"Exporting: {export.CompletedFrames} / {export.TotalFrames} frames");
+            var progress = export.TotalFrames > 0
+                ? Math.Clamp((float)export.CompletedFrames / export.TotalFrames, 0f, 1f)
+                : 0f;
+            ImGui.ProgressBar(progress, new NumericsVector2(-1f, 0f));
+            if (ImGui.Button("Cancel export")) _cancelSequenceExport();
+        }
+        else
+        {
+            ImGui.SetNextItemWidth(-1f);
+            ImGui.InputTextWithHint("Output folder", "Choose an empty folder", ref _sequenceExportDirectory, 1024);
+            ImGui.InputInt("Width", ref _sequenceExportWidth);
+            ImGui.InputInt("Height", ref _sequenceExportHeight);
+            ImGui.InputInt("Frames per second", ref _sequenceExportFrameRate);
+            ImGui.InputFloat("Start time", ref _sequenceExportStartTime, 0f, 0f, "%.2f");
+            ImGui.InputFloat("End time", ref _sequenceExportEndTime, 0f, 0f, "%.2f");
+            if (ImGui.Button("Export PNG frames"))
+            {
+                _startSequenceExport(new SequenceExportEditorRequest(_sequenceExportDirectory,
+                    _sequenceExportStartTime, _sequenceExportEndTime,
+                    _sequenceExportFrameRate, _sequenceExportWidth, _sequenceExportHeight));
+            }
+        }
+
+        ImGui.Text($"Status: {export.Status}");
+        if (!string.IsNullOrWhiteSpace(export.OutputDirectory))
+            ImGui.TextWrapped(export.OutputDirectory);
+        if (!string.IsNullOrWhiteSpace(export.Error))
+            ImGui.TextWrapped(export.Error);
         ImGui.End();
     }
 

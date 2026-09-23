@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using Ember.Assets;
 using Ember.Audio;
 using Ember;
@@ -56,6 +57,17 @@ public sealed class CharacterStudioGame : EngineHost
     private SceneSequencePlayer? _sequencePlayer;
     private bool _sequencePreviewEnabled;
     private string? _activeSequenceCameraName;
+    private SequenceFrameExportJob? _sequenceExportJob;
+    private SequenceFrameRenderTarget? _sequenceExportTarget;
+    private string _lastSequenceExportStatus = "Ready";
+    private string? _lastSequenceExportDirectory;
+    private string? _lastSequenceExportError;
+    private float _sequenceExportRestoreTime;
+    private bool _sequenceExportRestoreWasPlaying;
+    private bool _sequenceExportRestorePreviewEnabled;
+    private Vector3 _sequenceExportRestoreCameraPosition;
+    private Quaternion _sequenceExportRestoreCameraRotation;
+    private float _sequenceExportRestoreFieldOfView;
     private AttachmentBoxRenderer? _attachmentRenderer;
     private MouseState _lastMouse;
     private bool _hasMouse;
@@ -163,7 +175,8 @@ public sealed class CharacterStudioGame : EngineHost
                 GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting,
                 () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
-                SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled);
+                SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
+                GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -218,44 +231,54 @@ public sealed class CharacterStudioGame : EngineHost
         var uiCapturesMouse = _editorUi?.WantsMouse ?? false;
         var uiCapturesKeyboard = _editorUi?.WantsKeyboard ?? false;
 
-        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
-        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.P))
+        var sequenceExportRunning = _sequenceExportJob?.IsRunning == true;
+        if (!sequenceExportRunning && !uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
+        if (!sequenceExportRunning && !uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.P))
         {
             if (_playSession is null) StartPlaySession();
             else StopPlaySession();
         }
-        if (!uiCapturesKeyboard && _playSession is not null
+        if (!sequenceExportRunning && !uiCapturesKeyboard && _playSession is not null
             && _input.Pressed(_input.CurrentKeyboard, Keys.E)) TriggerInteraction();
-        if (!uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
-        if (!uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
+        if (!sequenceExportRunning && !uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
+        if (!sequenceExportRunning && !uiCapturesKeyboard && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
         if (!_hasMouse)
         {
             _lastMouse = mouse;
             _hasMouse = true;
         }
 
-        if (!_sequencePreviewEnabled && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
+        if (!sequenceExportRunning && !_sequencePreviewEnabled && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
         {
             _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y));
         }
 
-        if (!_sequencePreviewEnabled && !uiCapturesMouse)
+        if (!sequenceExportRunning && !_sequencePreviewEnabled && !uiCapturesMouse)
             _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
         var preview = _preview?.Current;
         if (preview is not null)
         {
-            _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
-            foreach (var state in preview.CharacterInstances.Values)
-                state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
-            if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
+            if (!sequenceExportRunning)
+            {
+                _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+                foreach (var state in preview.CharacterInstances.Values)
+                    state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+                if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
+            }
         }
         base.Update(gameTime);
     }
 
     protected override void Draw(GameTime gameTime)
     {
+        if (_sequenceExportJob is { IsRunning: true } export)
+        {
+            export.ProcessNextFrame(RenderSequenceExportFrame);
+            if (!export.IsRunning) FinishSequenceExport();
+        }
+
         _sceneDrawCalls = 0;
         _shadowDrawCalls = 0;
         _culledStaticDrawCalls = 0;
@@ -295,6 +318,9 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void UnloadContent()
     {
         Window.TextInput -= HandleTextInput;
+        _sequenceExportJob?.Cancel();
+        _sequenceExportTarget?.Dispose();
+        _sequenceExportTarget = null;
         _playSession?.Dispose();
         _playSession = null;
         _editorUi?.Dispose();
@@ -816,6 +842,161 @@ public sealed class CharacterStudioGame : EngineHost
             _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName);
     }
 
+    private SequenceExportEditorInfo GetSequenceExportEditorInfo()
+    {
+        var job = _sequenceExportJob;
+        return new SequenceExportEditorInfo(job?.IsRunning == true,
+            job?.CompletedFrames ?? 0, job?.TotalFrames ?? 0,
+            job?.State.ToString() ?? _lastSequenceExportStatus,
+            job?.Settings.OutputDirectory ?? _lastSequenceExportDirectory,
+            job?.Error ?? _lastSequenceExportError);
+    }
+
+    private void StartSequenceExport(SequenceExportEditorRequest request)
+    {
+        if (_sequenceExportJob?.IsRunning == true) return;
+        if (_sequence is null || _sequencePlayer is null)
+        {
+            _lastSequenceExportStatus = "Failed";
+            _lastSequenceExportError = "There is no character sequence to export.";
+            return;
+        }
+        if (_playSession is not null)
+        {
+            _lastSequenceExportStatus = "Failed";
+            _lastSequenceExportError = "Stop play mode before exporting the authored sequence.";
+            return;
+        }
+
+        try
+        {
+            var settings = new SequenceFrameExportSettings(request.OutputDirectory,
+                request.StartTime, request.EndTime, request.FrameRate, request.Width, request.Height);
+            if (settings.EndTime > _sequence.Duration)
+                throw new ArgumentOutOfRangeException(nameof(request),
+                    $"End time must not exceed the sequence duration of {_sequence.Duration:0.##} seconds.");
+
+            var candidate = new SequenceFrameExportJob(settings, _sequence.Name, CaptureSequenceAssetVersions());
+            _sequenceExportRestoreTime = _sequencePlayer.Time;
+            _sequenceExportRestoreWasPlaying = _sequencePlayer.IsPlaying;
+            _sequenceExportRestorePreviewEnabled = _sequencePreviewEnabled;
+            _sequenceExportRestoreCameraPosition = _camera.Position;
+            _sequenceExportRestoreCameraRotation = Quaternion.CreateFromRotationMatrix(Matrix.Invert(_camera.View));
+            var projectionScale = _camera.Projection.M22;
+            _sequenceExportRestoreFieldOfView = projectionScale > 0f
+                ? MathHelper.ToDegrees(2f * MathF.Atan(1f / projectionScale))
+                : 60f;
+
+            _sequencePlayer.Pause();
+            _sequenceExportJob = candidate;
+            _lastSequenceExportStatus = "Running";
+            _lastSequenceExportDirectory = settings.OutputDirectory;
+            _lastSequenceExportError = null;
+        }
+        catch (Exception exception)
+        {
+            _lastSequenceExportStatus = "Failed";
+            _lastSequenceExportError = $"{exception.GetType().Name}: {exception.Message}";
+        }
+    }
+
+    private IReadOnlyList<SequenceExportAssetVersion> CaptureSequenceAssetVersions()
+    {
+        var scene = CurrentScene;
+        var references = scene.Objects
+            .Where(item => item.GltfAsset is not null)
+            .Select(item => item.GltfAsset!)
+            .GroupBy(reference => reference.AssetId)
+            .ToDictionary(group => group.Key, group => group.First());
+        var resolvedPaths = ResolveSceneAssets(scene);
+        var versions = new List<SequenceExportAssetVersion>();
+        foreach (var (assetId, reference) in references.OrderBy(pair => pair.Key))
+        {
+            var fullPath = resolvedPaths[assetId];
+            using var stream = File.OpenRead(fullPath);
+            var byteLength = stream.Length;
+            var sha256 = Convert.ToHexString(SHA256.HashData(stream));
+            versions.Add(new SequenceExportAssetVersion(assetId, reference.SourcePath, sha256, byteLength));
+        }
+        return versions;
+    }
+
+    private void CancelSequenceExport()
+    {
+        if (_sequenceExportJob?.IsRunning != true) return;
+        _sequenceExportJob.Cancel();
+        FinishSequenceExport();
+    }
+
+    private void RenderSequenceExportFrame(SequenceFrameExportRequest frame)
+    {
+        var sequence = _sequence ?? throw new InvalidOperationException("The sequence was removed during export.");
+        var player = _sequencePlayer ?? throw new InvalidOperationException("The sequence player was removed during export.");
+        try
+        {
+            player.Seek(frame.Time);
+            _sequencePreviewEnabled = true;
+            ApplySequenceAtCurrentTime(frame.Width / (float)frame.Height);
+            if (!_sequencePreviewEnabled)
+                throw new InvalidOperationException(_reimportStatus);
+
+            var sceneBounds = GetSceneBounds() ?? new Bounds3(new Vector3(-1f), Vector3.One);
+            var lightViewProjection = DirectionalShadowCamera.CreateViewProjection(
+                sceneBounds, _sceneLighting.DirectionalDirection);
+            _sequenceExportTarget ??= new SequenceFrameRenderTarget(GraphicsDevice);
+            _sequenceExportTarget.RenderPng(frame.Width, frame.Height, frame.OutputPath, () =>
+            {
+                RenderShadowMap(lightViewProjection);
+                GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+                GraphicsDevice.BlendState = BlendState.Opaque;
+                GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
+                DrawShadowedScene(lightViewProjection);
+            });
+        }
+        finally
+        {
+            RestoreSequencePreviewAfterExportFrame();
+        }
+    }
+
+    private void RestoreSequencePreviewAfterExportFrame()
+    {
+        if (_sequencePlayer is not null) _sequencePlayer.Seek(_sequenceExportRestoreTime);
+        _sequencePreviewEnabled = _sequenceExportRestorePreviewEnabled;
+        if (_sequencePreviewEnabled)
+        {
+            ApplySequenceAtCurrentTime();
+            return;
+        }
+
+        if (_preview?.Current is { } preview)
+        {
+            foreach (var state in preview.CharacterInstances.Values)
+                state.Seek(state.Playback?.Time ?? state.Settings.Time);
+        }
+        _activeSequenceCameraName = null;
+        _camera.SetWorldTransform(_sequenceExportRestoreCameraPosition, _sequenceExportRestoreCameraRotation);
+        _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio,
+            _sequenceExportRestoreFieldOfView, far: 1000f);
+    }
+
+    private void FinishSequenceExport()
+    {
+        var job = _sequenceExportJob;
+        if (job is null) return;
+        RestoreSequencePreviewAfterExportFrame();
+        if (_sequencePlayer is not null)
+        {
+            if (_sequenceExportRestoreWasPlaying) _sequencePlayer.Play();
+            else _sequencePlayer.Pause();
+        }
+        _sequenceExportTarget?.Dispose();
+        _sequenceExportTarget = null;
+        _lastSequenceExportStatus = job.State.ToString();
+        _lastSequenceExportDirectory = job.Settings.OutputDirectory;
+        _lastSequenceExportError = job.Error;
+    }
+
     private void SetSequencePlaying(bool playing)
     {
         if (_sequencePlayer is null) return;
@@ -907,7 +1088,7 @@ public sealed class CharacterStudioGame : EngineHost
         return new SequenceCameraTransform(position, rotation, fieldOfView);
     }
 
-    private void ApplySequenceAtCurrentTime()
+    private void ApplySequenceAtCurrentTime(float? cameraAspect = null)
     {
         if (!_sequencePreviewEnabled || _sequence is null || _sequencePlayer is null
             || _preview?.Current is not { } preview) return;
@@ -919,7 +1100,7 @@ public sealed class CharacterStudioGame : EngineHost
             if (frame.CameraTransform is { } camera)
             {
                 _camera.SetWorldTransform(camera.Position, camera.Rotation);
-                _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio,
+                _camera.SetProjection(cameraAspect ?? GraphicsDevice.Viewport.AspectRatio,
                     camera.FieldOfViewDegrees, far: 1000f);
             }
         }
