@@ -205,10 +205,10 @@ visual feature was rendered.
 images for OPAQUE materials with TEXCOORD_0. It rejects blend/mask modes, other UV sets,
 non-identity texture transforms, and unsupported image formats. It copies resolved image bytes
 so the SharpGLTF model can be released independently; unresolved image references fail clearly.
-This initial slice does not import metallic / roughness, normal, emissive, alpha-cutout, or
-animation data.
+The material reader and static draw path do not import metallic / roughness, normal, emissive,
+alpha-cutout, or animation data.
 
-### Skinned-character data and bind-pose drawing
+### Skinned-character animation and drawing
 
 `GltfSkinnedCharacterData.Import(model)` currently accepts one skinned mesh node in the default
 scene. `GltfSkinData.Import(model, meshNode)` reads immutable node records, rest local
@@ -224,8 +224,18 @@ Each `GltfSkinPose` owns its mutable local transforms and calculates skin matric
 `SkinnedMeshGpuBuffer` uploads the four influence slots and draws through MonoGame's
 `SkinnedEffect`; this path validates Reach/HiDef and the current 72-joint limit before upload.
 CharacterStudio's `--fox` option loads the bundled Fox fixture and draws its bind pose. Animation
-track import and playback are still pending, and the static `GltfSceneImporter` continues to
-reject skinned nodes rather than silently omitting their deformation.
+clips import translation, rotation, and scale tracks with STEP or LINEAR interpolation;
+CUBICSPLINE, morph-weight, and non-transform channels fail with a diagnostic.
+`Evaluate(pose, time)` evaluates absolute clip time, starts from rest values for missing channels, and uses
+shortest-path quaternion interpolation. The pose also retains its evaluated mesh-node world
+matrix so animated mesh transforms reach both skinning and the draw transform. The static
+`GltfSceneImporter` continues to reject skinned nodes rather than silently omitting deformation.
+
+CharacterStudio accepts `--clip Walk` to select and loop an animation. Add `--pause --time 0.35`
+to seek to a fixed pose, `--speed 1.5` to change playback rate, or `--no-loop` to stop at the
+clip endpoint. `--play` and `--loop` are explicit forms of the default play/loop behavior when
+`--clip` is selected. Selecting a clip without `--fox` loads the bundled Fox fixture; `--open`
+can supply another skinned asset.
 
 Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
 view, projection)` for each instance. It owns its vertex and index buffers; register it with the

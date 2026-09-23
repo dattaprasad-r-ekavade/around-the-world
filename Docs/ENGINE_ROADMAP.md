@@ -92,9 +92,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 28 | Import joint indices/weights with explicit supported limits and validation. | Invalid joints/weights fail; accepted weights are normalized; excess influences are reported. |
 | [x] | 29 | Add per-instance pose arrays and calculate skin matrices from a supplied pose. | Bind-pose fixtures produce expected transformed vertices; instances do not share mutable arrays. |
 | [x] | 30 | Add the skinning draw path; validate SkinnedEffect/profile limits before choosing it. | The character's bind pose visually matches the reference; oversized skeletons fail clearly. |
-| [ ] | 31 | Import STEP/LINEAR translation, quaternion rotation, and scale animation tracks. | Clip duration/key values match the fixture; unsupported interpolation is rejected. |
-| [ ] | 32 | Evaluate one clip at an absolute time, using rest values for missing channels. | Start/middle/end fixtures pass, including shortest-path rotation interpolation. |
-| [ ] | 33 | Add play, pause, loop, seek, and speed controls through sample commands. | Seeking to a time matches sequential playback at that time; loop boundaries are correct. |
+| [x] | 31 | Import STEP/LINEAR translation, quaternion rotation, and scale animation tracks. | Clip duration/key values match the fixture; unsupported interpolation is rejected. |
+| [x] | 32 | Evaluate one clip at an absolute time, using rest values for missing channels. | Start/middle/end fixtures pass, including shortest-path rotation interpolation. |
+| [x] | 33 | Add play, pause, loop, seek, and speed controls through sample commands. | Seeking to a time matches sequential playback at that time; loop boundaries are correct. |
 | [ ] | 34 | Draw two characters sharing assets with different playback states. | Pausing/seeking one does not change the other. |
 | [ ] | 35 | Add a two-clip local-pose crossfade. | Blend endpoints equal their source poses and the midpoint is smooth. |
 | [ ] | 36 | Add one named bone attachment with a local offset. | A visible hand prop follows the character throughout its animation. |

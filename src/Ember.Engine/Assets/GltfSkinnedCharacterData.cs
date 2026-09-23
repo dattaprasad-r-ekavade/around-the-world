@@ -12,15 +12,17 @@ public readonly record struct GltfSkinnedPrimitiveData(GltfSkinnedMeshData Mesh,
 public sealed class GltfSkinnedCharacterData
 {
     private GltfSkinnedCharacterData(GltfSkinData skin, IReadOnlyList<GltfSkinnedPrimitiveData> primitives,
-        Bounds3 localBounds)
+        IReadOnlyList<GltfAnimationClipData> animations, Bounds3 localBounds)
     {
         Skin = skin;
         Primitives = primitives;
+        Animations = animations;
         LocalBounds = localBounds;
     }
 
     public GltfSkinData Skin { get; }
     public IReadOnlyList<GltfSkinnedPrimitiveData> Primitives { get; }
+    public IReadOnlyList<GltfAnimationClipData> Animations { get; }
     public Bounds3 LocalBounds { get; }
 
     public GltfSkinPose CreatePose() => Skin.CreatePose();
@@ -65,7 +67,11 @@ public sealed class GltfSkinnedCharacterData
         if (parts.Count == 0 || bounds is null)
             throw new NotSupportedException("The skinned mesh node has no triangle primitives to render.");
 
-        return new GltfSkinnedCharacterData(skin, Array.AsReadOnly(parts.ToArray()), bounds.Value);
+        var animations = model.LogicalAnimations
+            .Select(animation => GltfAnimationClipData.Import(animation, skin))
+            .ToArray();
+        return new GltfSkinnedCharacterData(skin, Array.AsReadOnly(parts.ToArray()),
+            Array.AsReadOnly(animations), bounds.Value);
 
         void FindSkinnedNodes(Node node)
         {

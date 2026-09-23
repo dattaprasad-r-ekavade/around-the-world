@@ -343,6 +343,10 @@ public sealed class GltfSceneImporterTests
         var character = GltfSkinnedCharacterData.Import(model);
 
         Assert.Equal(24, character.Skin.JointNodeIndices.Count);
+        Assert.Collection(character.Animations,
+            clip => Assert.Equal("Survey", clip.Name),
+            clip => Assert.Equal("Walk", clip.Name),
+            clip => Assert.Equal("Run", clip.Name));
         var primitive = Assert.Single(character.Primitives);
         Assert.Equal(1728, primitive.Mesh.Vertices.Count);
         Assert.True(primitive.Material.HasBaseColorImage);

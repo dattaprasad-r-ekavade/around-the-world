@@ -222,4 +222,21 @@ The Fox fixture's non-symmetric hip rest transform and parented mesh-node test m
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio `--fox` screenshot capture | PASS — Fox bind pose visible at 1280×720 |
 
-Animation track import/playback, multiple independently animated characters, and skinned scene-file persistence remain upcoming tasks.
+## Tasks 31–33 — import, evaluate, and play character clips
+
+- Task 31: imported immutable STEP/LINEAR translation, rotation, and scale tracks for each Fox clip. Key times and values are checked against the fixture; CUBICSPLINE and unsupported target paths fail clearly.
+- Task 32: added absolute-time clip evaluation. Each evaluation resets the pose to rest, samples each track, applies shortest-path quaternion slerp, then rebuilds the skin matrices and animated mesh-node world matrix.
+- Task 33: added deterministic playback with play, pause, seek, speed (including reverse), loop, and one-shot endpoint behavior. CharacterStudio accepts `--clip`, `--play`, `--pause`, `--loop`, `--no-loop`, `--time`, and `--speed`; it displays clip time and playback state.
+- Captured `captures/fox-walk-mid.png` from `--clip Walk --pause --time 0.35 --screenshot`; the displayed pose differs from the bind pose.
+- Captured looping and one-shot runs: starting at 0.69s with speed 2 wraps the 0.71s Walk clip to about 0.23s; starting at 0.68s with speed 2 and `--no-loop` stops at 0.71s.
+
+### Tasks 31–33 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo` | PASS — 47 tests, including fixture keys, STEP/LINEAR, cubic rejection, start/middle/end evaluation, missing-channel rest values, shortest-path rotation, seek equivalence, pause, speed, and loop boundaries |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio `--clip Walk --pause --time 0.35 --screenshot` | PASS — 1280×720 animated pose rendered; UI reports Walk at 0.35/0.71s, paused |
+
+Two independently animated characters, clip crossfade, attachments, animated bounds, and skinned scene-file persistence remain upcoming tasks.

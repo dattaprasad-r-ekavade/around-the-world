@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 using Ember.Assets;
@@ -15,7 +16,7 @@ namespace CharacterStudio;
 
 /// <summary>
 /// The first external consumer of the scene foundation: one saved scene object, an orbit
-/// camera, and screenshot/open/save command-line paths. It deliberately has no game rules.
+/// camera, command-line clip playback, and screenshot/open/save paths. It deliberately has no game rules.
 /// </summary>
 public sealed class CharacterStudioGame : EngineHost
 {
@@ -29,6 +30,11 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
+    private readonly string? _requestedAnimation;
+    private readonly float? _requestedAnimationTime;
+    private readonly float _requestedAnimationSpeed;
+    private readonly bool _pauseAnimation;
+    private readonly bool _loopAnimation;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
     private string? _assetPath;
@@ -43,10 +49,30 @@ public sealed class CharacterStudioGame : EngineHost
     {
         _savePath = ParseOption(args, "--save");
         var openPath = ParseOption(args, "--open");
+        _requestedAnimation = ParseOption(args, "--clip");
+        _requestedAnimationTime = ParseFiniteFloatOption(args, "--time");
+        _requestedAnimationSpeed = ParseFiniteFloatOption(args, "--speed") ?? 1f;
+        _pauseAnimation = HasArgument(args, "--pause");
+        var startPlayback = HasArgument(args, "--play");
+        var forceLoop = HasArgument(args, "--loop");
+        var forceNoLoop = HasArgument(args, "--no-loop");
+        _loopAnimation = !forceNoLoop;
+
+        if (_pauseAnimation && startPlayback)
+            throw new ArgumentException("Use either --play or --pause with --clip, not both.");
+        if (forceLoop && forceNoLoop)
+            throw new ArgumentException("Use either --loop or --no-loop with --clip, not both.");
+        var hasAnimationOptions = _requestedAnimationTime is not null
+            || ParseOption(args, "--speed") is not null
+            || _pauseAnimation || startPlayback || forceLoop || forceNoLoop;
+        if (_requestedAnimation is null && hasAnimationOptions)
+            throw new ArgumentException("Animation playback options require --clip <name>.");
 
         if (openPath is null)
         {
-            _sceneData = CreateDefaultScene(HasArgument(args, "--fox") ? FoxAsset : DefaultAsset);
+            _sceneData = CreateDefaultScene(HasArgument(args, "--fox") || _requestedAnimation is not null
+                ? FoxAsset
+                : DefaultAsset);
         }
         else
         {
@@ -95,7 +121,9 @@ public sealed class CharacterStudioGame : EngineHost
             _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
 
             _assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
-            _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(GraphicsDevice, _assetPath));
+            _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(GraphicsDevice, _assetPath,
+                _requestedAnimation, _requestedAnimationTime, _requestedAnimationSpeed,
+                _pauseAnimation, _loopAnimation));
             if (_preview.Current.SkinnedCharacter is not null)
             {
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
@@ -156,6 +184,12 @@ public sealed class CharacterStudioGame : EngineHost
         _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
+        var preview = _preview?.Current;
+        if (preview?.Playback is { } playback)
+        {
+            playback.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+            playback.Clip.Evaluate(preview.SkinPose!, playback.Time);
+        }
         base.Update(gameTime);
     }
 
@@ -198,8 +232,17 @@ public sealed class CharacterStudioGame : EngineHost
         }
 
         _ui.Begin();
-        _ui.Panel(new Rectangle(16, 16, 620, 48), new Color(12, 16, 24, 230), new Color(82, 101, 122));
-        _ui.TextFit(_reimportStatus, new Vector2(28, 31), 596f, 1f, Color.White);
+        if (_preview?.Current.Playback is { } playback)
+        {
+            _ui.Panel(new Rectangle(16, 16, 760, 66), new Color(12, 16, 24, 230), new Color(82, 101, 122));
+            _ui.TextFit(FormatPlaybackStatus(playback), new Vector2(28, 25), 736f, 1f, Color.White);
+            _ui.TextFit(_reimportStatus, new Vector2(28, 47), 736f, 1f, Color.White);
+        }
+        else
+        {
+            _ui.Panel(new Rectangle(16, 16, 760, 48), new Color(12, 16, 24, 230), new Color(82, 101, 122));
+            _ui.TextFit(_reimportStatus, new Vector2(28, 31), 736f, 1f, Color.White);
+        }
         _ui.End();
 
         base.Draw(gameTime);
@@ -306,11 +349,31 @@ public sealed class CharacterStudioGame : EngineHost
             preview.SkinnedMeshBuffers[primitive.Mesh].Draw(
                 effect,
                 pose,
-                character.Skin.MeshNodeRestWorldMatrix * instanceWorld,
+                pose.MeshNodeWorldMatrix * instanceWorld,
                 _camera.View,
                 _camera.Projection,
                 effect.Texture);
         }
+    }
+
+    private static string FormatPlaybackStatus(GltfAnimationPlayback playback)
+    {
+        var state = playback.IsPlaying ? "playing" : "paused";
+        var loop = playback.Loop ? "loop" : "once";
+        return $"{playback.Clip.Name} {playback.Time:0.00}/{playback.Clip.Duration:0.00}s x{playback.Speed:0.##} {loop} {state}";
+    }
+
+    private static float? ParseFiniteFloatOption(string[] args, string name)
+    {
+        var raw = ParseOption(args, name);
+        if (raw is null) return null;
+        if (!float.TryParse(raw, NumberStyles.Float, CultureInfo.InvariantCulture, out var value)
+            || !float.IsFinite(value))
+        {
+            throw new ArgumentException($"Option {name} must be a finite number; received '{raw}'.");
+        }
+
+        return value;
     }
 
     private void ReimportAsset()
@@ -318,7 +381,9 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null || _assetPath is null) return;
         try
         {
-            var cleanupError = _preview.Reload(() => PreviewResources.Load(GraphicsDevice, _assetPath));
+            var cleanupError = _preview.Reload(() => PreviewResources.Load(GraphicsDevice, _assetPath,
+                _requestedAnimation, _requestedAnimationTime, _requestedAnimationSpeed,
+                _pauseAnimation, _loopAnimation));
             if (cleanupError is null)
             {
                 _reimportStatus = "GLB reimport succeeded.";
@@ -344,7 +409,7 @@ public sealed class CharacterStudioGame : EngineHost
         private readonly SceneResourceScope _resources;
 
         private PreviewResources(ImportedGltfScene? scene, GltfSkinnedCharacterData? skinnedCharacter,
-            GltfSkinPose? skinPose, SceneResourceScope resources,
+            GltfSkinPose? skinPose, GltfAnimationPlayback? playback, SceneResourceScope resources,
             Dictionary<StaticMeshData, StaticMeshGpuBuffer> meshBuffers,
             Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> skinnedMeshBuffers,
             Dictionary<int, Texture2D> textures)
@@ -352,6 +417,7 @@ public sealed class CharacterStudioGame : EngineHost
             Scene = scene;
             SkinnedCharacter = skinnedCharacter;
             SkinPose = skinPose;
+            Playback = playback;
             _resources = resources;
             MeshBuffers = meshBuffers;
             SkinnedMeshBuffers = skinnedMeshBuffers;
@@ -361,11 +427,13 @@ public sealed class CharacterStudioGame : EngineHost
         public ImportedGltfScene? Scene { get; }
         public GltfSkinnedCharacterData? SkinnedCharacter { get; }
         public GltfSkinPose? SkinPose { get; }
+        public GltfAnimationPlayback? Playback { get; }
         public Dictionary<StaticMeshData, StaticMeshGpuBuffer> MeshBuffers { get; }
         public Dictionary<GltfSkinnedMeshData, SkinnedMeshGpuBuffer> SkinnedMeshBuffers { get; }
         public Dictionary<int, Texture2D> Textures { get; }
 
-        public static PreviewResources Load(GraphicsDevice device, string assetPath)
+        public static PreviewResources Load(GraphicsDevice device, string assetPath, string? animationName,
+            float? animationTime, float animationSpeed, bool pauseAnimation, bool loopAnimation)
         {
             var resources = new SceneResourceScope();
             try
@@ -378,6 +446,28 @@ public sealed class CharacterStudioGame : EngineHost
                 if (model.LogicalNodes.Any(node => node.Skin is not null))
                 {
                     var character = GltfSkinnedCharacterData.Import(model);
+                    var pose = character.CreatePose();
+                    GltfAnimationPlayback? playback = null;
+                    if (animationName is not null)
+                    {
+                        var matchingClips = character.Animations
+                            .Where(clip => string.Equals(clip.Name, animationName, StringComparison.OrdinalIgnoreCase))
+                            .ToArray();
+                        if (matchingClips.Length != 1)
+                        {
+                            var names = string.Join(", ", character.Animations.Select(clip => clip.Name));
+                            throw new InvalidOperationException(matchingClips.Length == 0
+                                ? $"Animation '{animationName}' was not found. Available clips: {names}."
+                                : $"Animation name '{animationName}' is ambiguous in this asset.");
+                        }
+
+                        var clip = matchingClips[0];
+                        playback = new GltfAnimationPlayback(clip, loopAnimation, animationSpeed);
+                        if (animationTime is { } startTime) playback.Seek(startTime);
+                        if (!pauseAnimation) playback.Play();
+                        clip.Evaluate(pose, playback.Time);
+                    }
+
                     foreach (var primitive in character.Primitives)
                     {
                         var buffer = resources.Own(new SkinnedMeshGpuBuffer(
@@ -394,9 +484,12 @@ public sealed class CharacterStudioGame : EngineHost
                         }
                     }
 
-                    return new PreviewResources(null, character, character.CreatePose(), resources,
+                    return new PreviewResources(null, character, pose, playback, resources,
                         meshBuffers, skinnedMeshBuffers, textures);
                 }
+
+                if (animationName is not null)
+                    throw new NotSupportedException("--clip can only be used with a skinned character asset.");
 
                 var scene = GltfSceneImporter.Import(model);
                 foreach (var parts in scene.MeshesByNodeId.Values)
@@ -417,7 +510,7 @@ public sealed class CharacterStudioGame : EngineHost
                     }
                 }
 
-                return new PreviewResources(scene, null, null, resources,
+                return new PreviewResources(scene, null, null, null, resources,
                     meshBuffers, skinnedMeshBuffers, textures);
             }
             catch

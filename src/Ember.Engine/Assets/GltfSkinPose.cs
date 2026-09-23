@@ -12,6 +12,7 @@ public sealed class GltfSkinPose
     private readonly GltfLocalTransform[] _localTransforms;
     private readonly Matrix[] _skinMatrices;
     private readonly ReadOnlyCollection<Matrix> _readOnlySkinMatrices;
+    private Matrix _meshNodeWorldMatrix;
 
     internal GltfSkinPose(GltfSkinData skin)
     {
@@ -27,6 +28,8 @@ public sealed class GltfSkinPose
 
     public int NodeCount => _localTransforms.Length;
     public int JointCount => _skinMatrices.Length;
+    /// <summary>Mesh-node world transform from the most recent skin-matrix calculation.</summary>
+    public Matrix MeshNodeWorldMatrix => _meshNodeWorldMatrix;
     public ReadOnlyCollection<Matrix> SkinMatrices => _readOnlySkinMatrices;
 
     public GltfLocalTransform GetLocalTransform(int nodeIndex)
@@ -40,6 +43,15 @@ public sealed class GltfSkinPose
         ValidateNodeIndex(nodeIndex);
         _localTransforms[nodeIndex] = NormalizeAndValidate(transform, nodeIndex);
     }
+
+    /// <summary>Restores all local transforms from the immutable skin asset.</summary>
+    public void ResetToRestPose()
+    {
+        for (var i = 0; i < _localTransforms.Length; i++)
+            _localTransforms[i] = _skin.Nodes[i].RestTransform;
+    }
+
+    internal bool UsesSkin(GltfSkinData skin) => ReferenceEquals(_skin, skin);
 
     /// <summary>Rebuilds all node worlds and skin matrices from this pose's absolute local transforms.</summary>
     public ReadOnlyCollection<Matrix> ComputeSkinMatrices()
@@ -55,6 +67,7 @@ public sealed class GltfSkinPose
         }
 
         var meshWorld = nodeWorldMatrices[_skin.MeshNodeIndex];
+        _meshNodeWorldMatrix = meshWorld;
         var determinant = meshWorld.Determinant();
         if (!float.IsFinite(determinant) || determinant == 0f)
             throw new InvalidOperationException("The posed mesh-node transform is not invertible; skin matrices cannot be calculated.");
