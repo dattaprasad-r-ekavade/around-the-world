@@ -27,9 +27,9 @@ loads a static environment GLB and two scene instances sharing a skinned charact
 independent clip state, a saved hand attachment, versioned scene open/save, and screenshot
 capture. Its editor panel lists scene objects, edits local transforms with undo/redo, creates,
 duplicates and deletes objects, places new instances of GLBs already referenced by the scene,
-controls the selected character's clip, and adjusts shared ambient/directional lighting. Shadows,
-a general project asset browser, and broader gameplay tools remain on the roadmap. The supported
-GLB subset is documented in
+controls the selected character's clip, adjusts shared ambient/directional lighting, and renders
+static/skinned directional shadows with draw-count and static-culling diagnostics. A general
+project asset browser and broader gameplay tools remain on the roadmap. The supported GLB subset is documented in
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
 **What you get:** a window, a variable timestep, a first-person camera with collision as a

@@ -334,7 +334,10 @@ public abstract class EngineHost : Game
 
         var avg = _perfSumMs / _perfFrames;
         var fps = avg > 0 ? 1000.0 / avg : 0;
+        var viewport = GraphicsDevice.Viewport;
         Console.WriteLine(
-            $"perf: {_perfFrames} frames, avg {avg:0.00}ms ({fps:0} fps), min {_perfMinMs:0.00}, max {_perfMaxMs:0.00}");
+            $"perf: adapter '{GraphicsDevice.Adapter.Description}', {viewport.Width}x{viewport.Height}, {GraphicsDevice.GraphicsProfile}");
+        Console.WriteLine(
+            $"perf: {_perfFrames} host-frame intervals, avg {avg:0.00}ms ({fps:0} fps), min {_perfMinMs:0.00}, max {_perfMaxMs:0.00} (wall-clock pacing incl. render/presentation; not GPU-only)");
     }
 }

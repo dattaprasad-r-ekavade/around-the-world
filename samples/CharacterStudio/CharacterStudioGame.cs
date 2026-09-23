@@ -40,17 +40,23 @@ public sealed class CharacterStudioGame : EngineHost
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
     private CharacterStudioEditorUi? _editorUi;
+    private DirectionalShadowMap? _shadowMap;
+    private Effect? _shadowEffect;
     private string? _blockedSaveReason;
     private string _reimportStatus = "R: reimport scene GLBs | S: save scene";
-    private BasicEffect _studioEffect = null!;
-    private SkinnedEffect? _skinnedEffect;
     private AttachmentBoxRenderer? _attachmentRenderer;
     private MouseState _lastMouse;
     private bool _hasMouse;
+    private int _sceneDrawCalls;
+    private int _shadowDrawCalls;
+    private int _culledStaticDrawCalls;
+    private int _skinnedDrawCalls;
+    private double _frameMilliseconds;
 
     public CharacterStudioGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: "Ember Character Studio")
     {
+        _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _savePath = ParseOption(args, "--save");
         var openPath = ParseOption(args, "--open");
         var requestedAnimation = ParseOption(args, "--clip");
@@ -141,13 +147,10 @@ public sealed class CharacterStudioGame : EngineHost
             _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight,
                 _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange,
                 GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting);
-            _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
-            {
-                VertexColorEnabled = false,
-                TextureEnabled = false,
-                PreferPerPixelLighting = true
-            });
-            _sceneLighting.Apply(_studioEffect);
+            _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
+            _sceneLighting.Apply(_shadowEffect);
+            _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
+                GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
 
             _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(), _sceneData));
@@ -157,13 +160,6 @@ public sealed class CharacterStudioGame : EngineHost
             {
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
                     _preview.Current.MaximumJointCount);
-                var skinnedEffect = _sceneResources.Own(new SkinnedEffect(GraphicsDevice)
-                {
-                    PreferPerPixelLighting = true
-                });
-                _skinnedEffect = skinnedEffect;
-                _sceneLighting.Apply(skinnedEffect);
-
                 if (_preview.Current.AttachmentsByInstanceId.Count > 0)
                     _attachmentRenderer = _sceneResources.Own(new AttachmentBoxRenderer(GraphicsDevice));
             }
@@ -233,56 +229,21 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void Draw(GameTime gameTime)
     {
+        _sceneDrawCalls = 0;
+        _shadowDrawCalls = 0;
+        _culledStaticDrawCalls = 0;
+        _skinnedDrawCalls = 0;
+        _frameMilliseconds = gameTime.ElapsedGameTime.TotalMilliseconds;
+        var sceneBounds = GetSceneBounds() ?? new Bounds3(new Vector3(-1f), Vector3.One);
+        var lightViewProjection = DirectionalShadowCamera.CreateViewProjection(
+            sceneBounds, _sceneLighting.DirectionalDirection);
+        RenderShadowMap(lightViewProjection);
+
         GraphicsDevice.Clear(new Color(12, 16, 24));
-        _sceneLighting.Apply(_studioEffect);
-        if (_skinnedEffect is not null) _sceneLighting.Apply(_skinnedEffect);
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
         GraphicsDevice.BlendState = BlendState.Opaque;
         GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
-
-        foreach (var item in _sceneData.Objects)
-        {
-            if (!item.Enabled) continue;
-            if (item.GltfAsset is not { } reference) continue;
-            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
-            var preview = _preview!.Current;
-            if (!preview.Assets.TryGetValue(reference.AssetId, out var asset))
-                throw new InvalidOperationException($"No loaded GLB asset exists for scene object '{item.Name}'.");
-            if (asset.SkinnedCharacter is { } character)
-            {
-                if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
-                    throw new InvalidOperationException($"No character playback state exists for scene object '{item.Name}'.");
-                DrawSkinnedCharacter(asset, character, state, instanceWorld);
-                if (preview.AttachmentsByInstanceId.TryGetValue(item.Id, out var attachments))
-                {
-                    var renderer = _attachmentRenderer
-                        ?? throw new InvalidOperationException("The attachment prop renderer was not initialized.");
-                    foreach (var attachment in attachments)
-                        renderer.Draw(attachment.GetWorldMatrix(state.Pose, instanceWorld), _camera.View, _camera.Projection);
-                }
-                continue;
-            }
-
-            if (asset.Scene is not { } importedScene) continue;
-            foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
-            {
-                var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
-                foreach (var part in parts)
-                {
-                    var factor = part.Material.BaseColorFactor;
-                    _studioEffect.DiffuseColor = new Vector3(factor.X, factor.Y, factor.Z);
-                    _studioEffect.Alpha = 1f;
-                    _studioEffect.TextureEnabled = part.Material.HasBaseColorImage;
-                    _studioEffect.Texture = part.Material.HasBaseColorImage
-                        ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
-                        : null;
-                    GraphicsDevice.RasterizerState = part.Material.DoubleSided
-                        ? RasterizerState.CullNone
-                        : RasterizerState.CullCounterClockwise;
-                    asset.MeshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
-                }
-            }
-        }
+        DrawShadowedScene(lightViewProjection);
 
         _ui.Begin();
         var statusRows = GetStatusRows();
@@ -297,8 +258,11 @@ public sealed class CharacterStudioGame : EngineHost
         EndHostFrame(hold: false, exit: Exit);
     }
 
-    protected override void OnDisplayChanged() =>
+    protected override void OnDisplayChanged()
+    {
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio, far: 1000f);
+        _shadowMap?.Resize(GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+    }
 
     protected override void UnloadContent()
     {
@@ -307,6 +271,8 @@ public sealed class CharacterStudioGame : EngineHost
         _editorUi = null;
         _preview?.Dispose();
         _preview = null;
+        _shadowMap = null;
+        _shadowEffect = null;
         _sceneResources?.Dispose();
         _sceneResources = null;
         _attachmentRenderer = null;
@@ -458,32 +424,163 @@ public sealed class CharacterStudioGame : EngineHost
         return result;
     }
 
-    private void DrawSkinnedCharacter(AssetPreview preview, GltfSkinnedCharacterData character,
-        CharacterInstanceState state, Matrix instanceWorld)
+    private void RenderShadowMap(Matrix lightViewProjection)
     {
-        var effect = _skinnedEffect
-            ?? throw new InvalidOperationException("SkinnedEffect was not initialized for the character preview.");
-        var pose = state.Pose;
-
-        foreach (var primitive in character.Primitives)
+        var shadowMap = _shadowMap ?? throw new InvalidOperationException("The directional shadow map was not initialized.");
+        var effect = _shadowEffect ?? throw new InvalidOperationException("The scene shadow effect was not loaded.");
+        shadowMap.Begin();
+        try
         {
-            var factor = primitive.Material.BaseColorFactor;
-            effect.DiffuseColor = new Vector3(factor.X, factor.Y, factor.Z);
-            effect.Alpha = factor.W;
-            effect.Texture = primitive.Material.BaseColorImageIndex is { } imageIndex
-                ? preview.Textures[imageIndex]
-                : null;
-            GraphicsDevice.RasterizerState = primitive.Material.DoubleSided
-                ? RasterizerState.CullNone
-                : RasterizerState.CullCounterClockwise;
-            preview.SkinnedMeshBuffers[primitive.Mesh].Draw(
-                effect,
-                pose,
-                pose.MeshNodeWorldMatrix * instanceWorld,
-                _camera.View,
-                _camera.Projection,
-                effect.Texture);
+            GraphicsDevice.DepthStencilState = DepthStencilState.Default;
+            GraphicsDevice.BlendState = BlendState.Opaque;
+            foreach (var item in _sceneData.Objects)
+            {
+                if (!item.Enabled || item.GltfAsset is not { } reference
+                    || !_preview!.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
+                var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+                if (asset.SkinnedCharacter is { } character)
+                {
+                    if (!_preview.Current.CharacterInstances.TryGetValue(item.Id, out var state)) continue;
+                    foreach (var primitive in character.Primitives)
+                    {
+                        if (primitive.Material.DoubleSided) GraphicsDevice.RasterizerState = RasterizerState.CullNone;
+                        else GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
+                        effect.CurrentTechnique = effect.Techniques["SkinnedDepth"];
+                        SetMatrix(effect, "World", state.Pose.MeshNodeWorldMatrix * instanceWorld);
+                        SetMatrix(effect, "LightViewProjection", lightViewProjection);
+                        _shadowDrawCalls++;
+                        asset.SkinnedMeshBuffers[primitive.Mesh].Draw(effect, state.Pose);
+                    }
+                    continue;
+                }
+
+                if (asset.Scene is not { } importedScene) continue;
+                foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
+                foreach (var part in parts)
+                {
+                    GraphicsDevice.RasterizerState = part.Material.DoubleSided
+                        ? RasterizerState.CullNone
+                        : RasterizerState.CullCounterClockwise;
+                    effect.CurrentTechnique = effect.Techniques["StaticDepth"];
+                    SetMatrix(effect, "World", importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld);
+                    SetMatrix(effect, "LightViewProjection", lightViewProjection);
+                    _shadowDrawCalls++;
+                    asset.MeshBuffers[part.Mesh].Draw(effect);
+                }
+            }
         }
+        finally
+        {
+            shadowMap.End();
+        }
+    }
+
+    private void DrawShadowedScene(Matrix lightViewProjection)
+    {
+        var effect = _shadowEffect ?? throw new InvalidOperationException("The scene shadow effect was not loaded.");
+        var shadowMap = _shadowMap ?? throw new InvalidOperationException("The directional shadow map was not initialized.");
+        _sceneLighting.Apply(effect);
+        effect.Parameters["ShadowTexture"]?.SetValue(shadowMap.Texture);
+        effect.Parameters["ShadowTexelSize"]?.SetValue(1f / shadowMap.Size);
+        effect.Parameters["ShadowDepthBias"]?.SetValue(0.0015f);
+        SetMatrix(effect, "View", _camera.View);
+        SetMatrix(effect, "Projection", _camera.Projection);
+        SetMatrix(effect, "LightViewProjection", lightViewProjection);
+        var cameraFrustum = new BoundingFrustum(_camera.View * _camera.Projection);
+
+        foreach (var item in _sceneData.Objects)
+        {
+            if (!item.Enabled || item.GltfAsset is not { } reference) continue;
+            var preview = _preview!.Current;
+            if (!preview.Assets.TryGetValue(reference.AssetId, out var asset))
+                throw new InvalidOperationException($"No loaded GLB asset exists for scene object '{item.Name}'.");
+            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+            if (asset.SkinnedCharacter is { } character)
+            {
+                if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
+                    throw new InvalidOperationException($"No character playback state exists for scene object '{item.Name}'.");
+                foreach (var primitive in character.Primitives)
+                {
+                    var world = state.Pose.MeshNodeWorldMatrix * instanceWorld;
+                    SetSceneMaterial(effect, world, primitive.Material.BaseColorFactor,
+                        primitive.Material.BaseColorImageIndex is { } imageIndex
+                            ? asset.Textures[imageIndex]
+                            : _white,
+                        primitive.Material.BaseColorImageIndex is not null);
+                    GraphicsDevice.RasterizerState = primitive.Material.DoubleSided
+                        ? RasterizerState.CullNone
+                        : RasterizerState.CullCounterClockwise;
+                    effect.CurrentTechnique = effect.Techniques["SkinnedScene"];
+                    _sceneDrawCalls++;
+                    _skinnedDrawCalls++;
+                    asset.SkinnedMeshBuffers[primitive.Mesh].Draw(effect, state.Pose);
+                }
+
+                if (preview.AttachmentsByInstanceId.TryGetValue(item.Id, out var attachments))
+                {
+                    var renderer = _attachmentRenderer
+                        ?? throw new InvalidOperationException("The attachment prop renderer was not initialized.");
+                    foreach (var attachment in attachments)
+                        renderer.Draw(attachment.GetWorldMatrix(state.Pose, instanceWorld), _camera.View, _camera.Projection);
+                }
+                continue;
+            }
+
+            if (asset.Scene is not { } importedScene) continue;
+            foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
+            foreach (var part in parts)
+            {
+                var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                if (part.Mesh.LocalBounds is { } localBounds
+                    && !StaticSceneCuller.IsVisible(localBounds, world, cameraFrustum))
+                {
+                    _culledStaticDrawCalls++;
+                    continue;
+                }
+
+                SetSceneMaterial(effect, world, part.Material.BaseColorFactor,
+                    part.Material.HasBaseColorImage
+                        ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
+                        : _white,
+                    part.Material.HasBaseColorImage);
+                GraphicsDevice.RasterizerState = part.Material.DoubleSided
+                    ? RasterizerState.CullNone
+                    : RasterizerState.CullCounterClockwise;
+                effect.CurrentTechnique = effect.Techniques["StaticScene"];
+                _sceneDrawCalls++;
+                asset.MeshBuffers[part.Mesh].Draw(effect);
+            }
+        }
+    }
+
+    private static void SetSceneMaterial(Effect effect, Matrix world, Vector4 materialColor,
+        Texture2D texture, bool textureEnabled)
+    {
+        SetMatrix(effect, "World", world);
+        SetMatrix(effect, "WorldInverseTranspose", GetWorldInverseTranspose(world));
+        effect.Parameters["MaterialColor"]?.SetValue(materialColor);
+        effect.Parameters["BaseTexture"]?.SetValue(texture);
+        effect.Parameters["BaseTextureEnabled"]?.SetValue(textureEnabled);
+    }
+
+    private static Matrix GetWorldInverseTranspose(Matrix world)
+    {
+        var inverse = Matrix.Invert(world);
+        if (!IsFinite(inverse)) return Matrix.Identity;
+        return Matrix.Transpose(inverse);
+    }
+
+    private static bool IsFinite(Matrix value) =>
+        float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) && float.IsFinite(value.M14)
+        && float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) && float.IsFinite(value.M24)
+        && float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) && float.IsFinite(value.M34)
+        && float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) && float.IsFinite(value.M44);
+
+    private static void SetMatrix(Effect effect, string name, Matrix value)
+    {
+        var parameter = effect.Parameters[name]
+            ?? throw new InvalidOperationException($"Effect is missing the {name} parameter.");
+        parameter.SetValue(value);
     }
 
     private List<string> GetStatusRows()
@@ -498,6 +595,7 @@ public sealed class CharacterStudioGame : EngineHost
             }
         }
 
+        rows.Add($"Render: {_sceneDrawCalls} scene draws ({_culledStaticDrawCalls} static culled, {_skinnedDrawCalls} skinned), {_shadowDrawCalls} shadow draws | frame interval {_frameMilliseconds:0.0} ms");
         rows.Add(_reimportStatus);
         return rows;
     }

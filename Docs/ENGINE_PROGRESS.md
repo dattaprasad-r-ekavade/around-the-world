@@ -334,7 +334,7 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 
 - Task 45: added a clip dropdown, absolute-time scrubber, and play/pause toggle for a selected skinned scene object. The UI passes that object's stable ID to the corresponding playback state, so changing a clip or time does not affect other instances. Changing clips starts the new clip at zero and clears the prior crossfade; scrub and play state are saved in the existing scene version-2 character settings.
 - Task 46: added `Ember.Render.SceneLighting` and runtime controls for ambient RGB, directional direction, and directional RGB. CharacterStudio applies the same light values to its static `BasicEffect` and skinned `SkinnedEffect`, including disabling the extra default directional lights on both.
-- Task 47: no separate shader build step is required for this lighting path. The sample uses MonoGame's built-in effect shaders and adds no `.fx`, `.mgfx`, or `.mgcb` content. A full solution build verifies both effect integrations and legacy samples.
+- Task 47: no separate shader build step was required for the built-in-effect lighting path. The later shadow pass needed custom effects, so follow-up task 47a adds the pinned MGCB content build.
 - Captured `captures/scene-editor-batch-45-47-animated.png` at 1280×720 with two independently animated Fox instances, and `captures/scene-editor-batch-45-47-mixed.png` with the static courtyard and both characters after the shared-lighting change. The desktop input helper was unavailable, so clip selection, scrubbing, and lighting slider changes were source-reviewed, not operated by synthetic clicks.
 
 ### Tasks 45–47 checks
@@ -346,5 +346,25 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio animated capture | PASS — `captures/scene-editor-batch-45-47-animated.png`, 1280×720; Walk and Run render simultaneously |
 | CharacterStudio mixed static/skinned capture | PASS — `captures/scene-editor-batch-45-47-mixed.png`, 1280×720; courtyard and both characters render with the shared light |
-| Custom shader build assets | NOT NEEDED — no `.fx`, `.mgfx`, or `.mgcb` files; MonoGame built-in effects are used |
 | Interactive clip/light control verification | NOT RUN — desktop input automation helper failed to initialize |
+
+## Tasks 47a–50 — build custom effects, add directional shadows, and measure static draws
+
+- Task 47a: added the pinned `dotnet-mgcb` local tool manifest, `MonoGame.Content.Builder.Task` 3.8.5.1, a Windows HiDef `.mgcb` target, and `SceneShadow.fx`. Custom render effects now compile as part of the CharacterStudio project build.
+- Task 48: added `DirectionalShadowCamera` and a scene-owned, viewport-resizable `DirectionalShadowMap`. Opaque static meshes render into an RGBA depth target, then sample it through a 3×3 PCF receiver in the scene pass.
+- Task 49: added GPU skin-matrix effect binding and a skinned depth technique. Each character's current `GltfSkinPose` is uploaded to both the shadow and lit scene passes, so character shadows use the evaluated pose.
+- Task 50: added `StaticSceneCuller` for transformed mesh AABBs against the orbit-camera frustum, while retaining uncullable meshes and keeping the shadow pass independent of the camera. The CharacterStudio status panel reports scene/shadow/skinned draw counts, culled static draws, and the last frame interval. `--perf` reports adapter, resolution/profile, average/min/max host-frame interval, and explicitly states that it includes rendering/presentation rather than isolating GPU time.
+- Captured `captures/shadow-batch-48-50.png` for the mixed Release A scene, and `captures/shadow-batch-48-50-culling.png` with an extra static fixture placed outside the camera view. In the culling fixture, the overlay reports six static draws culled while the shadow pass still submits the offscreen objects.
+- The latest mixed-scene run completed 121 measured host-frame intervals at 1280×720 on Intel(R) UHD Graphics: 8.83 ms average, 2.81 ms minimum, 283.21 ms maximum (about 113 fps average). Treat this as one local characterization run, not a budget; the maximum exposes a transient stall.
+
+### Tasks 47a–50 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects, samples, and custom effect content; 0 warnings, 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 68 tests, 0 failed; includes light-camera bounds, resize sizing, and static frustum culling |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio mixed-scene capture | PASS — 1280×720; static courtyard and two skinned Fox instances load and render; shadow effect content loads and shutdown completes |
+| Offscreen static fixture | PASS — cull count rises while shadow draw count includes the offscreen asset |
+| `--perf` reference run | PASS — Intel(R) UHD Graphics, 1280×720 HiDef; reports host-frame interval scope and avg/min/max |
+| Light rotation and resize through editor interaction | NOT RUN — desktop input automation helper remains unavailable; update, resize, and disposal paths are covered by source review and focused sizing tests |

@@ -289,11 +289,23 @@ It does not scan arbitrary project folders. A selected skinned instance exposes 
 list, absolute-time scrubber, and playback toggle; changing those controls updates only that
 instance and the version-2 scene settings saved by **S**.
 
-`SceneLighting` applies one ambient color and normalized directional light to both `BasicEffect`
-and `SkinnedEffect`. CharacterStudio exposes the ambient RGB, direction, and directional RGB as
-runtime controls. The sample uses MonoGame's built-in effect shaders, so these paths do not need
-an `.fx` content build or custom `.mgfx` files. Non-finite transform input is ignored; **S** saves
-the edited scene. The panel uses pinned ImGui.NET 1.91.6.1 with a small MonoGame renderer backend.
+`SceneLighting` applies one ambient color and normalized directional light to CharacterStudio's
+static and skinned shader paths. The sample exposes the ambient RGB, direction, and directional RGB
+as runtime controls. Its custom static/skinned lighting and directional-shadow effect is compiled
+from `samples/CharacterStudio/Content/Effects/SceneShadow.fx` by the pinned
+`MonoGame.Content.Builder.Task` package and the local `dotnet-mgcb` tool manifest. The project
+targets Windows HiDef for this effect. Non-finite transform input is ignored; **S** saves the
+edited scene. The panel uses pinned ImGui.NET 1.91.6.1 with a small MonoGame renderer backend.
+
+CharacterStudio's shadow map uses one orthographic directional-light camera and an RGBA-encoded
+depth target with a depth buffer. Static meshes and each skinned instance's current pose render to
+the shadow pass; the main pass samples it with 3×3 PCF. The target size follows the viewport and
+is clamped from 512 to 2048 pixels. `DirectionalShadowMap` owns resize, binding restore, and
+disposal. `StaticSceneCuller` transforms each bounded static mesh's local AABB and tests it against
+the camera frustum; meshes without bounds remain visible, and shadow casting is not camera-culled.
+The overlay reports scene draws, shadow draws, culled static meshes, skinned draws, and the last
+game-time frame interval. `--perf` reports host-frame wall-clock intervals (including rendering
+and presentation), adapter, profile, and resolution; it is not a GPU-only timer.
 
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference

@@ -82,6 +82,21 @@ public sealed class StaticMeshGpuBuffer : IDisposable
         }
     }
 
+    /// <summary>Draws this mesh with caller-supplied effect parameters and technique.</summary>
+    public void Draw(Effect effect)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(StaticMeshGpuBuffer));
+        ArgumentNullException.ThrowIfNull(effect);
+
+        _device.SetVertexBuffer(_vertices);
+        _device.Indices = _indices;
+        foreach (var pass in effect.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+            _device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _primitiveCount);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;

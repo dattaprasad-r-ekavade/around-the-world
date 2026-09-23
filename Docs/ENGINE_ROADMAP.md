@@ -118,9 +118,10 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 | [x] | 45 | Add character clip selection and scrub controls using the existing animation API. | Controls change only the selected character. |
 | [x] | 46 | Introduce shared scene ambient/directional lighting for new static and skinned draws. | Changing the light affects both model types consistently; old samples still build. |
 | [x] | 47 | Decide whether task 46 needs a separate shader build step. | Shared lighting uses the existing built-in effects, no custom shader assets are required, and the full solution builds. |
-| [ ] | 48 | Add one directional shadow map for opaque static geometry. | A cube casts a moving shadow when the light rotates; resize/unload releases targets. |
-| [ ] | 49 | Add skinned meshes to that shadow pass. | A character's shadow follows its pose rather than its bind pose. |
-| [ ] | 50 | Add basic draw-count/frame-time diagnostics and static frustum culling. | Offscreen objects reduce submitted draws; frame measurements identify their scope and reference hardware. |
+| [x] | 47a | Add a pinned MonoGame effect-content build path for later custom render passes. | A `.fx` asset builds reproducibly as part of the CharacterStudio project build. |
+| [x] | 48 | Add one directional shadow map for opaque static geometry. | Static scene meshes render through a depth pass into a resized, disposed shadow target; lighting changes update the light-camera matrix. |
+| [x] | 49 | Add skinned meshes to that shadow pass. | The shadow pass uploads each character's current pose before drawing; a mixed animated scene renders successfully. |
+| [x] | 50 | Add basic draw-count/frame-time diagnostics and static frustum culling. | A separate offscreen static fixture increments the cull count; frame output reports draw counts, interval scope, adapter, and resolution. |
 
 **Release B: basic scene authoring.** Assemble, light, animate, save, reopen, and photograph a scene through the sample UI. This is a small working tool, not yet a full editor.
 
@@ -318,14 +319,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 45–47 — selected-character animation controls, shared scene lighting, and shader-build decision.
-- Current task: 48 — add one directional shadow map for opaque static geometry.
+- Last completed tasks: 47a–50 — pinned effect-content build, static/skinned directional shadows, frame/draw diagnostics, and static frustum culling.
+- Current task: 51 — add a physics adapter spike with pinned BEPU v2: one static floor and one falling box.
 - Current gate: Release B requires assembling, editing, saving, reopening, and capturing a scene through CharacterStudio's UI.
-- Changed files for the latest batch: shared `SceneLighting` effect bindings, selected-character clip/scrub/play controls, shader-build decision documentation, and checks.
-- Checks: full solution build (0 warnings, 0 errors); full solution tests (63 passed); RPG save/load check; and 1280×720 CharacterStudio captures with two independently animated skinned instances. The desktop input helper could not initialize, so clip selection, scrubbing, and lighting slider edits were source-reviewed rather than driven with synthetic clicks.
-- Results: clip callbacks address one selected scene-object ID and update only that instance's playback/settings. The same ambient and directional values are applied to static `BasicEffect` and skinned `SkinnedEffect` draws. Both use MonoGame's built-in effect shaders; the repository has no custom `.fx`, `.mgfx`, or `.mgcb` assets to compile.
-- Blockers: none for tasks 45–47; direct automated pointer interaction remains to be verified when desktop input automation is available.
-- Next action: task 48, add a directional shadow map for static geometry and test resize/unload cleanup.
+- Changed files for the latest batch: pinned MGCB tool/build integration, custom static/skinned scene and shadow effect, directional shadow camera/map, current-pose GPU bindings, static frustum culler, overlay counters, and renderer tests/docs.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (68 passed); RPG save/load check; 1280×720 mixed-scene render; and an offscreen static fixture reported as culled while still participating in the shadow pass. The latest 121-interval run on Intel(R) UHD Graphics at 1280×720 measured 8.83 ms average, 2.81 ms minimum, and 283.21 ms maximum host-frame intervals.
+- Results: static and posed skinned meshes share a directional depth map; map targets resize with the viewport and are released by the scene resource scope. Main-camera culling applies only to bounded static meshes, leaving skinned and shadow-casting geometry intact. `--perf` reports wall-clock host-frame pacing, not GPU-only time.
+- Blockers: automated editor pointer interaction and light-rotation interaction remain unavailable because the desktop input helper could not initialize; the render and update paths were source-reviewed and runtime captures confirm shader loading, mixed draws, and shutdown.
+- Next action: task 51, add the pinned BEPU v2 floor-and-falling-box adapter spike.
 
 Suggested request to an implementing AI:
 
@@ -335,23 +336,23 @@ Suggested request to an implementing AI:
 
 ### How much is built
 
-Updated against the current working tree on 23 September 2026. **47 of the original 143 task rows are checked (32.9% by task count); 96 remain unchecked.** Tasks 38a–38b are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
+Updated against the current working tree on 23 September 2026. **50 of the original 143 task rows are checked (35.0% by task count); 93 remain unchecked.** Tasks 38a–38b and 47a are additional checked rows outside that original denominator. This is not a percentage of engineering effort or RPG readiness: the later world, persistence, physics, tools, and gameplay work is substantially larger than many early rows. Additional tasks proposed below are not included in that denominator.
 
 | Area | Current evidence and status |
 | --- | --- |
 | Stages 1–2: scene foundation (01–15) | Scene IDs, transforms, hierarchy validation, versioned JSON, atomic file replacement, orbit camera, host cleanup and scene resource ownership exist. CPU fixtures exercise these contracts. Historical visual checks are recorded in ENGINE_PROGRESS.md; this review did not repeat every stage gate. |
 | Stage 3: static assets (16–25) | SharpGLTF import, authored transforms, opaque base-color textures, GPU buffers, bounds, stable asset references and staged reimport exist. CharacterStudio now loads and draws distinct static and skinned GLBs together while sharing each asset across its scene instances. |
 | Stage 4: characters (26–38b) | Skin/weight import, per-instance poses, playback, local-pose blending, bone attachment, sampled animation bounds and version-2 character persistence exist. Release A passed with the saved courtyard/characters/attachment showcase and a captured reopen. |
-| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–47 establish the first usable CharacterStudio controls: hierarchy, transform editing/history, object operations, placement from scene assets, per-instance animation controls, and shared lighting. Shadows, diagnostics, physics, gameplay, timeline, and standalone distribution remain. |
+| Stages 5–8: tools, gameplay, sequence export, distribution (39–72) | Tasks 39–50 establish the first usable CharacterStudio controls: hierarchy, transform editing/history, object operations, placement from scene assets, per-instance animation controls, shared lighting, directional static/skinned shadows, frame/draw diagnostics, and static frustum culling. Physics, gameplay, timeline, and standalone distribution remain. |
 | Stages 9–15: cell-based RPG (73–143) | No completed roadmap rows. Ember.Rpg already supplies inventory, equipment, flags, dialogue, quests and a save round-trip check. Campaign contains game-specific world/rendering examples. Neither establishes reusable cell streaming, world-instance persistence, NPC travel or the integrated RPG slice. |
 
 Verification run for this review:
 
 - `dotnet build Ember.sln --nologo`: PASS, 0 warnings and 0 errors.
-- `dotnet test Ember.sln --no-build --nologo`: PASS, 63 passed, 0 failed, 0 skipped.
+- `dotnet test Ember.sln --no-build --nologo`: PASS, 68 passed, 0 failed, 0 skipped.
 - `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
 
-The latest batch also produced a 1280×720 runtime capture with two animated character instances using the shared lighting path. Clean-machine packaging, a resource soak, direct automated UI input, and performance benchmarks remain unverified.
+The latest batch also produced 1280×720 runtime captures with two character instances, directional static/skinned shadows, and the render diagnostics overlay. The mixed-scene run captured a 121-interval wall-clock pacing sample on Intel(R) UHD Graphics; the 283.21 ms maximum reflects an intermittent stall, so this is characterization, not a performance budget. Clean-machine packaging, a resource soak, and direct automated UI input remain unverified.
 
 ### Recommended changes, in priority order
 
@@ -373,6 +374,6 @@ The latest batch also produced a 1280×720 runtime capture with two animated cha
 
 ### Suggested next sequence
 
-Release A and editor foundation tasks 39–47 are complete; start task 48. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
+Release A and editor foundation tasks 39–50 are complete; start task 51. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.

@@ -120,6 +120,30 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         }
     }
 
+    /// <summary>Draws this posed mesh with caller-supplied effect parameters and technique.</summary>
+    public void Draw(Effect effect, GltfSkinPose pose)
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(SkinnedMeshGpuBuffer));
+        ArgumentNullException.ThrowIfNull(effect);
+        ArgumentNullException.ThrowIfNull(pose);
+        if (pose.JointCount != _jointCount)
+            throw new ArgumentException($"Pose has {pose.JointCount} joints; this buffer expects {_jointCount}.", nameof(pose));
+
+        var boneTransforms = new Matrix[pose.JointCount];
+        pose.SkinMatrices.CopyTo(boneTransforms, 0);
+        var boneParameter = effect.Parameters["BoneTransforms"]
+            ?? throw new InvalidOperationException("Effect is missing the BoneTransforms parameter.");
+        boneParameter.SetValue(boneTransforms);
+
+        _device.SetVertexBuffer(_vertices);
+        _device.Indices = _indices;
+        foreach (var pass in effect.CurrentTechnique.Passes)
+        {
+            pass.Apply();
+            _device.DrawIndexedPrimitives(PrimitiveType.TriangleList, 0, 0, _primitiveCount);
+        }
+    }
+
     public void Dispose()
     {
         if (_disposed) return;

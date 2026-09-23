@@ -60,6 +60,15 @@ public sealed class SceneLighting
         effect.DirectionalLight0.SpecularColor = SpecularColor;
     }
 
+    /// <summary>Applies the same authored light values to a custom scene effect.</summary>
+    public void Apply(Effect effect)
+    {
+        ArgumentNullException.ThrowIfNull(effect);
+        effect.Parameters["AmbientColor"]?.SetValue(AmbientColor);
+        effect.Parameters["DirectionalDirection"]?.SetValue(DirectionalDirection);
+        effect.Parameters["DirectionalColor"]?.SetValue(DirectionalColor);
+    }
+
     private static Vector3 NormalizeDirection(Vector3 value)
     {
         if (!IsFinite(value) || value.LengthSquared() < 1e-8f)

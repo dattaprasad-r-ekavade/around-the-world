@@ -1,0 +1,13 @@
+#----------------------------- Global Properties ----------------------------#
+/outputDir:bin/$(Platform)
+/intermediateDir:obj/$(Platform)
+/platform:Windows
+/profile:HiDef
+/compress:False
+
+#---------------------------------- Content ---------------------------------#
+#begin Effects/SceneShadow.fx
+/importer:EffectImporter
+/processor:EffectProcessor
+/processorParam:DebugMode=Auto
+/build:Effects/SceneShadow.fx
