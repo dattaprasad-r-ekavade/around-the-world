@@ -164,18 +164,36 @@ a debug build.
 
 ### `StaticMeshData` / `GltfPrimitiveImporter`
 
-Read a single static glTF triangle primitive into engine-owned CPU data:
+Read a static glTF scene into engine-owned CPU data:
 
 ```csharp
-var model = ModelRoot.Load("Content/Props/crate.glb");
-var mesh = GltfPrimitiveImporter.Import(model.LogicalMeshes[0].Primitives[0]);
+var imported = GltfSceneImporter.Load("Content/Props/crate.glb");
+foreach (var nodeId in imported.MeshesByNodeId.Keys)
+{
+    var world = imported.Scene.GetWorldMatrix(nodeId);
+}
 ```
 
-`StaticMeshData` stores each vertex's position, normal, and `TEXCOORD_0`, plus triangle
-indices. The importer requires all three attributes and `TRIANGLES` topology; unsupported
-attributes/topologies fail with a clear exception. It preserves the source coordinates and
-authored size. It does not apply node transforms, materials, textures, or GPU uploads yet, and
-it does not use `ModelCache`'s normalization. SharpGLTF.Core is pinned at 1.0.7 for this path.
+`GltfSceneImporter` follows the GLB default scene, preserves each node's local position,
+rotation, scale, and parent, and binds each mesh node to its imported primitives. Ask the
+imported `SceneGraph` for its world matrix; the matrices use Ember's row-vector convention.
+`StaticMeshData` stores position, normal, `TEXCOORD_0`, and triangle indices. Unsupported
+topology, missing required attributes, animation, skins, and matrix-only node transforms fail
+with a clear exception.
+
+`GltfMaterialData` reads base-color factors, double-sidedness, and embedded PNG/JPEG base-color
+images for OPAQUE materials with TEXCOORD_0. It rejects blend/mask modes, other UV sets,
+non-identity texture transforms, and unsupported image formats. It copies resolved image bytes
+so the SharpGLTF model can be released independently; unresolved image references fail clearly.
+This initial slice does not import metallic / roughness, normal, emissive, alpha-cutout, or
+animation data.
+
+Upload one mesh with `new StaticMeshGpuBuffer(device, mesh)` and call `Draw(effect, world,
+view, projection)` for each instance. It owns its vertex and index buffers; register it with the
+scene's `SceneResourceScope` so reload and shutdown dispose GPU resources. The
+`samples/CharacterStudio` GLB preview exercises this complete static path. SharpGLTF.Core is
+pinned at 1.0.7; imported vertices retain source coordinates and authored size and do not use
+`ModelCache` normalization.
 
 ### `BillboardRenderer`
 

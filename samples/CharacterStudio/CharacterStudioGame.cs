@@ -1,8 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
+using Ember.Assets;
 using Ember;
 using Ember.Input;
-using Ember.Render;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -20,12 +21,13 @@ public sealed class CharacterStudioGame : EngineHost
 
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new();
-    private readonly List<PointLight> _lights = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
+    private readonly Dictionary<StaticMeshData, StaticMeshGpuBuffer> _meshBuffers = new();
+    private readonly Dictionary<int, Texture2D> _textures = new();
     private SceneResourceScope? _sceneResources;
+    private ImportedGltfScene _importedScene = null!;
     private BasicEffect _studioEffect = null!;
-    private SceneRenderer _scene = null!;
     private MouseState _lastMouse;
     private bool _hasMouse;
 
@@ -68,10 +70,11 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void LoadContent()
     {
+        _meshBuffers.Clear();
+        _textures.Clear();
         _sceneResources = new SceneResourceScope();
         try
         {
-            _scene = new SceneRenderer(GraphicsDevice);
             _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 VertexColorEnabled = false,
@@ -80,13 +83,33 @@ public sealed class CharacterStudioGame : EngineHost
                 PreferPerPixelLighting = true
             });
             _studioEffect.EnableDefaultLighting();
-            _studioEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
+            _studioEffect.AmbientLightColor = new Vector3(0.62f, 0.64f, 0.68f);
             _studioEffect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
-            _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(1f, 0.83f, 0.64f);
-            _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.28f);
-            _camera.Reset(Vector3.Zero, distance: 7f, yaw: 0.65f, pitch: -0.25f);
+            _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
+            _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
+
+            _importedScene = GltfSceneImporter.Load(Path.Combine(AppContext.BaseDirectory,
+                "Assets", "TextureCoordinateTest.glb"));
+            foreach (var parts in _importedScene.MeshesByNodeId.Values)
+            foreach (var part in parts)
+            {
+                if (!_meshBuffers.ContainsKey(part.Mesh))
+                {
+                    var buffer = _sceneResources.Own(new StaticMeshGpuBuffer(GraphicsDevice, part.Mesh));
+                    _meshBuffers.Add(part.Mesh, buffer);
+                }
+
+                if (part.Material.HasBaseColorImage && part.Material.BaseColorImageIndex is { } imageIndex
+                    && !_textures.ContainsKey(imageIndex))
+                {
+                    using var imageStream = new MemoryStream(part.Material.BaseColorImage.ToArray(), writable: false);
+                    var texture = _sceneResources.Own(Texture2D.FromStream(GraphicsDevice, imageStream));
+                    _textures.Add(imageIndex, texture);
+                }
+            }
+
+            _camera.Reset(Vector3.Zero, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
             _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
-            _lights.Add(new PointLight(new Vector3(3f, 5f, 4f), new Vector3(1f, 0.86f, 0.68f) * 2f, 18f));
 
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
         }
@@ -126,16 +149,31 @@ public sealed class CharacterStudioGame : EngineHost
     {
         GraphicsDevice.Clear(new Color(12, 16, 24));
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
-        GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
-
-        _scene.Begin(_studioEffect, _camera.View, _camera.Projection, _camera.Position,
-            cameraYaw: 0f, StoneTextures.StonePalette.Sandstone, _lights);
+        GraphicsDevice.BlendState = BlendState.Opaque;
+        GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
 
         foreach (var item in _sceneData.Objects)
         {
             if (!item.Enabled) continue;
-            var colour = item.Id == CubeId ? new Color(90, 170, 230) : new Color(210, 170, 90);
-            _scene.DrawCube(_sceneData.GetWorldMatrix(item.Id), colour);
+            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+            foreach (var (nodeId, parts) in _importedScene.MeshesByNodeId)
+            {
+                var world = _importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                foreach (var part in parts)
+                {
+                    var factor = part.Material.BaseColorFactor;
+                    _studioEffect.DiffuseColor = new Vector3(factor.X, factor.Y, factor.Z);
+                    _studioEffect.Alpha = 1f;
+                    _studioEffect.TextureEnabled = part.Material.HasBaseColorImage;
+                    _studioEffect.Texture = part.Material.HasBaseColorImage
+                        ? _textures[part.Material.BaseColorImageIndex!.Value]
+                        : null;
+                    GraphicsDevice.RasterizerState = part.Material.DoubleSided
+                        ? RasterizerState.CullNone
+                        : RasterizerState.CullCounterClockwise;
+                    _meshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
+                }
+            }
         }
 
         base.Draw(gameTime);
@@ -148,6 +186,9 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void UnloadContent()
     {
         _sceneResources?.Dispose();
+        _sceneResources = null;
+        _meshBuffers.Clear();
+        _textures.Clear();
         DisposeHost();
         base.UnloadContent();
     }
@@ -155,14 +196,9 @@ public sealed class CharacterStudioGame : EngineHost
     private static SceneGraph CreateDefaultScene()
     {
         var scene = new SceneGraph();
-        scene.Add(new SceneObject(CubeId, "Studio Cube")
+        scene.Add(new SceneObject(CubeId, "GLB Preview")
         {
-            Transform = new Transform
-            {
-                Position = Vector3.Zero,
-                Rotation = Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.ToRadians(25f)),
-                Scale = new Vector3(2f)
-            }
+            Transform = new Transform()
         });
         return scene;
     }

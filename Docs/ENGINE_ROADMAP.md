@@ -71,9 +71,9 @@ Start here. Do not build an editor or importer yet.
 | [x] | 16 | Add one redistributable static GLB fixture and its license/source; document expected dimensions and orientation. | Asset provenance is recorded and its authored appearance is available for comparison. |
 | [x] | 17 | Evaluate SharpGLTF by reading fixture nodes and primitives; pin the compatible version. | A CPU test reads expected counts/transforms; chosen version and license are recorded. |
 | [x] | 18 | Define Ember-owned mesh data for positions, normals, UV0, and triangle indices. Convert one primitive. | Numeric fixture checks match expected vertices and indices; unsupported topology is rejected. |
-| [ ] | 19 | Upload that mesh to vertex/index buffers and draw it with an explicit world matrix. | The fixture renders at its authored size/origin; buffers are disposed on unload. |
-| [ ] | 20 | Import the GLB node hierarchy into scene objects. | Rotated/scaled child meshes match reference transforms and visual placement. |
-| [ ] | 21 | Import base-color factors and PNG/JPEG base-color textures for opaque materials only. | A textured reference object has correct UV orientation and tint; unsupported material modes are reported. |
+| [x] | 19 | Upload that mesh to vertex/index buffers and draw it with an explicit world matrix. | The fixture renders at its authored size/origin; buffers are disposed on unload. |
+| [x] | 20 | Import the GLB node hierarchy into scene objects. | Rotated/scaled child meshes match reference transforms and visual placement. |
+| [x] | 21 | Import base-color factors and PNG/JPEG base-color textures for opaque materials only. | A textured reference object has correct UV orientation and tint; unsupported material modes are reported. |
 | [ ] | 22 | Add local mesh bounds, transformed bounds, and camera framing. | Rotated/scaled objects frame correctly; bounds contain their transformed vertices. |
 | [ ] | 23 | Add stable asset IDs and scene references to source GLB paths via metadata. | Two scene objects reference one asset; save/reopen reloads both without embedding mesh data in scene JSON. |
 | [ ] | 24 | Add explicit reimport that keeps the old valid asset until the replacement succeeds. | Valid changes appear; corrupt replacement content shows an error and leaves the old model usable. |
@@ -316,13 +316,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 16–18.
-- Current task: 19.
-- Changed files: `src/Ember.Engine/Assets/StaticMeshData.cs`, `src/Ember.Engine/Assets/GltfPrimitiveImporter.cs`, `src/Ember.Engine/Ember.Engine.csproj`, `tests/Ember.Engine.Tests/Assets/TextureCoordinateTest.glb`, `tests/Ember.Engine.Tests/Assets/README.md`, `tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj`, `tests/Ember.Engine.Tests/GltfPrimitiveImporterTests.cs`, `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap checkbox/handoff.
-- Checks run: `dotnet test Ember.sln --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`.
-- Results: 20 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed.
+- Last completed tasks: 19–21 (tasks 16–18 remain complete from the previous batch).
+- Current task: 22.
+- Changed files: `src/Ember.Engine/Assets/GltfPrimitiveImporter.cs`, new `GltfMaterialData.cs`, `GltfSceneImporter.cs`, and `StaticMeshGpuBuffer.cs`; CharacterStudio game, project, and its linked Khronos fixture/README; engine test project and new `GltfSceneImporterTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
+- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio `--screenshot` capture.
+- Results: 23 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed; CharacterStudio rendered the authored GLB textures and exited cleanly.
 - Blockers: none recorded.
-- Next action: upload the imported mesh to GPU buffers and draw it with an explicit world matrix.
+- Next action: add local and transformed mesh bounds, then use those bounds for camera framing.
 
 Suggested request to an implementing AI:
 

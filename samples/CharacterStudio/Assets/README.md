@@ -11,6 +11,6 @@ SPDX-License-Identifier: CC0-1.0
 
 The file is a static glTF 2.0 binary with one scene, five identity-transform nodes, and five meshes, each with one indexed primitive using `TRIANGLES` topology. Four primitives contain POSITION, NORMAL, and TEXCOORD_0; the back plane intentionally has no TEXCOORD_0 and is used to check clear unsupported-attribute errors. The authored geometry uses glTF's right-handed, Y-up coordinates with +Z forward. Across all primitives, the expected bounds are approximately X [-1.2, 1.2], Y [-1.2, 1.2], Z [-1, 1], in metres. The first mesh's primitive is a 1 m square in the XY plane near (0.7, 0.7, 0), facing +Z.
 
-The asset and its original license/source are test data; they are not engine runtime content.
+The asset and its original license/source are sample content; they are not engine runtime content.
 
 SHA-256: `FE75A63A0423C9A682BF46C3045B6328AE9C55ABEFC9A50ADF3EC1D6DC6EA3B9`

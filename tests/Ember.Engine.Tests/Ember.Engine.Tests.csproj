@@ -22,7 +22,9 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="Assets\TextureCoordinateTest.glb" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\samples\CharacterStudio\Assets\TextureCoordinateTest.glb"
+             Link="Assets\TextureCoordinateTest.glb"
+             CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
