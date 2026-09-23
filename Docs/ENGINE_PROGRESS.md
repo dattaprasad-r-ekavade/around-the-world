@@ -295,3 +295,20 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 | CharacterStudio open/save capture | PASS — `captures/release-a-before-reopen.png`; courtyard and two independently configured Fox instances render together |
 | CharacterStudio saved-scene reopen | PASS — `captures/release-a-after-reopen.png`; both clip states, authored transforms, and hand attachment restored |
+
+## Tasks 39–41 — add the first CharacterStudio editor controls
+
+- Task 39: pinned ImGui.NET 1.91.6.1 and added a small MonoGame renderer for its draw lists. CharacterStudio now feeds text, keyboard, and mouse input to the UI, scales the panel to the logical canvas through letterboxing, and suppresses camera and global shortcuts while ImGui captures input. The sample does not write an ImGui settings file into the project.
+- Task 40: added a hierarchy keyed by scene-object GUID. Duplicate names receive distinct ImGui IDs, the first object is selected on startup, and deleting a selected object clears the stale selection.
+- Task 41: added numeric local position, Euler rotation in degrees, and scale fields. Finite values update the selected scene transform, which the existing scene save/reopen path serializes.
+- Captured `captures/imgui-editor-batch.png` at 1280×720. It shows text entry, the hierarchy, and all three transform groups over the Release A scene. The desktop input automation helper could not initialize in this session, so actual mouse clicks/text entry were not exercised; the interaction and save wiring were source-reviewed, and scene serialization remains covered by the existing suite.
+
+### Tasks 39–41 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 56 tests, 0 failed |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio runtime capture | PASS — editor overlay rendered on the 1280×720 showcase; native ImGui dependency loaded |
+| Interactive mouse/keyboard verification | NOT RUN — desktop input automation helper failed to initialize; select/edit behavior was source-reviewed |

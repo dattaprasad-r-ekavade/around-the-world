@@ -36,6 +36,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly PlaybackOptions _playbackOptions;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
+    private CharacterStudioEditorUi? _editorUi;
     private string? _blockedSaveReason;
     private string _reimportStatus = "R: reimport scene GLBs | S: save scene";
     private BasicEffect _studioEffect = null!;
@@ -131,7 +132,10 @@ public sealed class CharacterStudioGame : EngineHost
         _sceneResources = new SceneResourceScope();
         try
         {
+            IsMouseVisible = true;
+            Window.TextInput += HandleTextInput;
             AttachCanvas();
+            _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight);
             _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 VertexColorEnabled = false,
@@ -183,6 +187,9 @@ public sealed class CharacterStudioGame : EngineHost
         }
         catch
         {
+            Window.TextInput -= HandleTextInput;
+            _editorUi?.Dispose();
+            _editorUi = null;
             _preview?.Dispose();
             _preview = null;
             _sceneResources.Dispose();
@@ -196,22 +203,27 @@ public sealed class CharacterStudioGame : EngineHost
         BeginHostFrame();
             _input.Sample();
         var mouse = _input.CurrentMouse;
+        _editorUi?.Update((float)gameTime.ElapsedGameTime.TotalSeconds,
+            _input.CurrentKeyboard, mouse, LogicalMouse(mouse), _sceneData);
+        var uiCapturesMouse = _editorUi?.WantsMouse ?? false;
+        var uiCapturesKeyboard = _editorUi?.WantsKeyboard ?? false;
 
-        if (_input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
-        if (_input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
-        if (_input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
+        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
+        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
+        if (!uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.S)) SaveScene();
         if (!_hasMouse)
         {
             _lastMouse = mouse;
             _hasMouse = true;
         }
 
-        if (mouse.LeftButton == ButtonState.Pressed)
+        if (!uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
         {
             _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y));
         }
 
-        _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
+        if (!uiCapturesMouse)
+            _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
         var preview = _preview?.Current;
@@ -283,6 +295,7 @@ public sealed class CharacterStudioGame : EngineHost
         _ui.End();
 
         base.Draw(gameTime);
+        _editorUi?.Render();
         EndHostFrame(hold: false, exit: Exit);
     }
 
@@ -291,6 +304,9 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void UnloadContent()
     {
+        Window.TextInput -= HandleTextInput;
+        _editorUi?.Dispose();
+        _editorUi = null;
         _preview?.Dispose();
         _preview = null;
         _sceneResources?.Dispose();
@@ -318,6 +334,9 @@ public sealed class CharacterStudioGame : EngineHost
         || HasArgument(args, "--attach-hand")
             ? FoxAsset
             : DefaultAsset;
+
+    private void HandleTextInput(object? sender, TextInputEventArgs args) =>
+        _editorUi?.AddTextInput(args.Character);
 
     private static void AddPairIfNeeded(SceneGraph scene)
     {

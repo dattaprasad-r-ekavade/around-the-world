@@ -278,6 +278,13 @@ Version-1 files still load and are upgraded on the next save. CharacterStudio's 
 stores the initial selected state, **S** saves current playback times, and `--open <path>` restores
 the per-instance settings and attached preview props.
 
+CharacterStudio's editor panel provides a text-entry field, a scene-object hierarchy keyed by
+stable IDs, and numeric local position, Euler rotation (degrees), and scale controls for the
+selected object. Duplicate display names remain independently selectable. Non-finite transform
+input is ignored; the existing **S** command saves the edited scene. The panel uses pinned
+ImGui.NET 1.91.6.1 with a small MonoGame renderer backend; it currently has no undo history or
+object creation/deletion controls.
+
 `ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
 the current resource stays active. After a complete candidate is built, it swaps the reference
 and disposes the retired resource. CharacterStudio uses **R** to reimport all GLBs referenced by

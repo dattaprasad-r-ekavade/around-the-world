@@ -6,6 +6,7 @@
     <RuntimeIdentifier>win-x64</RuntimeIdentifier>
     <SelfContained>false</SelfContained>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>CharacterStudio</RootNamespace>
     <AssemblyName>CharacterStudio</AssemblyName>
@@ -20,6 +21,10 @@
     <Content Include="Assets\Fox.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\ReleaseACourtyard.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Scenes\ReleaseAShowcase.json" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
   </ItemGroup>
 
 </Project>

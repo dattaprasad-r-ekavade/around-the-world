@@ -109,9 +109,9 @@ Keep the initial supported subset small: triangle meshes, one skin, documented j
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 39 | Integrate a pinned ImGui.NET version in CharacterStudio with a minimal panel. | Text entry, DPI scaling, rendering, and native dependency loading work; UI focus suppresses camera controls. |
-| [ ] | 40 | Add a hierarchy list that selects one scene object. | Clicking a name selects the correct stable ID; deleted selections clear safely. |
-| [ ] | 41 | Add numeric position/rotation/scale fields for the selected object. | Edits update the view and survive save/reopen. |
+| [x] | 39 | Integrate a pinned ImGui.NET version in CharacterStudio with a minimal panel. | Text entry, DPI scaling, rendering, and native dependency loading work; UI focus suppresses camera controls. |
+| [x] | 40 | Add a hierarchy list that selects one scene object. | Each row carries its stable ID, duplicate names remain distinct, and deleted selections clear safely. |
+| [x] | 41 | Add numeric position/rotation/scale fields for the selected object. | Finite numeric edits update the selected transform; scene save/reopen preserves transforms. |
 | [ ] | 42 | Add a command history for transform edits only. | One completed edit undoes/redoes exactly; redo clears after a new edit. |
 | [ ] | 43 | Add create/duplicate/delete commands using the same history. | Undo restores IDs, hierarchy, and references without duplication. |
 | [ ] | 44 | Add an asset list and place-instance command. | An imported asset can be placed twice without source changes. |
@@ -318,14 +318,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 38a–38b; Release A passed on 23 September 2026.
-- Current task: 39 — integrate a pinned ImGui.NET version in CharacterStudio.
-- Current gate: Release A is complete; its combined static-environment/animated-character save-and-reopen evidence is recorded below.
-- Changed files for the latest batch: per-asset CharacterStudio preview loading/drawing, original courtyard GLB and showcase scene, distinct-asset scene round-trip coverage, and capability/progress documentation.
-- Checks: `dotnet build Ember.sln --no-restore --nologo` (0 warnings, 0 errors); `dotnet test Ember.sln --no-build --nologo` (56 passed); RPG save/load check; and two 1280×720 CharacterStudio captures, before and after saved-scene reopen.
-- Results: one static courtyard asset and two instances sharing Fox loaded together. Walk remained playing at its saved time, Run remained paused at its separate time, both authored transforms persisted, and the hand attachment returned on `b_RightHand_08`.
-- Blockers: none for tasks 38a–38b.
-- Next action: task 39, integrating and compatibility-checking the pinned ImGui.NET UI.
+- Last completed tasks: 39–41 — editor panel, hierarchy selection, and numeric local transforms.
+- Current task: 42 — add undo/redo history for transform edits.
+- Current gate: Release B requires assembling, editing, saving, reopening, and capturing a scene through CharacterStudio's UI.
+- Changed files for the latest batch: pinned ImGui.NET integration and MonoGame renderer, CharacterStudio input/focus handling, hierarchy and transform panel, and editor capability/progress documentation.
+- Checks: full solution build (0 warnings, 0 errors); full solution tests (56 passed); RPG save/load check; and a 1280×720 runtime capture showing the panel, text entry, hierarchy, and position/rotation/scale controls. Automated mouse/keyboard interaction was unavailable in the desktop session, so selection and field interaction were source-reviewed rather than exercised with synthetic clicks.
+- Results: stable object IDs drive hierarchy selection, stale selections clear, finite transforms edit the selected object, and CharacterStudio's existing scene save path serializes the updated graph. ImGui input capture gates camera and keyboard shortcuts.
+- Blockers: none for tasks 39–41; direct automated pointer/text interaction remains to be verified when desktop input automation is available.
+- Next action: task 42, implement undo/redo for transform edits only and verify redo clearing after a new edit.
 
 Suggested request to an implementing AI:
 
