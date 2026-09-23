@@ -516,6 +516,24 @@ The code quality is high for a project at this stage. Validation errors name the
 | Low | The package step rewrites `ember.project.json` from only `StartupScenePath`. Any field added to the project file later will be dropped from packages without an error. | `EngineProjectPackage.cs:35` | Copy the validated project document, or round-trip the full document model. |
 | Low | In `CharacterAsset`, the `SkinnedEffect` and the white texture are created before the `try`, so an exception in the `Texture2D` constructor leaks the effect. | `templates/MinimalGame/Program.cs:326-331` | Move both allocations inside the `try` block and make `Dispose` null-safe. |
 
+### Earlier subsystems (scene, physics, input, rendering)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| Medium | **A jump request is dropped if the first physics substep is airborne.** `PreparePhysicsStep` clears `_jumpRequested` on every substep, grounded or not. When a render frame catches up several steps and the player lands on the second one, the press made that frame is lost. | `Physics/PhysicsCharacterController.cs:108-110` | Keep the request until it succeeds or a short buffer expires (about 0.1 s). Clear it only after a jump actually happens. Add a two-substep "land then jump" fixture. |
+| Medium | **The shadow camera fits the whole scene's bounds, with no texel snapping.** Shadow resolution falls as the scene grows, and the shadows shimmer whenever the bounds move (for example, when animated characters move). This is fine for a single CharacterStudio showcase. It will not hold up once streamed cells make the "scene" several hundred metres across. | `Render/DirectionalShadowCamera.cs:10-25` | Before Stage 13, fit the shadow volume to the camera's view frustum (one cascade to start). Snap its centre to shadow-map texels. Put a fixed-camera shadow capture into the benchmark from task 119. |
+| Medium | **`SceneGraph.GetWorldMatrix` allocates a `HashSet` on every call.** CharacterStudio calls it for each object in the shadow pass and again in the main pass. Stage 9 cells will multiply the object count. | `Scene/Scene.cs:68-72` | Cycles are already rejected by `SetParent` and at load, so walk the parent chain with a depth limit and no allocation. Alternatively, cache world matrices with a dirty flag. |
+| Low | Per-frame allocations: `InputActionMap.Sample` builds a new dictionary each frame (`Input/InputActionMap.cs:100`). The shadow pass calls `GetRenderTargets()` each frame (`Render/DirectionalShadowMap.cs:44`). | as listed | Reuse buffers. Measure first with the task 50 diagnostics. |
+| Low | The legacy static texture caches (`StoneTextures`, `PropTextures`, `ItemSprites`, `CharacterSprites`) each have `Clear()`, but nothing calls them, so their textures outlive the host's `GraphicsDevice`. Task 15 deliberately left these caches alone. | `Render/StoneTextures.cs:48` and the others | Call the four `Clear()` methods from `EngineHost.DisposeHost` as a one-line safety net. Do this before task 141's hour-long soak, or that soak will measure them. |
+| Low (latent) | `CreateSceneObjectCommand.Revert` removes the object. `SceneGraph.Remove` then detaches its children, and redo does not reattach them. It can't happen today, because reparenting isn't recorded in the history and CharacterStudio never calls `SetParent`. | `Scene/SceneCommandHistory.cs:99-105`; `Scene/Scene.cs:33-41` | When a reparent tool is added, make it a history command. Then create/undo stays symmetric in a linear history, and a test can cover it. |
+| Low | The culler tests only use scaled and translated bounds, not rotated ones. The code (8-corner transform) is correct. | `tests/Ember.Engine.Tests/DirectionalShadowTests.cs:68-79` | Add a 45° yaw fixture. |
+
+Done well in these areas:
+- `PhysicsFixedStepper` reports the backlog it drops and keeps its interpolation alpha in range, with tests.
+- Play-on-clone deep-copies the scene, and a test shows the authored scene survives runtime moves and deletes.
+- Delete-undo restores both the parent and the direct children.
+- The shadow pass restores render targets in a `finally` block.
+
 ### Structure and duplication
 
 - **Atomic-write code exists in five copies**: `SceneFile.cs:55-67`, `SequenceFile.cs:35-46`, `WorldManifest.cs:110-121`, `EngineProjectFile.cs:105-116`, and `SequenceFrameExport.cs:249-260`. The copies have drifted apart. `SceneFile` uses `File.WriteAllText` rather than an exclusive `CreateNew` stream. The export manifest replaces its file with `File.Move(overwrite: true)` rather than `File.Replace`. Task 11 is tested only for validation failures, not for a write or replace that fails partway. **Path-escape checks exist in four more**: `EngineProjectFile.cs:45-51`, `WorldManifest.cs:163-186`, and `EngineProjectPackage.cs:199-205,230-236`. Extract them into `SafeFile.WriteAtomic(path, Action<Stream>)` and `ContentPath.ResolveInside(root, relative)`, and test both once. Add `stream.Flush(flushToDisk: true)` before `File.Replace`. Without it, a power loss right after the replace can leave an empty file on NTFS. Player saves (task 90) will depend on this.
@@ -535,4 +553,4 @@ The code quality is high for a project at this stage. Validation errors name the
 1. Fix the owner-thread completion path and add `Discard`/`Cancel` plus generation stamping. These are the three High findings, and they are small; they are prerequisites that make tasks 79–81 honest.
 2. Add cell width to the manifest and a coordinate index, and give the ring entered/left sets with distance ordering.
 3. Then implement task 79 with a cost-based budget, verified in `RpgSlice` on a 3×3 grid.
-4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a fifth copy.
+4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a sixth copy.
