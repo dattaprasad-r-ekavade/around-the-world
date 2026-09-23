@@ -92,6 +92,40 @@ shake walks the player's aim off by degrees with nobody able to say why.
 
 ---
 
+## Physics
+
+`PhysicsWorld` owns a BEPU v2 simulation and returns stable `PhysicsObjectId` values instead of
+leaking BEPU body handles. The current adapter creates static and dynamic box colliders, applies
+gravity, supports symmetric belongs-to/collides-with filters, and exposes engine-side
+`PhysicsPose` values. `PhysicsConversions` is the explicit boundary between MonoGame math and
+BEPU's `System.Numerics` math.
+
+```csharp
+using var physics = new PhysicsWorld();
+physics.AddStaticBox(new Vector3(0, -0.5f, 0), new Vector3(20, 1, 20));
+var box = physics.AddDynamicBox(new Vector3(0, 5, 0), Vector3.One, mass: 1f);
+var fixedStepper = new PhysicsFixedStepper();
+var result = fixedStepper.Advance(elapsedSeconds, physics.Step);
+var renderPose = physics.GetInterpolatedPose(box, result.InterpolationAlpha);
+var hit = physics.Raycast(rayOrigin, rayDirection, maxDistance,
+    PhysicsCollisionLayer.World | PhysicsCollisionLayer.Interaction);
+```
+
+The default step is 1/60 second with at most eight catch-up steps per render update. `Advance`
+returns the step count, interpolation alpha, and time discarded after the catch-up cap; its
+cumulative dropped-time counter makes long stalls visible. `GetInterpolatedPose` blends the
+previous and current fixed-step poses for rendering, while `GetPose` reads the current simulation
+state. Raycast directions are normalized so reported distance uses world units. The supplied
+collision-layer mask filters the candidate set; the same category/mask pair controls contact
+generation. Dispose `PhysicsWorld` when a cell or scene unloads so BEPU's simulation and pooled
+memory are released.
+
+The engine pins `BepuPhysics` 2.5.0-beta.29 (with matching transitive `BepuUtilities`), a v2
+prerelease under Apache-2.0. This is a deliberate dependency choice for the current adapter; the
+stable 2.4.0 release is older and can be substituted if prerelease use is rejected for a release.
+The adapter is not yet connected to scene-file components or a character controller, and it does
+not yet support imported mesh colliders, triggers, or contact events.
+
 ## Rendering
 
 ### `SceneRenderer`

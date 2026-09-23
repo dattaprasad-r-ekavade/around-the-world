@@ -368,3 +368,20 @@ The sampled bounds describe supported imported clips; they do not make arbitrary
 | Offscreen static fixture | PASS — cull count rises while shadow draw count includes the offscreen asset |
 | `--perf` reference run | PASS — Intel(R) UHD Graphics, 1280×720 HiDef; reports host-frame interval scope and avg/min/max |
 | Light rotation and resize through editor interaction | NOT RUN — desktop input automation helper remains unavailable; update, resize, and disposal paths are covered by source review and focused sizing tests |
+
+## Tasks 51–53 — add fixed-step physics and filtered raycasts
+
+- Task 51: pinned `BepuPhysics` 2.5.0-beta.29 and built `PhysicsWorld`, which owns its BEPU simulation, pooled memory, and collision-filter storage. The adapter assigns stable engine IDs, supports static and dynamic box colliders, applies gravity and contact material settings, and converts poses explicitly between MonoGame and `System.Numerics`. Both package nuspecs identify `Apache-2.0`; the dependency is a prerelease, and that choice plus the older stable 2.4.0 fallback is documented.
+- Task 52: added `PhysicsFixedStepper` with a 1/60-second default step, an eight-step catch-up cap, dropped-backlog reporting, and a retained interpolation remainder. `PhysicsWorld` stores prior/current dynamic poses for render interpolation.
+- Task 53: added symmetric belongs-to/collides-with contact filtering and nearest-hit raycasts filtered by collision layers. Directions are normalized before querying, so hit distance is measured in world units.
+- The CPU integration suite verifies a falling box settles on a floor, interpolated results agree at 30/60/120 render updates per second, excess backlog is reported, raycast hit/miss/filter behavior is correct, blocked collision pairs do not contact, math conversions round-trip, and disposal rejects later use. These tasks produce physics API coverage; CharacterStudio/gameplay integration begins with the capsule controller in task 54.
+
+### Tasks 51–53 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — all projects and samples, 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 74 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| BEPU package metadata | PASS — `BepuPhysics` and `BepuUtilities` 2.5.0-beta.29 both declare Apache-2.0 |
+| Rendered physics demo | NOT RUN — this batch adds and tests the engine service; it does not yet connect physics to a sample scene or character controller |
