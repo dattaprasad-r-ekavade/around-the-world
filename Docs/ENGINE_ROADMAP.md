@@ -377,3 +377,66 @@ The latest renderer batch produced 1280×720 runtime captures with two character
 Release A, editor foundation tasks 39–50, gameplay foundation tasks 51–62, and sequence-preview tasks 63–65 are complete; start task 66. Resolve the project-root contract before adding arbitrary filesystem browsing, and retain the remaining importer, measurement, authoring, and release-gate recommendations at their stated boundaries. Keep the current architecture, pinned dependencies and small-task approach; finish integrated workflows with explicit evidence.
 
 This section records current scope and review recommendations. Roadmap checkboxes reflect the task evidence recorded in `ENGINE_PROGRESS.md`.
+
+## Updated implementation and co-op readiness review — 23 September 2026
+
+This is a fresh review of the working tree, including uncommitted sequence-export work. It supersedes the earlier review's progress and test totals for this snapshot. Recommendations below do not change task priorities or authorize implementation; the existing RPG track is retained until a product-priority decision is adopted.
+
+### Actual completion and verification
+
+**68 of 146 ordered roadmap rows are checked (46.6% by row count): original tasks 01–65 plus 38a, 38b and 47a.** Against the original baseline this is 65/143 (45.5%). There are 78 unchecked ordered rows. Neither percentage measures remaining effort, commercial readiness, or completion of the proposed studio game.
+
+| Area | What is present | Remaining boundary |
+| --- | --- | --- |
+| Scene and asset foundation, 01–38b | Hierarchy, transforms, validated scene JSON, resource scopes, static/skinned GLB assets, independent character playback, attachments and mixed-asset preview. | Release A has recorded before/reopen captures. This review did not repeat its visual checks or the resource soak. |
+| Authoring and rendering, 39–50 plus 47a | ImGui panel, selection, transform and object history, loaded-asset placement, animation controls, shared lighting, custom effect build, static/skinned shadows, static culling and diagnostics. | Release B still needs an end-to-end authoring acceptance session. Rendering a panel does not verify typing, focus, selection, undo or all DPI interactions. |
+| Gameplay components, 51–62 | BEPU world and capsule controller, fixed stepping, jumps/slopes, obstruction camera, named actions, motion-driven animation, behavior/audio ownership and isolated play clones. | CharacterStudio's play session wires an audio interaction but does not construct the physics controller. The packaged integrated Release C level remains absent, as ENGINE_PROGRESS.md explicitly records. |
+| Sequence preview, 63–65 | Absolute-time character tracks, camera keys/cuts and preview controls. | The sequence is generated in memory; there is no saved sequence document to reopen. UI interaction is not established by CPU tests. |
+| Export, 66–68 | Uncommitted render-target, frame-job, manifest, cancellation and editor integration code is present. | Work in progress, not completed rows; the current test run has a frame-count failure. Actual GPU export and recovery still require acceptance evidence. |
+| Distribution, 69–72 | Existing samples build against engine projects. | External-project template, dependency packaging and clean-machine Windows distribution remain unchecked. |
+| Cell-based RPG, 73–143 | Existing Ember.Rpg primitives and Campaign examples remain reusable starting points. | Planned cell streaming, world persistence, navigation and integrated RPG slice remain unchecked. |
+| Co-op studio simulator | Rendering, input, audio and scene primitives can be reused. | No studio economy/project simulation or multiplayer implementation was found in the inspected engine/test sources. Engine progress must not be reported as game completion. |
+
+Fresh checks for this review:
+
+- `dotnet build Ember.sln --nologo`: PASS, 0 warnings, 0 errors.
+- `dotnet test Ember.sln --no-build --nologo`: FAIL, 97 passed, 1 failed, 98 total, 0 skipped.
+- Failing test: `SequenceFrameExportTests.CompletingFramesWritesHashesSettingsAndCompleteManifest`, line 48 in the tested source: expected 3 frames, actual 4.
+- `dotnet run --project tests/Ember.Rpg.Check --no-build`: PASS, `[OK] save then load equals original`.
+
+The checkout contains work in progress and changed during inspection, so these results describe the build/test snapshot, not a promise about subsequent edits. No new graphics launch, desktop input test, audio-device test, multiplayer session or clean-machine install was performed. Existing screenshots and earlier passing totals are historical evidence.
+
+### Engine-plan changes to adopt
+
+1. **Fix frame-boundary semantics before closing 66–68.** `SequenceFrameExportSettings` calculates a ceiling from float start/end values using a 1e-9 adjustment. The float representation of 0.1 seconds multiplied by 30 exceeds three enough to produce a fourth frame. Define the end-exclusive interval and its numeric tolerance explicitly, or use an exact frame/time representation. Acceptance must cover 0.1 seconds at 30 fps, 10 seconds at 30 fps, nonzero starts, nonaligned endpoints and values either side of a boundary. Keep the failing regression; do not merely change its expectation.
+2. **Track component implementation and release gates separately.** Keep existing completed rows as the implementation record, but add explicit Pending/Pass/Blocked gate entries with evidence. Revisit tasks whose acceptance was narrowed to source inspection or a static capture. In particular, complete Release B through actual select/edit/undo/save/reopen actions and Release C through movement, collision, jump, animation and audible interaction in a packaged level. Add atomic integration rows instead of assuming all checked components establish the gate.
+3. **Add sequence persistence before claiming Release D.** Add versioned serialization of track IDs, target IDs, clip references, camera keys/cuts and duration; validate missing references. A manifest naming a sequence and hashing GLBs does not reconstruct its timeline, scene transforms or lighting. Acceptance: restart, reopen saved scene and sequence, export again, and compare specified sample times/settings on the same configuration. Record the scene/sequence and loaded asset versions actually used by the renderer; hashing a file changed on disk after import can misdescribe the in-memory asset.
+4. **Resolve content roots before 69–71.** Asset paths still resolve against `AppContext.BaseDirectory`. Introduce a project/content root shared by loading, reimport and packaging. Verify an external project after changing the working directory and moving its complete folder. Include native libraries and compiled effects in a clean-machine package check.
+5. **Retain unresolved correctness and measurement work.** The skinned importer still collects a single skinned mesh without explicitly rejecting additional unskinned mesh geometry in the same GLB. Reject or support that case with a fixture. Sampled animation bounds remain fixture-tested estimates; keep unverified poses uncullable. Measure import latency, frame-time percentiles and owned resource counts on a representative mixed scene; perform repeated reload/play/stop/export cancellation checks rather than infer leak freedom from CPU disposal tests.
+
+### Fit for the proposed game
+
+The current target says single-player, cell-based RPG and lists multiplayer as later work. The new pitch is **Game Dev Tycoon with friends, where players learn how games are actually made**. These are separate product tracks. Recommend retaining the RPG roadmap and creating a dedicated studio-game plan, with an explicit prerequisite list rather than forcing that game through all 143 original tasks. If the studio game becomes the priority, update the opening target and first-unchecked-task scheduling rule deliberately; do not silently skip existing tasks.
+
+Use Ember for presentation, input, audio and reusable controls. Keep studio rules, economy, employee skills, task dependencies and learning scenarios in a game-owned module that can run without graphics. The player-facing interface needs task boards, tooltips, scrolling, focus and clear feedback; CharacterStudio's ImGui tools do not establish that interface. Terrain, cell streaming and RPG combat are not prerequisites for a management prototype.
+
+Co-op should use host-authoritative studio state: players submit validated commands and the host applies them in a defined order. Local UI selections/cameras stay local. Use stable player/task/project IDs, command IDs, state revisions and explicit permissions. Do not require deterministic physics lockstep for the management simulation. The existing physics catch-up policy drops excess elapsed time; define a separate management-clock policy so fast-forward or a slow frame cannot silently skip wages, deadlines or completed work.
+
+### Proposed studio-game milestones, separate from the current ordered tasks
+
+These are recommendations, not additional completed roadmap rows. Split each milestone into the existing small-task format before implementation.
+
+| Order | Deliverable | Acceptance evidence |
+| --- | --- | --- |
+| 1 | CPU-only studio state, simulation clock and command processing | Given the same seed and accepted ordered commands, outcomes repeat. Pause and speed changes obey documented rules; budgets cannot be spent twice and invalid commands change nothing. |
+| 2 | One solo production loop with design, programming and QA | Scope a small project, implement a feature, discover/fix a defect, release, and receive feedback tied to those decisions. A player can explain one learned trade-off without being told the answer. |
+| 3 | Versioned studio save and recovery | Save/restart restores projects, staff, money, pending work, clock and random state; an interrupted write preserves the previous valid save. Scene files remain separate from studio progression. |
+| 4 | Two-player authoritative command/snapshot proof | Two processes join one studio. Simultaneous assignment/spending resolves once, duplicate commands do not duplicate effects, and stale or unauthorized edits are rejected clearly. Both players see the same resulting state. |
+| 5 | Rejoin, version compatibility and host-loss behavior | A returning client receives a coherent snapshot and resumes without duplicated work. Incompatible builds/content fail clearly. For the first release, host exit ends the session and recovery uses the host save; host migration is deferred. Test delayed, duplicate and disconnected requests. |
+| 6 | Four-player roles, permissions and shared time controls | Four connected clients can contribute at once; players may switch roles and vacant roles are handled by staff. Pause/fast-forward policy is explicit, one player cannot silently disrupt everyone, and simultaneous edits have visible outcomes. |
+| 7 | One controlled playable game template | Development choices visibly change an authored prototype. If players can play it together, validate its separate real-time networking needs; shared management commands alone do not provide multiplayer movement. Avoid arbitrary game generation in the first version. |
+| 8 | Internet invites, packaged playtest and onboarding | Select and test a transport/lobby integration, connection failure UX and compatibility handshake. Four packaged Windows clients on separate machines complete a project, save, disconnect and rejoin. Validate remote connectivity, not only localhost. |
+
+Recommended product-validation scope: one office, one genre, three hands-on disciplines, one hire, one release and one patch. Prove two-player collaboration before four-player polish. Represent later large studios through departments and aggregate work; measure load before promising thousands of individually simulated staff. The educational gate should test understanding of consequences, while the co-op gate should test whether everyone has useful work and reasons to interact.
+
+**Next action under the unchanged engine roadmap:** resolve and verify the in-progress 66–68 export work, leaving rows unchecked until their individual acceptance checks pass. **Recommended planning action for the new game:** write the separate studio-game milestones and their engine prerequisites before committing to RPG-specific expansion. This review changes documentation only and preserves all existing implementation work.
