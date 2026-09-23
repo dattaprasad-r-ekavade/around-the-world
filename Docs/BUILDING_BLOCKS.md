@@ -177,11 +177,14 @@ foreach (var nodeId in imported.MeshesByNodeId.Keys)
 `GltfSceneImporter` follows the GLB default scene, preserves each node's local position,
 rotation, scale, and parent, and binds each mesh node to its imported primitives. Ask the
 imported `SceneGraph` for its world matrix; the matrices use Ember's row-vector convention.
-`StaticMeshData` stores position, normal, `TEXCOORD_0`, and triangle indices. Unsupported
+`StaticMeshData` stores position, normal, `TEXCOORD_0`, triangle indices, and a local AABB.
+`Bounds3.Transform(matrix)` transforms all eight corners and returns an enclosing world AABB;
+combine bounds with `Encapsulate` when framing a scene. `OrbitCamera.Frame(bounds)` targets its
+center and fits its bounding sphere to the current field of view and aspect ratio. Unsupported
 topology, missing required attributes, animation, skins, and matrix-only node transforms fail
 with a clear exception.
 
-`GltfMaterialData` reads base-color factors, double-sidedness, and embedded PNG/JPEG base-color
+`GltfMaterialData` reads base-color factors, double-sidedness, and resolved PNG/JPEG base-color
 images for OPAQUE materials with TEXCOORD_0. It rejects blend/mask modes, other UV sets,
 non-identity texture transforms, and unsupported image formats. It copies resolved image bytes
 so the SharpGLTF model can be released independently; unresolved image references fail clearly.
@@ -194,6 +197,12 @@ scene's `SceneResourceScope` so reload and shutdown dispose GPU resources. The
 `samples/CharacterStudio` GLB preview exercises this complete static path. SharpGLTF.Core is
 pinned at 1.0.7; imported vertices retain source coordinates and authored size and do not use
 `ModelCache` normalization.
+
+Attach a stable, project-relative source reference to a scene object with
+`new GltfAssetReference(assetId, "Assets/Props/guard.glb")`. `SceneFile` saves its ID and path
+as metadata beside the instance transform; it never serializes the imported vertices or
+textures into scene JSON. Multiple instances may share one ID and path. The current
+CharacterStudio preview loads one unique GLB per scene.
 
 ### `BillboardRenderer`
 

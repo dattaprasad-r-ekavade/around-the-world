@@ -1,3 +1,5 @@
+using System;
+using Ember.Assets;
 using Microsoft.Xna.Framework;
 
 namespace Ember;
@@ -5,6 +7,9 @@ namespace Ember;
 /// <summary>A free orbit camera for scene inspection, independent of first-person movement.</summary>
 public sealed class OrbitCamera
 {
+    private float _aspectRatio = 16f / 9f;
+    private float _fieldOfViewRadians = MathHelper.ToRadians(60f);
+
     public Vector3 Target { get; private set; }
     public float Distance { get; private set; } = 8f;
     public float Yaw { get; private set; }
@@ -30,8 +35,27 @@ public sealed class OrbitCamera
         float near = 0.05f, float far = 500f)
     {
         if (aspect <= 0f) return;
+        _aspectRatio = aspect;
+        _fieldOfViewRadians = MathHelper.ToRadians(fieldOfViewDegrees);
         Projection = Matrix.CreatePerspectiveFieldOfView(
-            MathHelper.ToRadians(fieldOfViewDegrees), aspect, near, far);
+            _fieldOfViewRadians, aspect, near, far);
+    }
+
+    /// <summary>Point the camera at bounds and choose a distance that fits them in the viewport.</summary>
+    public void Frame(Bounds3 bounds, float padding = 1.15f)
+    {
+        if (!float.IsFinite(padding) || padding < 1f)
+            throw new ArgumentOutOfRangeException(nameof(padding), "Camera framing padding must be finite and at least 1.");
+
+        var verticalHalfAngle = _fieldOfViewRadians * 0.5f;
+        var horizontalHalfAngle = MathF.Atan(MathF.Tan(verticalHalfAngle) * _aspectRatio);
+        var limitingHalfAngle = MathF.Min(verticalHalfAngle, horizontalHalfAngle);
+        var radius = bounds.Size.Length() * 0.5f;
+        var distance = radius <= 0f
+            ? MinDistance
+            : radius / MathF.Sin(limitingHalfAngle) * padding;
+
+        Reset(bounds.Center, MathHelper.Clamp(distance, MinDistance, MaxDistance), Yaw, Pitch);
     }
 
     public void Orbit(Vector2 delta)

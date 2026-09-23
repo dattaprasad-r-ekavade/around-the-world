@@ -74,8 +74,8 @@ Start here. Do not build an editor or importer yet.
 | [x] | 19 | Upload that mesh to vertex/index buffers and draw it with an explicit world matrix. | The fixture renders at its authored size/origin; buffers are disposed on unload. |
 | [x] | 20 | Import the GLB node hierarchy into scene objects. | Rotated/scaled child meshes match reference transforms and visual placement. |
 | [x] | 21 | Import base-color factors and PNG/JPEG base-color textures for opaque materials only. | A textured reference object has correct UV orientation and tint; unsupported material modes are reported. |
-| [ ] | 22 | Add local mesh bounds, transformed bounds, and camera framing. | Rotated/scaled objects frame correctly; bounds contain their transformed vertices. |
-| [ ] | 23 | Add stable asset IDs and scene references to source GLB paths via metadata. | Two scene objects reference one asset; save/reopen reloads both without embedding mesh data in scene JSON. |
+| [x] | 22 | Add local mesh bounds, transformed bounds, and camera framing. | Rotated/scaled objects frame correctly; bounds contain their transformed vertices. |
+| [x] | 23 | Add stable asset IDs and scene references to source GLB paths via metadata. | Two scene objects reference one asset; save/reopen reloads both without embedding mesh data in scene JSON. |
 | [ ] | 24 | Add explicit reimport that keeps the old valid asset until the replacement succeeds. | Valid changes appear; corrupt replacement content shows an error and leaves the old model usable. |
 | [ ] | 25 | Write the supported GLB subset and reject unsupported required extensions/features. | Negative fixtures fail clearly instead of drawing misleading partial content. |
 
@@ -316,13 +316,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 19–21 (tasks 16–18 remain complete from the previous batch).
-- Current task: 22.
-- Changed files: `src/Ember.Engine/Assets/GltfPrimitiveImporter.cs`, new `GltfMaterialData.cs`, `GltfSceneImporter.cs`, and `StaticMeshGpuBuffer.cs`; CharacterStudio game, project, and its linked Khronos fixture/README; engine test project and new `GltfSceneImporterTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
-- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio `--screenshot` capture.
-- Results: 23 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed; CharacterStudio rendered the authored GLB textures and exited cleanly.
+- Last completed tasks: 22–23 (tasks 16–21 remain complete from previous batches).
+- Current task: 24.
+- Changed files: `src/Ember.Engine/Assets/StaticMeshData.cs`, `src/Ember.Engine/Engine/OrbitCamera.cs`, `src/Ember.Engine/Scene/SceneObject.cs`, and `src/Ember.Engine/Scene/SceneFile.cs`; CharacterStudio game; new `tests/Ember.Engine.Tests/MeshBoundsTests.cs`, updated `SceneFileTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
+- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio captures of one and two GLB instances.
+- Results: 29 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed; both GLB instances reopened and rendered together inside the calculated frame.
 - Blockers: none recorded.
-- Next action: add local and transformed mesh bounds, then use those bounds for camera framing.
+- Next action: implement explicit asset reimport so a replacement is fully validated before it replaces a working GLB.
 
 Suggested request to an implementing AI:
 

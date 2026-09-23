@@ -17,7 +17,9 @@ namespace CharacterStudio;
 /// </summary>
 public sealed class CharacterStudioGame : EngineHost
 {
-    private static readonly Guid CubeId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+    private static readonly Guid PreviewInstanceId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
+    private static readonly GltfAssetReference DefaultAsset = new(
+        Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"), "Assets/TextureCoordinateTest.glb");
 
     private readonly SceneGraph _sceneData;
     private readonly OrbitCamera _camera = new();
@@ -88,8 +90,8 @@ public sealed class CharacterStudioGame : EngineHost
             _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
             _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
 
-            _importedScene = GltfSceneImporter.Load(Path.Combine(AppContext.BaseDirectory,
-                "Assets", "TextureCoordinateTest.glb"));
+            var assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
+            _importedScene = GltfSceneImporter.Load(assetPath);
             foreach (var parts in _importedScene.MeshesByNodeId.Values)
             foreach (var part in parts)
             {
@@ -108,8 +110,15 @@ public sealed class CharacterStudioGame : EngineHost
                 }
             }
 
-            _camera.Reset(Vector3.Zero, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
             _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
+            var sceneBounds = GetSceneBounds();
+            if (sceneBounds is { } bounds)
+            {
+                _camera.Reset(bounds.Center, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
+                _camera.Frame(bounds);
+            }
+            else
+                _camera.Reset(Vector3.Zero, distance: 4.8f, yaw: 0.5f, pitch: -0.22f);
 
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
         }
@@ -196,10 +205,54 @@ public sealed class CharacterStudioGame : EngineHost
     private static SceneGraph CreateDefaultScene()
     {
         var scene = new SceneGraph();
-        scene.Add(new SceneObject(CubeId, "GLB Preview")
+        scene.Add(new SceneObject(PreviewInstanceId, "GLB Preview")
         {
-            Transform = new Transform()
+            Transform = new Transform(),
+            GltfAsset = DefaultAsset
         });
         return scene;
+    }
+
+    private GltfAssetReference ResolveSceneAsset()
+    {
+        GltfAssetReference? result = null;
+        foreach (var item in _sceneData.Objects)
+        {
+            if (item.GltfAsset is not { } reference) continue;
+            if (result is null)
+            {
+                result = reference;
+                continue;
+            }
+
+            if (result.AssetId != reference.AssetId)
+                throw new NotSupportedException("CharacterStudio currently previews one unique GLB asset per scene.");
+            if (!string.Equals(result.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to conflicting paths.");
+        }
+
+        return result ?? DefaultAsset;
+    }
+
+    private Bounds3? GetSceneBounds()
+    {
+        Bounds3? result = null;
+        foreach (var item in _sceneData.Objects)
+        {
+            if (!item.Enabled) continue;
+            var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
+            foreach (var (nodeId, parts) in _importedScene.MeshesByNodeId)
+            {
+                var world = _importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                foreach (var part in parts)
+                {
+                    if (part.Mesh.LocalBounds is not { } localBounds) continue;
+                    var bounds = localBounds.Transform(world);
+                    result = result is { } current ? current.Encapsulate(bounds) : bounds;
+                }
+            }
+        }
+
+        return result;
     }
 }

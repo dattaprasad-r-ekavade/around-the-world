@@ -73,18 +73,20 @@ public static class SceneFile
             throw new InvalidDataException($"Unsupported scene version {document.Version}; expected {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
+        foreach (var data in document.Objects) ValidateData(data);
+        ValidateAssetReferences(document.Objects);
 
         var scene = new SceneGraph();
         var parents = new Dictionary<Guid, Guid?>();
         foreach (var data in document.Objects)
         {
-            ValidateData(data);
             if (parents.ContainsKey(data.Id))
                 throw new InvalidDataException($"Duplicate scene object ID: {data.Id}.");
             var item = new SceneObject(data.Id, data.Name!)
             {
                 Enabled = data.Enabled,
-                Transform = ToTransform(data)
+                Transform = ToTransform(data),
+                GltfAsset = ToGltfAsset(data)
             };
             scene.Add(item);
             parents.Add(data.Id, data.ParentId);
@@ -121,6 +123,8 @@ public static class SceneFile
                     Name = value.Name,
                     Enabled = value.Enabled,
                     ParentId = value.ParentId,
+                    GltfAssetId = value.GltfAsset?.AssetId,
+                    GltfAssetPath = value.GltfAsset?.SourcePath,
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
                     Scale = [transform.Scale.X, transform.Scale.Y, transform.Scale.Z]
@@ -133,8 +137,31 @@ public static class SceneFile
             if (data.ParentId is not null && objects.All(item => item.Id != data.ParentId.Value))
                 throw new InvalidDataException($"Object {data.Id} refers to missing parent {data.ParentId}.");
 
+        ValidateAssetReferences(objects);
         ValidateAcyclic(objects);
         return new SceneDocument { Version = CurrentVersion, Objects = objects };
+    }
+
+    private static GltfAssetReference? ToGltfAsset(SceneObjectData data) =>
+        data.GltfAssetId is { } assetId
+            ? new GltfAssetReference(assetId, data.GltfAssetPath!)
+            : null;
+
+    private static void ValidateAssetReferences(IEnumerable<SceneObjectData> objects)
+    {
+        var pathsById = new Dictionary<Guid, string>();
+        foreach (var data in objects)
+        {
+            if (data.GltfAssetId is not { } assetId) continue;
+            var reference = new GltfAssetReference(assetId, data.GltfAssetPath!);
+            if (pathsById.TryGetValue(assetId, out var existingPath)
+                && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidDataException($"GLB asset ID {assetId} refers to more than one source path.");
+            }
+
+            pathsById[assetId] = reference.SourcePath;
+        }
     }
 
     private static Transform ToTransform(SceneObjectData data) => new()
@@ -156,6 +183,18 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} rotation must contain four values.");
         if (data.Scale is null || data.Scale.Length != 3)
             throw new InvalidDataException($"Object {data.Id} scale must contain three values.");
+        if (data.GltfAssetId.HasValue != (data.GltfAssetPath is not null))
+            throw new InvalidDataException($"Object {data.Id} must provide both GLB asset ID and source path.");
+        if (data.GltfAssetId == Guid.Empty)
+            throw new InvalidDataException($"Object {data.Id} has an empty GLB asset ID.");
+        if (data.GltfAssetId.HasValue)
+        {
+            try { _ = new GltfAssetReference(data.GltfAssetId.Value, data.GltfAssetPath!); }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException($"Object {data.Id} has an invalid GLB asset reference: {exception.Message}", exception);
+            }
+        }
 
         if (data.Position.Any(value => !float.IsFinite(value))
             || data.Rotation.Any(value => !float.IsFinite(value))
@@ -196,6 +235,8 @@ public static class SceneFile
         public string? Name { get; set; }
         public bool Enabled { get; set; } = true;
         public Guid? ParentId { get; set; }
+        public Guid? GltfAssetId { get; set; }
+        public string? GltfAssetPath { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }
