@@ -76,7 +76,7 @@ Start here. Do not build an editor or importer yet.
 | [x] | 21 | Import base-color factors and PNG/JPEG base-color textures for opaque materials only. | A textured reference object has correct UV orientation and tint; unsupported material modes are reported. |
 | [x] | 22 | Add local mesh bounds, transformed bounds, and camera framing. | Rotated/scaled objects frame correctly; bounds contain their transformed vertices. |
 | [x] | 23 | Add stable asset IDs and scene references to source GLB paths via metadata. | Two scene objects reference one asset; save/reopen reloads both without embedding mesh data in scene JSON. |
-| [ ] | 24 | Add explicit reimport that keeps the old valid asset until the replacement succeeds. | Valid changes appear; corrupt replacement content shows an error and leaves the old model usable. |
+| [x] | 24 | Add explicit reimport that keeps the old valid asset until the replacement succeeds. | Valid changes appear; corrupt replacement content shows an error and leaves the old model usable. |
 | [ ] | 25 | Write the supported GLB subset and reject unsupported required extensions/features. | Negative fixtures fail clearly instead of drawing misleading partial content. |
 
 **Stage gate:** reopen a saved scene containing two instances of the imported model. Compare placement and textures with the authored reference.
@@ -316,13 +316,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 22–23 (tasks 16–21 remain complete from previous batches).
-- Current task: 24.
-- Changed files: `src/Ember.Engine/Assets/StaticMeshData.cs`, `src/Ember.Engine/Engine/OrbitCamera.cs`, `src/Ember.Engine/Scene/SceneObject.cs`, and `src/Ember.Engine/Scene/SceneFile.cs`; CharacterStudio game; new `tests/Ember.Engine.Tests/MeshBoundsTests.cs`, updated `SceneFileTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
-- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio captures of one and two GLB instances.
-- Results: 29 CPU tests passed; solution build passed with 0 warnings and 0 errors; RPG check passed; both GLB instances reopened and rendered together inside the calculated frame.
+- Last completed tasks: 24 (tasks 16–23 remain complete from previous batches).
+- Current task: 25.
+- Changed files: new `src/Ember.Engine/Assets/ReloadableAsset.cs`; CharacterStudio game and its preview resource bundle/status UI; new `tests/Ember.Engine.Tests/ReloadableAssetTests.cs`; `Docs/BUILDING_BLOCKS.md`, `Docs/ENGINE_PROGRESS.md`, and this roadmap.
+- Checks run: `dotnet test Ember.sln --no-build --nologo`; `dotnet build Ember.sln --nologo`; `dotnet run --project tests/Ember.Rpg.Check --no-build`; CharacterStudio preview screenshot.
+- Results: 31 CPU tests passed, including valid GLB replacement and corrupt replacement preservation; solution build passed with 0 warnings and 0 errors; RPG check passed; CharacterStudio preview/status strip rendered and exited cleanly.
 - Blockers: none recorded.
-- Next action: implement explicit asset reimport so a replacement is fully validated before it replaces a working GLB.
+- Next action: validate required GLB extensions and reject unsupported required features before partial rendering.
 
 Suggested request to an implementing AI:
 

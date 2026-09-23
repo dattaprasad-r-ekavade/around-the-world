@@ -25,10 +25,10 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly OrbitCamera _camera = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
-    private readonly Dictionary<StaticMeshData, StaticMeshGpuBuffer> _meshBuffers = new();
-    private readonly Dictionary<int, Texture2D> _textures = new();
     private SceneResourceScope? _sceneResources;
-    private ImportedGltfScene _importedScene = null!;
+    private ReloadableAsset<PreviewResources>? _preview;
+    private string? _assetPath;
+    private string _reimportStatus = "R: reimport current GLB";
     private BasicEffect _studioEffect = null!;
     private MouseState _lastMouse;
     private bool _hasMouse;
@@ -72,11 +72,10 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void LoadContent()
     {
-        _meshBuffers.Clear();
-        _textures.Clear();
         _sceneResources = new SceneResourceScope();
         try
         {
+            AttachCanvas();
             _studioEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 VertexColorEnabled = false,
@@ -90,25 +89,8 @@ public sealed class CharacterStudioGame : EngineHost
             _studioEffect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
             _studioEffect.DirectionalLight0.SpecularColor = new Vector3(0.12f);
 
-            var assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
-            _importedScene = GltfSceneImporter.Load(assetPath);
-            foreach (var parts in _importedScene.MeshesByNodeId.Values)
-            foreach (var part in parts)
-            {
-                if (!_meshBuffers.ContainsKey(part.Mesh))
-                {
-                    var buffer = _sceneResources.Own(new StaticMeshGpuBuffer(GraphicsDevice, part.Mesh));
-                    _meshBuffers.Add(part.Mesh, buffer);
-                }
-
-                if (part.Material.HasBaseColorImage && part.Material.BaseColorImageIndex is { } imageIndex
-                    && !_textures.ContainsKey(imageIndex))
-                {
-                    using var imageStream = new MemoryStream(part.Material.BaseColorImage.ToArray(), writable: false);
-                    var texture = _sceneResources.Own(Texture2D.FromStream(GraphicsDevice, imageStream));
-                    _textures.Add(imageIndex, texture);
-                }
-            }
+            _assetPath = Path.GetFullPath(ResolveSceneAsset().SourcePath, AppContext.BaseDirectory);
+            _preview = new ReloadableAsset<PreviewResources>(PreviewResources.Load(GraphicsDevice, _assetPath));
 
             _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
             var sceneBounds = GetSceneBounds();
@@ -124,6 +106,8 @@ public sealed class CharacterStudioGame : EngineHost
         }
         catch
         {
+            _preview?.Dispose();
+            _preview = null;
             _sceneResources.Dispose();
             _sceneResources = null;
             throw;
@@ -137,6 +121,7 @@ public sealed class CharacterStudioGame : EngineHost
         var mouse = _input.CurrentMouse;
 
         if (_input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
+        if (_input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
         if (!_hasMouse)
         {
             _lastMouse = mouse;
@@ -165,9 +150,10 @@ public sealed class CharacterStudioGame : EngineHost
         {
             if (!item.Enabled) continue;
             var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
-            foreach (var (nodeId, parts) in _importedScene.MeshesByNodeId)
+            var preview = _preview!.Current;
+            foreach (var (nodeId, parts) in preview.Scene.MeshesByNodeId)
             {
-                var world = _importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                var world = preview.Scene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
                 foreach (var part in parts)
                 {
                     var factor = part.Material.BaseColorFactor;
@@ -175,15 +161,20 @@ public sealed class CharacterStudioGame : EngineHost
                     _studioEffect.Alpha = 1f;
                     _studioEffect.TextureEnabled = part.Material.HasBaseColorImage;
                     _studioEffect.Texture = part.Material.HasBaseColorImage
-                        ? _textures[part.Material.BaseColorImageIndex!.Value]
+                        ? preview.Textures[part.Material.BaseColorImageIndex!.Value]
                         : null;
                     GraphicsDevice.RasterizerState = part.Material.DoubleSided
                         ? RasterizerState.CullNone
                         : RasterizerState.CullCounterClockwise;
-                    _meshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
+                    preview.MeshBuffers[part.Mesh].Draw(_studioEffect, world, _camera.View, _camera.Projection);
                 }
             }
         }
+
+        _ui.Begin();
+        _ui.Panel(new Rectangle(16, 16, 620, 48), new Color(12, 16, 24, 230), new Color(82, 101, 122));
+        _ui.TextFit(_reimportStatus, new Vector2(28, 31), 596f, 1f, Color.White);
+        _ui.End();
 
         base.Draw(gameTime);
         EndHostFrame(hold: false, exit: Exit);
@@ -194,10 +185,10 @@ public sealed class CharacterStudioGame : EngineHost
 
     protected override void UnloadContent()
     {
+        _preview?.Dispose();
+        _preview = null;
         _sceneResources?.Dispose();
         _sceneResources = null;
-        _meshBuffers.Clear();
-        _textures.Clear();
         DisposeHost();
         base.UnloadContent();
     }
@@ -236,14 +227,16 @@ public sealed class CharacterStudioGame : EngineHost
 
     private Bounds3? GetSceneBounds()
     {
+        if (_preview is null) return null;
         Bounds3? result = null;
+        var importedScene = _preview.Current.Scene;
         foreach (var item in _sceneData.Objects)
         {
             if (!item.Enabled) continue;
             var instanceWorld = _sceneData.GetWorldMatrix(item.Id);
-            foreach (var (nodeId, parts) in _importedScene.MeshesByNodeId)
+            foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
             {
-                var world = _importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
                 foreach (var part in parts)
                 {
                     if (part.Mesh.LocalBounds is not { } localBounds) continue;
@@ -254,5 +247,86 @@ public sealed class CharacterStudioGame : EngineHost
         }
 
         return result;
+    }
+
+    private void ReimportAsset()
+    {
+        if (_preview is null || _assetPath is null) return;
+        try
+        {
+            var cleanupError = _preview.Reload(() => PreviewResources.Load(GraphicsDevice, _assetPath));
+            if (cleanupError is null)
+            {
+                _reimportStatus = "GLB reimport succeeded.";
+                Console.WriteLine($"Reimported GLB asset from {_assetPath}.");
+            }
+            else
+            {
+                _reimportStatus = $"Reimport succeeded; old resource cleanup failed: {cleanupError.Message}";
+                Console.WriteLine($"Reimport succeeded, but previous asset cleanup failed: {cleanupError.Message}");
+            }
+
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Reimport failed; previous asset still active: {exception.Message}";
+            Console.WriteLine($"GLB reimport failed; the previous asset remains active: {exception.Message}");
+        }
+    }
+
+    private sealed class PreviewResources : IDisposable
+    {
+        private readonly SceneResourceScope _resources;
+
+        private PreviewResources(ImportedGltfScene scene, SceneResourceScope resources,
+            Dictionary<StaticMeshData, StaticMeshGpuBuffer> meshBuffers, Dictionary<int, Texture2D> textures)
+        {
+            Scene = scene;
+            _resources = resources;
+            MeshBuffers = meshBuffers;
+            Textures = textures;
+        }
+
+        public ImportedGltfScene Scene { get; }
+        public Dictionary<StaticMeshData, StaticMeshGpuBuffer> MeshBuffers { get; }
+        public Dictionary<int, Texture2D> Textures { get; }
+
+        public static PreviewResources Load(GraphicsDevice device, string assetPath)
+        {
+            var resources = new SceneResourceScope();
+            try
+            {
+                var scene = GltfSceneImporter.Load(assetPath);
+                var meshBuffers = new Dictionary<StaticMeshData, StaticMeshGpuBuffer>();
+                var textures = new Dictionary<int, Texture2D>();
+                foreach (var parts in scene.MeshesByNodeId.Values)
+                foreach (var part in parts)
+                {
+                    if (!meshBuffers.ContainsKey(part.Mesh))
+                    {
+                        var buffer = resources.Own(new StaticMeshGpuBuffer(device, part.Mesh));
+                        meshBuffers.Add(part.Mesh, buffer);
+                    }
+
+                    if (part.Material.HasBaseColorImage && part.Material.BaseColorImageIndex is { } imageIndex
+                        && !textures.ContainsKey(imageIndex))
+                    {
+                        using var imageStream = new MemoryStream(part.Material.BaseColorImage.ToArray(), writable: false);
+                        var texture = resources.Own(Texture2D.FromStream(device, imageStream));
+                        textures.Add(imageIndex, texture);
+                    }
+                }
+
+                return new PreviewResources(scene, resources, meshBuffers, textures);
+            }
+            catch
+            {
+                resources.Dispose();
+                throw;
+            }
+        }
+
+        public void Dispose() => _resources.Dispose();
     }
 }

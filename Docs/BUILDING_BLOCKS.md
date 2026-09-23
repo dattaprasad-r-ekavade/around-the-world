@@ -204,6 +204,11 @@ as metadata beside the instance transform; it never serializes the imported vert
 textures into scene JSON. Multiple instances may share one ID and path. The current
 CharacterStudio preview loads one unique GLB per scene.
 
+`ReloadableAsset<T>` stages replacements through a factory. If importing or uploading throws,
+the current resource stays active. After a complete candidate is built, it swaps the reference
+and disposes the retired resource. CharacterStudio uses **R** to reimport the current GLB; its
+status strip reports success or leaves an on-screen error while the old preview remains usable.
+
 ### `BillboardRenderer`
 
 Camera-facing cutout quads, for sprites standing in a 3D world.

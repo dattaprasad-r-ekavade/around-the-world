@@ -158,3 +158,20 @@ The screenshot confirms the fixture's upright labels, UV orientation, material t
 | CharacterStudio screenshot with two saved GLB instances | PASS — both instances reopened, rendered, and framed together |
 
 The camera fits a conservative bounding sphere around the scene AABB, so framing leaves more margin than an oriented-box fit. CharacterStudio currently accepts one unique asset ID per scene, while multiple instances of that asset are supported.
+
+## Task 24 — transactional GLB reimport
+
+- Added `ReloadableAsset<T>`: its replacement factory must finish before `Current` changes. Factory/import/upload failures leave the current asset untouched; successful swaps retire the old disposable resource, and cleanup errors are reported separately from replacement success.
+- CharacterStudio now builds a complete preview bundle—imported scene, GPU mesh buffers, and textures—before swapping it in. Press **R** to reimport the current scene asset. The status strip reports success, replacement failure with the previous model still active, or a cleanup failure after a successful swap.
+- A CPU test edits a valid GLB and confirms the new node name becomes current, then corrupts the file and confirms the replacement fails while the last valid imported scene remains usable.
+
+### Task 24 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 31 CPU tests, including valid reimport and corrupt-replacement preservation |
+| `dotnet build Ember.sln --nologo` | PASS — all projects and samples, 0 warnings, 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
+| CharacterStudio capture | PASS — GLB preview and reimport status strip rendered; clean shutdown completed |
+
+The CPU test exercises the shared replacement owner and the real GLB importer. GPU upload failure preservation is covered by the same staging boundary in CharacterStudio's preview factory, but is not forced through a graphics-device fault-injection test.
