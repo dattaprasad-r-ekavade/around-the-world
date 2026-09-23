@@ -528,7 +528,25 @@ The code quality is high for a project at this stage. Validation errors name the
 | Low (latent) | `CreateSceneObjectCommand.Revert` removes the object. `SceneGraph.Remove` then detaches its children, and redo does not reattach them. It can't happen today, because reparenting isn't recorded in the history and CharacterStudio never calls `SetParent`. | `Scene/SceneCommandHistory.cs:99-105`; `Scene/Scene.cs:33-41` | When a reparent tool is added, make it a history command. Then create/undo stays symmetric in a linear history, and a test can cover it. |
 | Low | The culler tests only use scaled and translated bounds, not rotated ones. The code (8-corner transform) is correct. | `tests/Ember.Engine.Tests/DirectionalShadowTests.cs:68-79` | Add a 45° yaw fixture. |
 
+### Earlier subsystems (glTF import, skinning, animation)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| High | **Still open from the earlier reviews: the character importer silently drops unskinned meshes.** It collects the one skinned node and ignores every other node that has a mesh. Props or armour baked into a character GLB disappear with no error. | `Assets/GltfSkinnedCharacterData.cs:~46-86` | After finding the skinned node, reject any other node that has a `Mesh` (`NotSupportedException` naming the node). Add a negative fixture. This is a one-row fix; schedule it as a numbered subtask instead of carrying it forward in reviews. |
+| High | **Every skinned draw allocates a new bone array.** Both `Draw` overloads run `new Matrix[pose.JointCount]`, then copy the skin matrices into it. That is one allocation per mesh, per pass (shadow and main), per character, per frame. NPC counts in Stage 12 will multiply it. | `Assets/SkinnedMeshGpuBuffer.cs:110-112,132-136` | Keep one scratch `Matrix[]` field sized to the joint count, or pass `pose.SkinMatrices` directly if it is already an array of that length. |
+| Medium | **A looping clip can sit at exactly `Duration`.** `Seek` clamps to `[0, Duration]`, while looped `Advance` produces `[0, Duration)`. So `Seek(Duration)` with looping on evaluates the last keys, then jumps to the first keys on the next advance. That hitch shows up if the clip's endpoints differ. | `Assets/GltfAnimationPlayback.cs:49-67` | When `Loop` is set, map `Duration` to 0 in `Seek`. Add tests for: `Seek(Duration)` while looping, an advance that wraps more than one period, a non-looping clip at negative speed stopping at 0, and a zero-duration clip. |
+| Medium | **Skeleton and rest-pose limits are checked late.** A skeleton with more than 72 joints imports successfully on the CPU and fails only when uploaded. A rest transform that is NaN or has a zero-length quaternion surfaces later as a pose error rather than an import error. | `Assets/GltfSkinData.cs:101-110`; `SkinnedEffectCompatibility` | Validate the joint count and finite/unit rest TRS inside `GltfSkinData.Import`, reusing the same messages. |
+| Medium | **Attachment placement assumes the pose's world matrices are current.** `GltfBoneAttachment.GetWorldMatrix` reads the cached node matrices from the last `ComputeSkinMatrices`. A `SetLocalTransform` without a recompute gives a stale prop position. This matters for task 99 (equipment attachments). | `Assets/GltfBoneAttachment.cs:37-43`; `Assets/GltfSkinPose.cs:51-84` | Add a pose generation counter and assert that it is current, or recompute lazily. |
+| Low | Neither GPU buffer checks for `GraphicsProfile.Reach` before creating a 32-bit index buffer, even though the skinning compatibility check accepts Reach. The shipped consumers use HiDef, so this is latent. | `Assets/StaticMeshGpuBuffer.cs:39-52`; `Assets/SkinnedMeshGpuBuffer.cs:54` | Reject indices above 65,535 on Reach with a clear error, or require HiDef throughout the engine. |
+| Low | `SkinnedMeshGpuBuffer.Draw` accepts any pose with the same joint count, even one from a different skin. Other code uses `UsesSkin`/`ReferenceEquals`. | `Assets/SkinnedMeshGpuBuffer.cs:102,129` | Store the skin and require `pose.UsesSkin(skin)`. |
+
 Done well in these areas:
+- Unsupported glTF features fail loudly with good negative tests: CUBICSPLINE, morph targets, `JOINTS_1`, required extensions, and non-opaque materials.
+- The skinning math is right: inverse-bind × joint-world × inverse-mesh-world gives identity at the bind pose on the Fox fixture, and slerp takes the shortest path.
+- `ReloadableAsset` swaps only after a successful load.
+- GPU buffer constructors clean up partial uploads.
+
+Done well in the scene, physics, input, and rendering areas:
 - `PhysicsFixedStepper` reports the backlog it drops and keeps its interpolation alpha in range, with tests.
 - Play-on-clone deep-copies the scene, and a test shows the authored scene survives runtime moves and deletes.
 - Delete-undo restores both the parent and the direct children.
