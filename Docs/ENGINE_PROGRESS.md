@@ -1197,3 +1197,14 @@ At this update, 139 of 155 roadmap rows are complete (89.7%). Task 129 is next. 
 | `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
 | `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 218 passed, 0 failed, 0 skipped; includes the equal-joint-count/different-skin regression |
 | Generated Minimal Ember Game Release build | PASS — generated outside the checkout and built against this engine; 0 warnings and 0 errors |
+
+## Code-review fix — fresh bone attachment transforms — 24 September 2026
+
+- Resolved the attachment-staleness finding: `GltfSkinPose` marks calculated matrices dirty after local-transform edits, resets, and pose copies, then recomputes before node, mesh, or skin matrix data is read. A bone attachment can no longer silently use the previous pose after a direct edit.
+- Added a regression that edits a hand joint and requests its attachment world matrix without an explicit `ComputeSkinMatrices` call.
+
+### Code-review fix checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~GltfAnimationTests --nologo` | PASS — 13 passed, 0 failed, 0 skipped |

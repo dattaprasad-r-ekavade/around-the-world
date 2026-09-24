@@ -14,6 +14,7 @@ public sealed class GltfSkinPose
     private readonly Matrix[] _skinMatrices;
     private readonly ReadOnlyCollection<Matrix> _readOnlyNodeWorldMatrices;
     private readonly ReadOnlyCollection<Matrix> _readOnlySkinMatrices;
+    private bool _matricesDirty;
 
     internal GltfSkinPose(GltfSkinData skin)
     {
@@ -32,9 +33,30 @@ public sealed class GltfSkinPose
     public int NodeCount => _localTransforms.Length;
     public int JointCount => _skinMatrices.Length;
     /// <summary>Mesh-node world transform from the most recent skin-matrix calculation.</summary>
-    public Matrix MeshNodeWorldMatrix => _nodeWorldMatrices[_skin.MeshNodeIndex];
-    public ReadOnlyCollection<Matrix> NodeWorldMatrices => _readOnlyNodeWorldMatrices;
-    public ReadOnlyCollection<Matrix> SkinMatrices => _readOnlySkinMatrices;
+    public Matrix MeshNodeWorldMatrix
+    {
+        get
+        {
+            EnsureMatricesCurrent();
+            return _nodeWorldMatrices[_skin.MeshNodeIndex];
+        }
+    }
+    public ReadOnlyCollection<Matrix> NodeWorldMatrices
+    {
+        get
+        {
+            EnsureMatricesCurrent();
+            return _readOnlyNodeWorldMatrices;
+        }
+    }
+    public ReadOnlyCollection<Matrix> SkinMatrices
+    {
+        get
+        {
+            EnsureMatricesCurrent();
+            return _readOnlySkinMatrices;
+        }
+    }
 
     public GltfLocalTransform GetLocalTransform(int nodeIndex)
     {
@@ -46,11 +68,13 @@ public sealed class GltfSkinPose
     {
         ValidateNodeIndex(nodeIndex);
         _localTransforms[nodeIndex] = NormalizeAndValidate(transform, nodeIndex);
+        _matricesDirty = true;
     }
 
     public Matrix GetNodeWorldMatrix(int nodeIndex)
     {
         ValidateNodeIndex(nodeIndex);
+        EnsureMatricesCurrent();
         return _nodeWorldMatrices[nodeIndex];
     }
 
@@ -59,6 +83,7 @@ public sealed class GltfSkinPose
     {
         for (var i = 0; i < _localTransforms.Length; i++)
             _localTransforms[i] = _skin.Nodes[i].RestTransform;
+        _matricesDirty = true;
     }
 
     internal bool UsesSkin(GltfSkinData skin) => ReferenceEquals(_skin, skin);
@@ -69,6 +94,7 @@ public sealed class GltfSkinPose
         if (!UsesSkin(source._skin))
             throw new ArgumentException("The source pose belongs to a different skin.", nameof(source));
         Array.Copy(source._localTransforms, _localTransforms, _localTransforms.Length);
+        _matricesDirty = true;
     }
 
     /// <summary>Rebuilds all node worlds and skin matrices from this pose's absolute local transforms.</summary>
@@ -95,7 +121,14 @@ public sealed class GltfSkinPose
             _skinMatrices[jointIndex] = _skin.InverseBindMatrices[jointIndex] * jointWorld * inverseMeshWorld;
         }
 
+        _matricesDirty = false;
         return _readOnlySkinMatrices;
+    }
+
+    private void EnsureMatricesCurrent()
+    {
+        if (_matricesDirty)
+            ComputeSkinMatrices();
     }
 
     private void ValidateNodeIndex(int nodeIndex)

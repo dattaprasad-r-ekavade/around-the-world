@@ -372,6 +372,27 @@ public sealed class GltfAnimationTests
     }
 
     [Fact]
+    public void BoneAttachmentRefreshesPoseMatricesAfterDirectLocalEdit()
+    {
+        var skin = ImportFoxSkin(ModelRoot.Load(FoxFixturePath()));
+        var attachment = new GltfBoneAttachment(skin, "b_RightHand_08", Matrix.Identity);
+        var pose = skin.CreatePose();
+        var instanceWorld = Matrix.CreateTranslation(4f, 0f, 0f);
+        var before = attachment.GetWorldMatrix(pose, instanceWorld);
+        var hand = pose.GetLocalTransform(attachment.BoneNodeIndex);
+        pose.SetLocalTransform(attachment.BoneNodeIndex, hand with
+        {
+            Position = hand.Position + new Vector3(0f, 1f, 0f)
+        });
+
+        var after = attachment.GetWorldMatrix(pose, instanceWorld);
+
+        Assert.NotEqual(before, after);
+        AssertMatrixClose(attachment.LocalOffset * pose.GetNodeWorldMatrix(attachment.BoneNodeIndex) * instanceWorld,
+            after);
+    }
+
+    [Fact]
     public void SampledAnimatedBoundsContainDenseSamplesOfEveryFoxClip()
     {
         var model = ModelRoot.Load(FoxFixturePath());
