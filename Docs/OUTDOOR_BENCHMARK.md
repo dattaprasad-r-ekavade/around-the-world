@@ -16,6 +16,9 @@ loading, memory, and resource-count results against this same scenario.
 | World seed | The fixed RpgSlice terrain source; no randomized inputs |
 
 If the reference PC changes, append a new dated hardware row rather than replacing a prior result.
+The 24 September 2026 rerun used an additional validation host: 13th Gen Intel Core i7-13650HX
+(14 cores / 20 logical processors) with Intel UHD Graphics. Keep its result separate from the original
+i5-1035G1 reference-PC measurements.
 
 ## Fixed world and route
 
@@ -64,6 +67,7 @@ laps.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-24 | Release x64 worktree based on `2b20b6d` | 1280×720, Intel UHD Graphics, HiDef | 10 × 122 m; 40 cell crossings; 166,693 frames | 1.50 / 2.43 / 347.69 ms; 18 frames >50 ms, 14 >100 ms | 9 attempts; longest 33.34 ms | 196.4 MiB | 9 / 16 / 26; identical peaks in all ten laps | Prior run; outliers not reproduced in final repeat |
 | 2026-09-24 | Release x64 final worktree based on `2b20b6d` | 1280×720, Intel UHD Graphics, HiDef | 10 × 122 m; 40 cell crossings; 155,465 frames | 1.60 / 2.61 / 28.88 ms; 0 frames >50 ms | 9 attempts; longest 33.34 ms | 196.3 MiB | 9 / 16 / 26; identical peaks in all ten laps | Provisional budgets pass |
+| 2026-09-24 | Release x64 worktree with engine `WorldCellStreamer` integration | 1280×720, Intel UHD Graphics, HiDef; i7-13650HX | 10 × 122 m; 40 cell crossings; 316,032 frames | 0.79 / 1.86 / 14.00 ms; 0 frames >50 ms, 0 >100 ms | 38 steps; longest 19.31 ms | 163.0 MiB | 9 / 16 / 26; identical counts in all ten laps | Provisional budgets pass |
 
 Both runs used the Intel Core i5-1035G1 reference PC, WindowsDX, Release x64, paused noon lighting,
 and no vertical sync. In the final repeat, lap times were 24.831–24.836 seconds, the active-cell,
@@ -78,3 +82,10 @@ frame-tail targets. One earlier run recorded 14 intervals above 100 ms, while th
 none; the source change between those runs was the player/camera interpolation fix. Cell activation
 peaked at 33.34 ms in both runs. Task 144 adds phase attribution if long intervals recur before
 world density increases.
+
+The 24 September engine-streamer rerun used the prescribed 1280×720, paused-noon settings on the
+i7-13650HX validation host. It completed all ten laps with instancing enabled: nine foliage instances
+were submitted in one batched draw. Average/p95/maximum frame times were 0.79/1.86/14.00 ms, longest
+activation was 19.31 ms, peak working set was 163.0 MiB, and the active-cell/chunk/resource counts
+stayed at 9/16/26 on every lap. All provisional targets passed; the different CPU means these figures
+are additional evidence, not a direct comparison with the original i5 reference run.

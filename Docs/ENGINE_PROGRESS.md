@@ -1248,7 +1248,7 @@ At this update, 143 of 155 ordered rows are complete (92.3%). Task 133 is next. 
 
 ## Code-review follow-up — live cell activation — 24 September 2026
 
-- The running `RpgSliceCellStreamer` now sends prepared cells through `CellActivationQueue`. Terrain collision is added in fixed 16-interval patches, with each patch advanced as a bounded activation step. Cells share patch index topology through `CellAssetReferencePool` leases, released when the final active cell using that topology unloads.
+- `Ember.Engine.WorldCellStreamer<TPrepared, TActive>` now owns the reusable loading-ring, lifecycle, activation-queue, retry, collision-notification, and retirement orchestration. RpgSlice supplies terrain preparation and a cell-specific physics stepper. Terrain collision is added in fixed 16-interval patches, and cells share patch index topology through `CellAssetReferencePool` leases until the final user unloads.
 - Failed preparation or activation attempts now retry with capped exponential backoff. RpgSlice shows the failed cell and retry delay in the window title, and the starting cell reports a clear error after three failed attempts.
 - Fixed two queue lifecycle issues found during integration: canceling a queued cell before its first step now disposes its stepper, and reported queued activation cost cannot become negative when actual work exceeds its estimate.
 - No ordered roadmap rows were added or marked complete; the checklist remains 143/155 (92.3%), with task 133 first unchecked.
@@ -1258,10 +1258,10 @@ At this update, 143 of 155 ordered rows are complete (92.3%). Task 133 is next. 
 | Check | Result |
 | --- | --- |
 | `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
-| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 231 passed, 0 failed, 0 skipped; includes queued-stepper cleanup and cost-accounting regressions |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 233 passed, 0 failed, 0 skipped; includes queued-stepper cleanup, cost-accounting, transient retry, and cell-retirement regressions |
 | `dotnet run --project tests/Ember.Rpg.Check/Ember.Rpg.Check.csproj -c Release --no-build --no-restore` | PASS — save then load equals original |
-| RpgSlice `--smoke-controls` | PASS — player crossed from cell (0, 0) to (0, -1) and remained grounded using the updated live streamer |
+| RpgSlice `--smoke-controls` | PASS — player crossed from cell (0, 0) to (0, -1) and remained grounded using the engine-level streamer |
 | RpgSlice `--streaming-smoke` | PASS — 3×3 queued activation completed in 22 frames; 20-boundary retention smoke released shared resources at the last reference |
-| RpgSlice `--benchmark` | INCOMPLETE — the updated run reached measured lap 7, then exited without writing a report; the Stage 13 gate is not revalidated for this change |
+| RpgSlice `--benchmark --windowed --time-paused --time-hours 12` | PASS — 10 laps, 40 cell crossings, instancing enabled; 0.79 ms average, 1.86 ms p95, 14.00 ms max, 19.31 ms longest activation, 163.0 MiB peak working set; all provisional targets met. See `OUTDOOR_BENCHMARK.md` |
 
-The reusable streaming and retirement orchestration still lives in the sample. Stage 9–12 integration evidence is still pending, including live door travel, persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`.
+Stage 9–12 gameplay integration evidence is still pending, including live door travel, persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`.
