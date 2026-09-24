@@ -29,6 +29,7 @@ public sealed class RpgSliceGame : EngineHost
     private WorldManifest _world = null!;
     private WorldCellDefinition _cell = null!;
     private SceneGraph _scene = null!;
+    private HeightmapTerrainRenderer _terrain = null!;
     private PhysicsWorld _physics = null!;
     private PhysicsCharacterController _player = null!;
     private ExteriorCellCollisionGate _collisionGate = null!;
@@ -58,6 +59,9 @@ public sealed class RpgSliceGame : EngineHost
         _scene = SceneFile.Load(_world.ResolveScenePath(_cell.Id));
 
         _renderer = new SceneRenderer(GraphicsDevice);
+        _terrain = new HeightmapTerrainRenderer(GraphicsDevice, new RpgSliceTerrainSource(),
+            new TerrainChunkSettings(_world.ExteriorCellWidth, VertexSpacing: 4f, TextureRepeatMetres: 6f),
+            chunksAroundCamera: 1);
         AttachScene(_faults);
         foreach (var fault in _faults) Console.WriteLine($"RpgSlice: {fault}");
         _ui.Resize(GraphicsDevice.Viewport, _uiScalePreference);
@@ -166,8 +170,10 @@ public sealed class RpgSliceGame : EngineHost
 
         _renderer.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
             _camera.Yaw, StoneTextures.StonePalette.Sandstone, _lights);
+        _terrain.Draw(_camera.View, _camera.Projection, _camera.Position);
         foreach (var sceneObject in _scene.Objects.Where(item => item.Enabled))
         {
+            if (sceneObject.Name == "Ground") continue;
             var colour = sceneObject.Name switch
             {
                 "Ground" => new Color(132, 133, 106),
@@ -191,9 +197,21 @@ public sealed class RpgSliceGame : EngineHost
     {
         _streamingSmoke?.Dispose();
         _streamingSmoke = null;
+        _terrain?.Dispose();
         _player?.Dispose();
         _physics?.Dispose();
         DisposeHost();
         base.UnloadContent();
+    }
+
+    private sealed class RpgSliceTerrainSource : ITerrainHeightMaterialSource
+    {
+        public TerrainSurfaceSample Sample(float worldX, float worldZ)
+        {
+            var height = 0.3f + MathF.Sin(worldX * 0.08f) * 0.12f + MathF.Cos(worldZ * 0.07f) * 0.1f;
+            var variation = (MathF.Sin((worldX + worldZ) * 0.035f) + 1f) * 0.5f;
+            var tint = Color.Lerp(new Color(103, 119, 73), new Color(137, 133, 86), variation * 0.45f);
+            return new TerrainSurfaceSample(height, tint);
+        }
     }
 }

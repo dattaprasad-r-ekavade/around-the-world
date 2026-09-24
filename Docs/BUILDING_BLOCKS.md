@@ -815,6 +815,13 @@ cell, while `NpcScheduleSystem.Evaluate` creates at most one outstanding request
 dormant actor, `CatchUpDormant` resolves the current destination arithmetically, advances actor timers
 once, and reports how many schedule boundaries were collapsed instead of replaying missed frames.
 
+`ITerrainHeightMaterialSource` keeps biome and height rules in a game/sample while
+`TerrainChunkMeshBuilder` creates engine-owned vertex grids and indices. The builder derives sample
+positions from global grid coordinates, so neighboring chunks ask for the exact same border samples.
+`HeightmapTerrainRenderer` draws and caches a bounded neighborhood; Campaign adapts its existing
+height/biome rules, and RpgSlice uses the same renderer without referencing Campaign. Task 121 will use
+the same height source for streamed collision.
+
 ## The sample
 
 `samples/FirstLight` is 178 lines and uses: `EngineHost`, `AttachCanvas`, `AttachScene`,

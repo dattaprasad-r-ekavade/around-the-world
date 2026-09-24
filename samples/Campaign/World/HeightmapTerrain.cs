@@ -1,4 +1,5 @@
 using Ember.Render;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
@@ -16,6 +17,8 @@ public sealed class HeightmapTerrain : IDisposable
     private readonly GraphicsDevice _device;
     private readonly WorldHeights _heights;
     private readonly HeightNoise _noise;
+    private readonly CampaignTerrainSurfaceSource _surfaceSource;
+    private readonly TerrainChunkSettings _chunkSettings;
     private readonly int _seed;
     private readonly BasicEffect _effect;
     private readonly IndexBuffer _indices;
@@ -30,8 +33,11 @@ public sealed class HeightmapTerrain : IDisposable
         _device = device;
         _heights = heights;
         _noise = noise;
+        _surfaceSource = new CampaignTerrainSurfaceSource(heights, noise);
+        _chunkSettings = new TerrainChunkSettings(WorldScale.ChunkMetres,
+            WorldScale.VertexSpacing, TextureRepeatMetres: 6f);
         _seed = seed;
-        _stride = (int)(WorldScale.ChunkMetres / WorldScale.VertexSpacing) + 1;
+        _stride = _chunkSettings.GetVertexStride();
         _triangleCount = (_stride - 1) * (_stride - 1) * 2;
         var ring = WorldScale.ChunkRing * 2 + 1;
         _cacheLimit = ring * ring + 16;
@@ -48,7 +54,9 @@ public sealed class HeightmapTerrain : IDisposable
             Alpha = 1f
         };
 
-        var indexData = BuildIndices(_stride);
+        var triangleIndices = TerrainChunkMeshBuilder.BuildTriangleIndices(_stride);
+        var indexData = new short[triangleIndices.Length];
+        for (var index = 0; index < indexData.Length; index++) indexData[index] = (short)triangleIndices[index];
         _indices = new IndexBuffer(device, IndexElementSize.SixteenBits, indexData.Length,
             BufferUsage.WriteOnly);
         _indices.SetData(indexData);
@@ -151,27 +159,12 @@ public sealed class HeightmapTerrain : IDisposable
     {
         var originX = cx * WorldScale.ChunkMetres;
         var originZ = cz * WorldScale.ChunkMetres;
-        var vertices = new VertexPositionColorTexture[_stride * _stride];
-        var spacing = WorldScale.VertexSpacing;
-
-        for (var z = 0; z < _stride; z++)
-        for (var x = 0; x < _stride; x++)
+        var terrainVertices = TerrainChunkMeshBuilder.BuildVertices(_surfaceSource, cx, cz, _chunkSettings);
+        var vertices = new VertexPositionColorTexture[terrainVertices.Length];
+        for (var index = 0; index < vertices.Length; index++)
         {
-            var wx = originX + x * spacing;
-            var wz = originZ + z * spacing;
-            var wy = _heights.Sample(wx, wz);
-            var biome = _noise.BiomeAt(wx, wz);
-            Color tint;
-            if (_heights.PadNear(wx, wz, 50f))
-                tint = new Color(168, 148, 116);
-            else if (wy < WorldScale.WaterLevel)
-                tint = Color.Lerp(new Color(70, 96, 88), Biomes.Ground(BiomeKind.Ocean), 0.45f);
-            else
-                tint = Color.Lerp(Color.White, Biomes.Ground(biome), 0.62f);
-            vertices[z * _stride + x] = new VertexPositionColorTexture(
-                new Vector3(wx, wy, wz),
-                tint,
-                new Vector2(wx / 6f, wz / 6f));
+            var vertex = terrainVertices[index];
+            vertices[index] = new VertexPositionColorTexture(vertex.Position, vertex.Tint, vertex.TextureCoordinate);
         }
 
         var buffer = new VertexBuffer(_device, typeof(VertexPositionColorTexture), vertices.Length,
@@ -261,25 +254,6 @@ public sealed class HeightmapTerrain : IDisposable
     {
         var chunks = (int)(WorldScale.WorldMetres / WorldScale.ChunkMetres);
         return cx >= 0 && cz >= 0 && cx < chunks && cz < chunks;
-    }
-
-    private static short[] BuildIndices(int stride)
-    {
-        var indices = new short[(stride - 1) * (stride - 1) * 6];
-        var i = 0;
-        for (var z = 0; z < stride - 1; z++)
-        for (var x = 0; x < stride - 1; x++)
-        {
-            var s = (short)(z * stride + x);
-            indices[i++] = s;
-            indices[i++] = (short)(s + stride);
-            indices[i++] = (short)(s + 1);
-            indices[i++] = (short)(s + 1);
-            indices[i++] = (short)(s + stride);
-            indices[i++] = (short)(s + stride + 1);
-        }
-
-        return indices;
     }
 
     public void Dispose()

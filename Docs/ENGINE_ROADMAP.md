@@ -264,8 +264,8 @@ This stage targets the requested visual style. It does not require modern PBR. P
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 119 | Define a fixed benchmark route, reference PC, resolution, content counts, and provisional frame/memory/loading budgets. | Results can be reproduced; target budgets are labeled as targets rather than measured capability. |
-| [ ] | 120 | Adapt Campaign terrain chunk generation behind a game-independent height/material source. | RpgSlice draws terrain without referencing Campaign; adjacent chunk edges match. |
+| [x] | 119 | Define a fixed benchmark route, reference PC, resolution, content counts, and provisional frame/memory/loading budgets. | Results can be reproduced; target budgets are labeled as targets rather than measured capability. |
+| [x] | 120 | Adapt Campaign terrain chunk generation behind a game-independent height/material source. | RpgSlice draws terrain without referencing Campaign; adjacent chunk edges match. |
 | [ ] | 121 | Stream terrain/collision through cell lifecycle with shared boundary samples. | Crossing seams causes no visible gaps or loss of ground contact. |
 | [ ] | 122 | Add alpha-cutout material support for foliage and fences, including shadows. | Cutout regions neither write solid depth nor cast solid rectangular shadows. |
 | [ ] | 123 | Add simple time-of-day sky, fog, and directional light parameters. | A fixed clock value reproduces the same appearance; changing time updates all cells consistently. |
@@ -327,14 +327,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 116–118 — budgeted actor tiers, daily schedules, and dormant catch-up. The previous batch also added NPC travel, perception, combat AI, and resolved the character-import review finding.
-- Current task: 119 — define the fixed benchmark route, reference hardware, content counts, and provisional performance budgets.
-- Current checklist: 129 of 154 ordered rows complete (83.8%); task 119 is the first unchecked row.
-- Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel remain Pending.
-- Latest changes: `ActorUpdateBudget`, `WorldClock`, `NpcDailySchedule`, dormant catch-up, their checks, and this roadmap/progress update.
+- Last completed tasks: 119–120 — documented the repeatable outdoor baseline and shared terrain sampling/mesh generation. Earlier batches completed NPC navigation and simulation tasks through 118.
+- Current task: 121 — stream terrain and collision through cell lifecycle with shared boundary samples.
+- Current checklist: 131 of 154 ordered rows complete (85.1%); task 121 is the first unchecked row.
+- Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor budgets remain Pending.
+- Latest changes: `TerrainChunkMeshBuilder`, `HeightmapTerrainRenderer`, Campaign's source adapter, the RpgSlice terrain draw path, and the benchmark baseline document.
 - Verification: see the dated 24 September entry in `ENGINE_PROGRESS.md` for build, full-suite, and RPG check results.
-- Limits: tier planning is deterministic and caps actor-update callbacks, while callers retain actor data between updates. Schedule catch-up resolves the current daily destination and actor timers; it does not replay dialogue, combat, or other historical events. No full game sample has been added yet.
-- Next action: task 119, define reproducible outdoor benchmark conditions and provisional targets.
+- Limits: terrain drawing and shared border samples are implemented, but collision is still the earlier flat blockout. Task 121 must make terrain and physics use the same sample source through cell loading. Benchmark budgets are targets only; task 127 records actual performance.
+- Next action: task 121, stream terrain and collision using shared cell-edge samples.
 
 Suggested request to an implementing AI:
 

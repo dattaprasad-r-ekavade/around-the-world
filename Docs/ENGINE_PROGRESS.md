@@ -1044,3 +1044,20 @@ At this update, 126 of 154 roadmap rows are complete (81.8%). Task 116 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — schedule boundary selection, duplicate-request suppression, 201-boundary catch-up, timer expiry, and one-work-item result |
 
 At this update, 129 of 154 roadmap rows are complete (83.8%). Task 119 is next. The Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel gate remain Pending.
+
+## Tasks 119–120 — outdoor benchmark and shared terrain chunks — 24 September 2026
+
+- Task 119 adds `Docs/OUTDOOR_BENCHMARK.md`: a fixed 114 m loop through four cells in the current 3×3 RpgSlice world, exact scene/content counts, 1280×720 windowed settings, and live reference-PC details (Intel i5-1035G1, Intel UHD Graphics, about 19.8 GiB visible memory). Frame-time, loading, working-set, and chunk-count values are explicitly provisional targets; no benchmark results are claimed.
+- Task 120 adds `ITerrainHeightMaterialSource`, `TerrainChunkMeshBuilder`, and `HeightmapTerrainRenderer`. Campaign's current seeded height/biome sampling now supplies the shared builder; RpgSlice draws a bounded terrain neighborhood using an independent source and no Campaign reference. The builder indexes samples in global grid space; tests compare every edge position, tint, and UV between adjacent chunks.
+- Collision still uses the RpgSlice blockout floor, so visible height and physics do not yet agree. Task 121 addresses that by using the same sampled boundary values for terrain collision and cell loading.
+
+### Tasks 119–120 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 198 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
+| RpgSlice screenshot smoke via managed DLL | PASS — rendered a 1280×720 frame showing the terrain and cell blockout |
+
+At this update, 131 of 154 roadmap rows are complete (85.1%). Task 121 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
