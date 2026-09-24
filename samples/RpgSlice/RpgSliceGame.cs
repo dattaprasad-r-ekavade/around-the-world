@@ -17,6 +17,7 @@ namespace RpgSlice;
 /// <summary>One manifest-loaded outdoor cell using only reusable Ember.Engine systems.</summary>
 public sealed class RpgSliceGame : EngineHost
 {
+    private const string GameWindowTitle = "RPG Slice — Exterior Cell";
     private readonly string _worldManifestPath;
     private readonly bool _smokeControls;
     private readonly bool _streamingSmokeRequested;
@@ -30,12 +31,13 @@ public sealed class RpgSliceGame : EngineHost
     private SceneGraph _scene = null!;
     private PhysicsWorld _physics = null!;
     private PhysicsCharacterController _player = null!;
+    private ExteriorCellCollisionGate _collisionGate = null!;
     private ThirdPersonFollowCamera _camera = null!;
     private RpgSliceStreamingSmoke? _streamingSmoke;
     private bool _smokeRan;
 
     public RpgSliceGame(string[] args)
-        : base(args, logicalWidth: 1280, logicalHeight: 720, title: "RPG Slice — Exterior Cell")
+        : base(args, logicalWidth: 1280, logicalHeight: 720, title: GameWindowTitle)
     {
         _worldManifestPath = ParseOption(args, "--world")
             ?? Path.Combine(AppContext.BaseDirectory, "Content", "World", WorldManifest.DefaultFileName);
@@ -62,7 +64,13 @@ public sealed class RpgSliceGame : EngineHost
 
         _physics = new PhysicsWorld();
         LoadCellGeometry();
+        _collisionGate = new ExteriorCellCollisionGate(_world);
+        _collisionGate.MarkCollisionReady(originCell);
+        _collisionGate.CollisionRequired += coordinate => Console.WriteLine(
+            $"RpgSlice: waiting for collision at cell ({coordinate.X}, {coordinate.Z}); movement is held at the boundary.");
         _player = new PhysicsCharacterController(_physics, new Vector3(16f, 1.1f, 23f));
+        _player.SetHorizontalMovementGate((current, proposed, clearance) =>
+            _collisionGate.Evaluate(current, proposed, clearance).CanMove);
         _camera = new ThirdPersonFollowCamera { TargetOffset = new Vector3(0f, 0.2f, 0f) };
         _camera.Reset(_player.Pose.Position, distance: 9f, yaw: 0f, pitch: -0.18f);
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
@@ -130,6 +138,11 @@ public sealed class RpgSliceGame : EngineHost
         var result = _physicsStepper.Advance(elapsedSeconds, seconds => _physics.Step(seconds));
         var position = _physics.GetInterpolatedPose(_player.PhysicsBodyId, result.InterpolationAlpha).Position;
         _camera.Follow(_physics, position);
+        Window.Title = _player.IsMovementWaitingForCell
+            ? _collisionGate.LastMovementResult.State == ExteriorCellCollisionState.MissingCell
+                ? "RPG Slice — No exterior cell at boundary"
+                : "RPG Slice — Waiting for cell collision"
+            : GameWindowTitle;
     }
 
     private void RunMovementSmoke()

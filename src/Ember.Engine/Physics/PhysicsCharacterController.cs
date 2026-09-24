@@ -29,6 +29,7 @@ public sealed class PhysicsCharacterController : IDisposable
     private readonly float _cosMaximumSlope;
     private Vector3 _moveInput;
     private Vector3 _groundNormal = Vector3.Up;
+    private Func<Vector3, Vector3, float, bool>? _horizontalMovementGate;
     private bool _jumpRequested;
     private bool _groundedBeforeStep;
     private bool _hasWalkableSupport;
@@ -73,6 +74,7 @@ public sealed class PhysicsCharacterController : IDisposable
     public Vector3 GroundNormal => _groundNormal;
     public bool JumpedThisStep { get; private set; }
     public bool LandedThisStep { get; private set; }
+    public bool IsMovementWaitingForCell { get; private set; }
 
     /// <summary>Sets a world-space horizontal direction; magnitude is clamped to one.</summary>
     public void SetMoveInput(Vector3 worldDirection)
@@ -92,6 +94,14 @@ public sealed class PhysicsCharacterController : IDisposable
         }
     }
 
+    /// <summary>Blocks horizontal fixed-step movement until the destination collision is active.</summary>
+    public void SetHorizontalMovementGate(Func<Vector3, Vector3, float, bool>? canMove)
+    {
+        ThrowIfDisposed();
+        _horizontalMovementGate = canMove;
+        IsMovementWaitingForCell = false;
+    }
+
     /// <summary>Queues one jump attempt for the next fixed step.</summary>
     public void RequestJump()
     {
@@ -99,7 +109,7 @@ public sealed class PhysicsCharacterController : IDisposable
         _jumpRequested = true;
     }
 
-    internal void PreparePhysicsStep()
+    internal void PreparePhysicsStep(float seconds)
     {
         _groundedBeforeStep = IsGrounded;
         JumpedThisStep = false;
@@ -130,6 +140,19 @@ public sealed class PhysicsCharacterController : IDisposable
                 desiredVelocity = Vector3.Zero;
             velocity.X = desiredVelocity.X;
             velocity.Z = desiredVelocity.Z;
+        }
+
+        IsMovementWaitingForCell = false;
+        if (_horizontalMovementGate is { } movementGate)
+        {
+            var position = Pose.Position;
+            var proposedPosition = position + new Vector3(velocity.X * seconds, 0f, velocity.Z * seconds);
+            if (!movementGate(position, proposedPosition, _settings.Radius))
+            {
+                velocity.X = 0f;
+                velocity.Z = 0f;
+                IsMovementWaitingForCell = true;
+            }
         }
 
         _world.SetLinearVelocity(PhysicsBodyId, velocity);

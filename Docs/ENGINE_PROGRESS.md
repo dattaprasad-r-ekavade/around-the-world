@@ -672,3 +672,20 @@ Task 80 is complete. At that point task 81 remained unchecked; it is checked off
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 152 tests, 0 failed, 0 skipped |
 
 At this update, 92 of 154 roadmap rows are complete (59.7%). Tasks 79–81 are complete; task 82 is next. The Stage 9 integration gate remains Pending for collision readiness, door travel, and actual interior transitions.
+
+## Task 82 — wait for destination collision — 24 September 2026
+
+- Added `ExteriorCellCollisionGate`, which checks every cell touched by a proposed capsule footprint. It distinguishes a manifest cell waiting for collision from a coordinate with no authored cell, reports the required coordinate, and raises one collision request until that cell becomes ready.
+- Added an optional horizontal movement gate to `PhysicsCharacterController`. It predicts the next fixed-step endpoint and zeros horizontal velocity when the required collision is unavailable, leaving vertical movement and jump state intact.
+- RpgSlice marks its loaded cell collision-ready, reports neighboring collision requests, and changes the window title while movement waits.
+- The delayed-collision physics fixture keeps the capsule grounded at the cell edge until the neighbor is marked ready. The current blockout uses box floors with hard vertical sides at cell seams, so physically walking across a loaded seam still needs stitched terrain collision.
+
+### Task 82 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 154 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — player moved 2.50 m inside the collision-ready cell |
+
+At this update, 93 of 154 roadmap rows are complete (60.4%). Task 83 is next. The Stage 9 integration gate remains Pending for seamless cross-cell traversal, door travel, and actual interior transitions.

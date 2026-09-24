@@ -179,7 +179,7 @@ public sealed class PhysicsWorld : IDisposable
         if (!float.IsFinite(seconds) || seconds <= 0f)
             throw new ArgumentOutOfRangeException(nameof(seconds), "Physics step must be finite and positive.");
 
-        foreach (var character in _characters) character.PreparePhysicsStep();
+        foreach (var character in _characters) character.PreparePhysicsStep(seconds);
 
         foreach (var (id, handle) in _dynamicBodies)
         {
