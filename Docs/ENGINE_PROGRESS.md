@@ -773,3 +773,19 @@ At this update, 97 of 154 roadmap rows are complete (63.0%). Task 87 is next. Th
 | `WorldCellDeletionTombstoneTests` | PASS — deleted authored instance remained absent after repeated cell reloads |
 
 At this update, 98 of 154 roadmap rows are complete (63.6%). Task 88 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
+
+## Task 88 — runtime-created world objects — 24 September 2026
+
+- Added `WorldRuntimeObjectStore.Spawn` to clone a runtime object into the active cell and retain its stable scene-object ID, cell ID, and `WorldInstanceId`. Runtime identity mappings can be restored explicitly through `WorldInstanceIdentityMap.Register`.
+- Added idempotent cell restoration: a newly loaded scene receives each runtime record once, and a second restore into the same scene does not duplicate it. Conflicting scene IDs are rejected instead of replacing unrelated content.
+- The fixture spawns an item using the same GLB as authored content, reloads the authored scene, and verifies the runtime item returns with the same identity exactly once. This in-memory store survives cell reload; restart-safe serialization remains task 90.
+
+### Task 88 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 169 tests, 0 failed, 0 skipped |
+| `WorldRuntimeObjectStoreTests` | PASS — stable IDs returned after reload; repeated restore added no duplicate |
+
+At this update, 99 of 154 roadmap rows are complete (64.3%). Task 89 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.

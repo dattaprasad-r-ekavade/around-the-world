@@ -206,7 +206,7 @@ Authored definitions are immutable. Save changes by stable world-instance ID, no
 | [x] | 85 | Add stable world-instance IDs distinct from asset and cell IDs. | Two instances of one asset have different IDs that survive cell reload. |
 | [x] | 86 | Add a per-cell change store for object transforms and enabled state. | Move/disable an object, unload its cell, and reload; its changes remain. |
 | [x] | 87 | Add deletion tombstones for authored objects. | A removed authored object does not return after reload. |
-| [ ] | 88 | Add runtime-created object records with persistent IDs. | A spawned test item survives reload without acquiring a duplicate ID. |
+| [x] | 88 | Add runtime-created object records with persistent IDs. | A spawned test item survives reload without acquiring a duplicate ID. |
 | [ ] | 89 | Transfer an instance between cell ownership records atomically. | Moving an item across a boundary and reloading both cells leaves exactly one instance. |
 | [ ] | 90 | Write/read a versioned world save containing player location and cell changes using safe replacement. | Restart restores the same world; a failed write preserves the previous save. |
 | [ ] | 91 | Validate save/content versions and add one schema migration fixture. | A supported old fixture migrates; unsupported or missing definitions produce actionable diagnostics. |

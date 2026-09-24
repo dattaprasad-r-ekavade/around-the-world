@@ -37,6 +37,35 @@ public sealed class WorldInstanceIdentityMap
         }
     }
 
+    public bool TryGet(Guid cellId, Guid sceneObjectId, out WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        return _bySource.TryGetValue(new InstanceSource(cellId, sceneObjectId), out instanceId);
+    }
+
+    /// <summary>Restores a saved identity mapping for a runtime-created object.</summary>
+    public void Register(Guid cellId, Guid sceneObjectId, WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        if (cellId == Guid.Empty)
+            throw new ArgumentException("World cell ID cannot be empty.", nameof(cellId));
+        if (sceneObjectId == Guid.Empty)
+            throw new ArgumentException("Scene object ID cannot be empty.", nameof(sceneObjectId));
+        if (instanceId.Value == Guid.Empty)
+            throw new ArgumentException("World instance ID cannot be empty.", nameof(instanceId));
+
+        var source = new InstanceSource(cellId, sceneObjectId);
+        if (_bySource.TryGetValue(source, out var existing))
+        {
+            if (existing != instanceId)
+                throw new InvalidOperationException($"Scene object {sceneObjectId} in cell {cellId} already has another world instance ID.");
+            return;
+        }
+        if (!_instanceValues.Add(instanceId.Value))
+            throw new InvalidOperationException($"World instance ID {instanceId.Value} is already assigned to another object.");
+        _bySource.Add(source, instanceId);
+    }
+
     /// <summary>Returns the same identity for the same cell and authored scene object across reloads.</summary>
     public WorldInstanceId GetOrCreate(Guid cellId, SceneObject sceneObject)
     {
