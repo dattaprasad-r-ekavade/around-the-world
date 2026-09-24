@@ -838,3 +838,19 @@ At this update, 101 of 154 roadmap rows are complete (65.6%). Task 91 is next. T
 | `WorldSaveFileTests` | PASS — version-0 save migrated, unsupported version rejected, missing cell diagnosed |
 
 At this update, 102 of 154 roadmap rows are complete (66.2%). Task 92 is next. The Stage 10 integration gate remains Pending until save requests are coordinated with live travel and the world loader.
+
+## Task 92 — queue saves at stable boundaries — 24 September 2026
+
+- Added `WorldSaveRequestQueue`. Requests retain a capture callback and path; capture and atomic writing happen only when the simulation reports no travel in progress.
+- The queue processes at most one save per stable boundary. It reports success/failure by request ID and continues to later requests after a write failure.
+- Tests request a save during travel, change the live player location, and verify the saved snapshot contains the committed destination. A failed travel can instead save the still-active source location; failed paths report an error without blocking later requests.
+
+### Task 92 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 179 tests, 0 failed, 0 skipped |
+| `WorldSaveRequestQueueTests` | PASS — mid-travel save captured one stable outcome; later requests ran after a write error |
+
+At this update, 103 of 154 roadmap rows are complete (66.9%). Task 93 is next. The Stage 10 integration gate remains Pending until a live game loop queues saves and runs the multi-cell restart scenario.
