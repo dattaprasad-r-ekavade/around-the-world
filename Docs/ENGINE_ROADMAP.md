@@ -235,7 +235,7 @@ Extend existing `Ember.Rpg` records, flags, inventory, dialogue, and quests wher
 | [x] | 105 | Connect quest objectives to interaction/death/item events through stable IDs. | A quest survives target cell unload and handles dead/missing targets explicitly. |
 | [x] | 106 | Add one merchant transaction using inventory transfers and currency. | Insufficient funds/stock changes nothing; a valid trade updates both parties atomically. |
 | [x] | 107 | Add ownership checks and one witnessed theft event affecting reputation. | Unwitnessed and witnessed test cases follow documented rules without duplicate penalties. |
-| [ ] | 108 | Add data-driven skill-use progression. | Repeated qualifying actions advance only the intended skill; progress survives restart. |
+| [x] | 108 | Add data-driven skill-use progression. | Repeated qualifying actions advance only the intended skill; progress survives restart. |
 
 **Gate:** complete one branching quest involving dialogue, an item, a merchant, and an enemy. Equipment, effects, faction changes, loot, and progression survive a save/restart.
 
@@ -245,8 +245,8 @@ Begin with authored path nodes rather than a navmesh generator. Implement the na
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 109 | Add per-cell path nodes/edges with obstacle clearance metadata. | Invalid endpoints are rejected and a small graph can be serialized/reopened. |
-| [ ] | 110 | Implement route search on that graph. | Known shortest paths and unreachable targets pass fixtures. |
+| [x] | 109 | Add per-cell path nodes/edges with obstacle clearance metadata. | Invalid endpoints are rejected and a small graph can be serialized/reopened. |
+| [x] | 110 | Implement route search on that graph. | Known shortest paths and unreachable targets pass fixtures. |
 | [ ] | 111 | Move one NPC along a route through the character controller. | It reaches the destination while respecting collision; blocked motion times out safely. |
 | [ ] | 112 | Connect exterior boundary nodes and interior door links. | A route can describe travel across cells and through a door without teleporting during local movement. |
 | [ ] | 113 | Add NPC travel execution using cell loading and persistent ownership transfer. | A following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload. |

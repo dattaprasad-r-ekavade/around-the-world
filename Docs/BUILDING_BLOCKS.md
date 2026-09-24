@@ -719,6 +719,10 @@ Actor-to-faction, dialogue-to-actor/node, quest-to-dialogue/actor/item links are
 health, magicka, and stamina formulas explicit and configurable; the defaults are Health = Strength
 + 2×Endurance, Magicka = 2×Intelligence + Willpower, and Stamina = Endurance + 2×Agility. Changing
 an attribute recalculates the derived maxima without writing them back into base attributes.
+`SkillUseRule` maps one stable action ID to a named skill and uses-per-rank threshold. Add rules to
+`skillUseRules` in the RPG content JSON; call `SkillUseSystem.TryRecordUse` only after the action
+qualifies. The updated `ActorStats` carries both skill ranks and partial use counts, so normal player
+save/load preserves progression. Unconfigured actions do not advance a skill.
 
 `ActorStatModifiers` is immutable. Apply timed additive attribute effects with one of three rules:
 `Stack` keeps each distinct effect, `ReplaceSameSource` replaces all effects from the same source
@@ -775,6 +779,16 @@ failed funds, stock, definition, or overflow check leaves both inputs unchanged.
 `TheftSystem.TryTake` transfers the item and records the stable theft event ID; a witnessed theft
 applies its negative reputation adjustment once, while an unwitnessed theft does not change standing.
 All balances, ownership, faction standing, inventory, and replay IDs round-trip in `SaveState`.
+
+## Cell navigation
+
+`CellPathGraph` stores authored `CellPathNode` IDs and positions plus directed or bidirectional
+`CellPathEdge`s with a maximum `ClearanceRadius`. Validate the graph before use and persist it with
+`CellPathGraphFile.SaveAtomic`/`Load`; missing endpoints, duplicate arcs, invalid positions, and
+nonpositive clearance are rejected. `CellRouteSearch.FindShortestRoute` returns the least-distance
+path whose edges fit the requested actor radius, or `null` when no route is available. A missing start
+or target ID is a content error and throws. Local movement and cross-cell door routing are later
+integration steps; the current search is deliberately scoped to one cell graph.
 
 ## The sample
 

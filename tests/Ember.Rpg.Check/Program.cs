@@ -24,6 +24,7 @@ internal static class Program
             QuestRoundTrip(original, path, problems);
             ContentValidationChecks(problems);
             ActorStatFormulaChecks(problems);
+            SkillUseProgressionChecks(problems);
             ModifierRuleChecks(problems);
             ContainerPersistenceChecks(problems);
             InventoryTransferChecks(problems);
@@ -103,6 +104,7 @@ internal static class Program
             || loaded.Factions.Get(new ContentId<FactionContentKind>("faction.mages")) is null
             || !loaded.Quests.TryGet(new ContentId<QuestContentKind>("quest.relic"), out _)
             || !loaded.Spells.TryGet(new ContentId<SpellContentKind>("spell.focus"), out _)
+            || !loaded.SkillProgression.TryGet("combat.melee.hit", out _)
             || loaded.Dialogues.Count != 1)
             problems.Add("the content pack should register typed actor, item, faction, dialogue, and quest IDs");
 
@@ -177,6 +179,41 @@ internal static class Program
         var actors = new ActorCatalogue();
         actors.Add(new ActorDef(new ContentId<ActorContentKind>("actor.fixture"), "Fixture", stats: stats));
         if (actors.Count != 1) problems.Add("ActorCatalogue should register a validated actor stats fixture");
+    }
+
+    private static void SkillUseProgressionChecks(List<string> problems)
+    {
+        var rules = RpgContentJson.FromJson(ValidContentJson).SkillProgression;
+        var stats = ExampleStats();
+        if (SkillUseSystem.TryRecordUse(stats, "combat.unknown", rules, out var ignored, out _)
+            || ignored.Skills.GetValueOrDefault("Blade") != 34
+            || ignored.SkillUseProgress.Count != 0)
+            problems.Add("an unconfigured action should not advance any skill or use progress");
+
+        if (!SkillUseSystem.TryRecordUse(stats, "combat.melee.hit", rules, out var firstUse, out var firstRankUp)
+            || firstRankUp || firstUse.Skills.GetValueOrDefault("Blade") != 34
+            || firstUse.SkillUseProgress.GetValueOrDefault("Blade") != 1
+            || firstUse.Skills.ContainsKey("Alchemy"))
+            problems.Add("one qualifying action should record progress only for the configured skill");
+
+        var saved = SaveState.FromJson(new SaveState { Player = new PlayerRecord { Stats = firstUse } }.ToJson());
+        var progressed = saved.Player.Stats;
+        var rankedUp = false;
+        for (var use = 0; use < 3; use++)
+        {
+            if (!SkillUseSystem.TryRecordUse(progressed, "combat.melee.hit", rules,
+                out progressed, out var thisRankedUp))
+            {
+                problems.Add("a configured skill-use action should be accepted");
+                return;
+            }
+            rankedUp |= thisRankedUp;
+        }
+
+        if (!rankedUp || progressed.Skills.GetValueOrDefault("Blade") != 36
+            || progressed.SkillUseProgress.GetValueOrDefault("Blade") != 0
+            || progressed.Skills.ContainsKey("Alchemy"))
+            problems.Add("qualifying uses should advance only Blade after the saved partial progress reaches its threshold");
     }
 
     private static void ModifierRuleChecks(List<string> problems)
@@ -812,6 +849,9 @@ internal static class Program
           "DurationSeconds": 4,
           "StackingRule": "ReplaceSameSource"
         }
+      ],
+      "SkillUseRules": [
+        { "ActionId": "combat.melee.hit", "SkillName": "Blade", "UsesPerRank": 2 }
       ],
       "Dialogues": [
         {

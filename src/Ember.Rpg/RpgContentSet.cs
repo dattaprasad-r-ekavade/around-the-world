@@ -69,6 +69,7 @@ public sealed class RpgContentSet
     public ItemCatalogue Items { get; init; } = new();
     public FactionCatalogue Factions { get; init; } = new();
     public SpellCatalogue Spells { get; init; } = new();
+    public SkillProgressionCatalogue SkillProgression { get; init; } = new();
     public IReadOnlyList<DialogueTree> Dialogues { get; init; } = Array.Empty<DialogueTree>();
     public QuestCatalogue Quests { get; init; } = new();
 
@@ -78,6 +79,7 @@ public sealed class RpgContentSet
         ArgumentNullException.ThrowIfNull(Items);
         ArgumentNullException.ThrowIfNull(Factions);
         ArgumentNullException.ThrowIfNull(Spells);
+        ArgumentNullException.ThrowIfNull(SkillProgression);
         ArgumentNullException.ThrowIfNull(Dialogues);
         ArgumentNullException.ThrowIfNull(Quests);
 
@@ -254,6 +256,8 @@ public static class RpgContentJson
         foreach (var faction in document.Factions ?? new List<FactionDef>()) factions.Add(faction);
         var spells = new SpellCatalogue();
         foreach (var spell in document.Spells ?? new List<TargetedSpellDef>()) spells.Add(spell);
+        var skillProgression = new SkillProgressionCatalogue();
+        foreach (var rule in document.SkillUseRules ?? new List<SkillUseRule>()) skillProgression.Add(rule);
         var quests = new QuestCatalogue();
         foreach (var quest in document.Quests ?? new List<QuestDef>()) quests.Add(quest);
         var content = new RpgContentSet
@@ -262,6 +266,7 @@ public static class RpgContentJson
             Items = items,
             Factions = factions,
             Spells = spells,
+            SkillProgression = skillProgression,
             Dialogues = document.Dialogues is null ? Array.Empty<DialogueTree>() : document.Dialogues,
             Quests = quests
         };
@@ -280,6 +285,7 @@ public static class RpgContentJson
         public List<ItemDef>? Items { get; init; }
         public List<FactionDef>? Factions { get; init; }
         public List<TargetedSpellDef>? Spells { get; init; }
+        public List<SkillUseRule>? SkillUseRules { get; init; }
         public List<DialogueTree>? Dialogues { get; init; }
         public List<QuestDef>? Quests { get; init; }
     }

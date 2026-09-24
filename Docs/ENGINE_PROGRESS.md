@@ -979,3 +979,19 @@ At this update, 115 of 154 roadmap rows are complete (74.7%). Task 105 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — quest event replay/save/unloaded-target behavior, atomic trade rules, ownership/witness rules, and save/load checks |
 
 At this update, 118 of 154 roadmap rows are complete (76.6%). Task 108 is next. The Stage 10 live world-loader/save/restart and Stage 11 complete branching-quest integration gates remain Pending.
+
+## Tasks 108–110 — skill-use progression and cell routes — 24 September 2026
+
+- Added JSON-authored skill-use rules keyed by stable action IDs. Only configured actions advance their mapped skill; partial use counts and ranks are part of saved actor stats and survive a player save/reload.
+- Added validated per-cell navigation graphs with stable node IDs, finite positions, directed/bidirectional edges, and a maximum actor-clearance radius. Versioned graph files save atomically and reject missing endpoints and duplicate/invalid edges.
+- Added deterministic shortest-route search over edges that meet the actor's clearance requirement. Invalid endpoints fail clearly; valid but disconnected targets return no route.
+
+### Tasks 108–110 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 185 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — only configured skill actions progress, and saved partial use advances the intended rank after reload |
+
+At this update, 121 of 154 roadmap rows are complete (78.6%). Task 111 is next. Stage 10's live world-loader/save/restart and Stage 11's complete branching-quest integration gates remain Pending.

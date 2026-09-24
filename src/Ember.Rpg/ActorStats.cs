@@ -126,6 +126,7 @@ public sealed record ActorStats
 {
     public ActorAttributes Attributes { get; init; } = new();
     public IReadOnlyDictionary<string, int> Skills { get; init; } = new Dictionary<string, int>();
+    public IReadOnlyDictionary<string, int> SkillUseProgress { get; init; } = new Dictionary<string, int>();
     public ActorStatFormulas Formulas { get; init; } = new();
 
     [JsonIgnore]
@@ -147,6 +148,8 @@ public sealed record ActorStats
     public void Validate()
     {
         ArgumentNullException.ThrowIfNull(Attributes);
+        ArgumentNullException.ThrowIfNull(Skills);
+        ArgumentNullException.ThrowIfNull(SkillUseProgress);
         ArgumentNullException.ThrowIfNull(Formulas);
         Attributes.Validate();
         Formulas.Validate();
@@ -154,6 +157,12 @@ public sealed record ActorStats
         {
             if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("A skill needs a name.", nameof(Skills));
             if (value < 0) throw new ArgumentOutOfRangeException(nameof(Skills), value, $"Skill '{name}' cannot be negative.");
+        }
+        foreach (var (name, value) in SkillUseProgress)
+        {
+            if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Skill progress needs a name.", nameof(SkillUseProgress));
+            if (value < 0) throw new ArgumentOutOfRangeException(nameof(SkillUseProgress), value,
+                $"Skill '{name}' progress cannot be negative.");
         }
     }
 }
