@@ -213,12 +213,48 @@ public sealed class GltfAnimationTests
         looping.Advance(0.2f);
         Assert.InRange(MathF.Abs(looping.Time - (clip.Duration - 0.1f)), 0f, 0.00001f);
 
+        looping.Speed = 1f;
+        looping.Seek(clip.Duration);
+        Assert.Equal(0f, looping.Time);
+        looping.Play();
+        looping.Advance(clip.Duration * 2.25f);
+        Assert.InRange(MathF.Abs(looping.Time - (clip.Duration * 0.25f)), 0f, 0.00001f);
+
         var once = new GltfAnimationPlayback(clip, loop: false);
         once.Seek(clip.Duration - 0.02f);
         once.Play();
         once.Advance(0.1f);
         Assert.Equal(clip.Duration, once.Time);
         Assert.False(once.IsPlaying);
+
+        var reverseOnce = new GltfAnimationPlayback(clip, loop: false, speed: -1f);
+        reverseOnce.Play();
+        reverseOnce.Advance(clip.Duration + 0.1f);
+        Assert.Equal(0f, reverseOnce.Time);
+        Assert.False(reverseOnce.IsPlaying);
+    }
+
+    [Fact]
+    public void ZeroDurationClipCannotStartOrAdvancePlayback()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var skin = ImportFoxSkin(model);
+        var animation = model.CreateAnimation("ZeroDuration");
+        var hip = model.LogicalNodes.Single(node => node.Name == "b_Hip_01");
+        animation.CreateTranslationChannel(hip, new SortedDictionary<float, System.Numerics.Vector3>
+        {
+            [0f] = System.Numerics.Vector3.Zero
+        }, linear: true);
+        var clip = GltfAnimationClipData.Import(animation, skin);
+        Assert.Equal(0f, clip.Duration);
+
+        var playback = new GltfAnimationPlayback(clip);
+        playback.Seek(1f);
+        playback.Play();
+        playback.Advance(1f);
+
+        Assert.Equal(0f, playback.Time);
+        Assert.False(playback.IsPlaying);
     }
 
     [Fact]

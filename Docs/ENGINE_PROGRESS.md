@@ -950,3 +950,16 @@ At this update, 112 of 154 roadmap rows are complete (72.7%). Task 102 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — cast validation/cost/cooldown/replay/expiry, isolated faction persistence, stat/faction-gated dialogue and one-time choice persistence |
 
 At this update, 115 of 154 roadmap rows are complete (74.7%). Task 105 is next. The Stage 10 live world-loader/save/restart and Stage 11 complete branching-quest integration gates remain Pending.
+
+## Code-review follow-up — looping animation endpoint — 24 September 2026
+
+- Resolved the Medium animation-playback finding: when looping is enabled, seeking to or beyond the clip duration now wraps to time zero, keeping seek behavior consistent with looped advancement.
+- Added regression coverage for endpoint seeks, multi-period wrapping, reverse non-loop playback stopping at zero, and a zero-duration clip.
+
+### Code-review follow-up checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 182 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |

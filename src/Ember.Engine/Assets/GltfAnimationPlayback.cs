@@ -49,6 +49,11 @@ public sealed class GltfAnimationPlayback
     public void Seek(float time)
     {
         if (!float.IsFinite(time)) throw new ArgumentOutOfRangeException(nameof(time), "Seek time must be finite.");
+        if (Loop && Clip.Duration > 0f && time >= Clip.Duration)
+        {
+            Time = 0f;
+            return;
+        }
         Time = Math.Clamp(time, 0f, Clip.Duration);
     }
 
