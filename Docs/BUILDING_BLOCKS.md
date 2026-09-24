@@ -734,6 +734,19 @@ return `false` with the original snapshots intact when the item, count, definiti
 invalid. Apply both returned snapshots together to commit a successful transfer. Both stores are
 included in `SaveState` and validated on save/load.
 
+`ItemDef` can carry equipment attribute bonuses, an attachment bone name, and a melee profile.
+`EquipmentSystem.TryEquip`/`TryUnequip` atomically swap bag contents and slots; calculate current
+stats with `EffectiveStats` and ask for equipped bone descriptors with `Attachments`. A renderer
+resolves each descriptor against the actor's loaded skin with `GltfBoneAttachment`; keep that bridge
+in the game/view layer so the RPG rules remain graphics-free. Equipped slots and item definitions
+are saved, so the same descriptors are rebuilt after load without accumulating bonuses.
+
+`ActorRuntimeStore` persists health, death, melee cooldown, and carried inventory by world-instance
+GUID. `MeleeCombat.TryAttack` consumes a data-driven range/damage/cooldown profile and returns new
+attacker and target records only on a valid hit. Apply both records to commit; an invalid or
+cooldown-blocked swing leaves them unchanged. Dead actors remain dead after save/load, with loot
+still attached to that same world identity.
+
 ## The sample
 
 `samples/FirstLight` is 178 lines and uses: `EngineHost`, `AttachCanvas`, `AttachScene`,

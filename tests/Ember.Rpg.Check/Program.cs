@@ -26,6 +26,8 @@ internal static class Program
             ModifierRuleChecks(problems);
             ContainerPersistenceChecks(problems);
             InventoryTransferChecks(problems);
+            EquipmentChecks(problems);
+            MeleeAndActorPersistenceChecks(problems);
 
             original.Write(path);
             var loaded = SaveState.Read(path);
@@ -45,8 +47,8 @@ internal static class Program
             // still stackable, still named, and still worn after the load.
             if (loaded.Player.Bag.Count("potion_heal") != 3)
                 problems.Add($"bag should hold 3 potion_heal after a load, holds {loaded.Player.Bag.Count("potion_heal")}");
-            if (loaded.Player.Bag.Count("sword_iron") != 1)
-                problems.Add("bag should hold 1 sword_iron after a load");
+            if (loaded.Player.Bag.Count("sword_iron") != 0)
+                problems.Add("the equipped sword should no longer also be in the bag after a load");
             if (loaded.Player.Equip.Get("mainhand") != "sword_iron")
                 problems.Add("mainhand should still hold sword_iron after a load");
             if (loaded.ItemDefs.Get("potion_heal") is not { Name: "Healing Potion", Stackable: true, Slot: null })
@@ -64,6 +66,11 @@ internal static class Program
                 problems.Add("player base stats and skills should survive a load");
             if (loaded.Player.Modifiers.Active.Count != 2 || loaded.Player.EffectiveStats.MaximumHealth != 31)
                 problems.Add("stacked timed modifiers and their derived health should survive a load");
+            if (EquipmentSystem.EffectiveStats(loaded.Player, loaded.ItemDefs).MaximumHealth != 34
+                || EquipmentSystem.Attachments(loaded.Player, loaded.ItemDefs) is not { Count: 1 } attachments
+                || attachments[0] != new EquippedBoneAttachment("mainhand",
+                    new ContentId<ItemContentKind>("sword_iron"), "RightHand"))
+                problems.Add("equipped stat bonuses and the bone attachment reference should survive a save/load");
 
             if (problems.Count == 0)
             {
@@ -268,6 +275,86 @@ internal static class Program
             problems.Add("dropped world-item identity and count should survive a save/load");
     }
 
+    private static void EquipmentChecks(List<string> problems)
+    {
+        var ironId = new ContentId<ItemContentKind>("item.iron");
+        var steelId = new ContentId<ItemContentKind>("item.steel");
+        var definitions = new ItemCatalogue();
+        definitions.Add(new ItemDef(ironId, "Iron Sword", "mainhand", Stackable: false)
+        {
+            StatBonuses = new[] { new EquipmentStatBonus(ActorAttribute.Strength, 3) },
+            AttachmentBone = "RightHand"
+        });
+        definitions.Add(new ItemDef(steelId, "Steel Sword", "mainhand", Stackable: false)
+        {
+            StatBonuses = new[] { new EquipmentStatBonus(ActorAttribute.Strength, 1) },
+            AttachmentBone = "RightHand"
+        });
+        var bag = new Bag();
+        bag.Add(definitions.Get(ironId)!);
+        bag.Add(definitions.Get(steelId)!);
+        var player = new PlayerRecord { Bag = bag, Stats = ExampleStats() };
+
+        if (!EquipmentSystem.TryEquip(player, definitions, ironId, out var ironEquipped)
+            || ironEquipped.Bag.Count(ironId) != 0 || ironEquipped.Equip.Get("mainhand") != ironId.Value
+            || EquipmentSystem.EffectiveStats(ironEquipped, definitions).MaximumHealth != 29
+            || EquipmentSystem.Attachments(ironEquipped, definitions).Count != 1)
+            problems.Add("equipping should consume one bag item and apply its stat and bone-attachment data once");
+
+        if (!EquipmentSystem.TryEquip(ironEquipped, definitions, steelId, out var steelEquipped)
+            || steelEquipped.Bag.Count(ironId) != 1 || steelEquipped.Bag.Count(steelId) != 0
+            || EquipmentSystem.EffectiveStats(steelEquipped, definitions).MaximumHealth != 27
+            || EquipmentSystem.Attachments(steelEquipped, definitions)[0].ItemId != steelId)
+            problems.Add("replacing equipment should return the old item and replace its stat/attachment effects once");
+
+        if (!EquipmentSystem.TryUnequip(steelEquipped, definitions, "mainhand", out var unequipped)
+            || unequipped.Bag.Count(steelId) != 1 || unequipped.Equip.Count != 0
+            || EquipmentSystem.EffectiveStats(unequipped, definitions).MaximumHealth != 26
+            || EquipmentSystem.Attachments(unequipped, definitions).Count != 0)
+            problems.Add("unequipping should return the item and remove its stat and attachment effects");
+
+        if (EquipmentSystem.TryEquip(unequipped, definitions, new ContentId<ItemContentKind>("missing"), out var unchanged)
+            || unchanged.Bag.Count(steelId) != 1 || unchanged.Equip.Count != 0)
+            problems.Add("a failed equip should preserve inventory and slots");
+    }
+
+    private static void MeleeAndActorPersistenceChecks(List<string> problems)
+    {
+        var attackerId = Guid.NewGuid();
+        var targetId = Guid.NewGuid();
+        var actorContentId = new ContentId<ActorContentKind>("actor.guard");
+        var actorDef = new ActorDef(actorContentId, "Guard", stats: ExampleStats());
+        var attacker = ActorRuntimeState.Create(attackerId, actorDef);
+        var targetBag = new Bag();
+        targetBag.Add(new ItemDef("item.loot", "Loot", null, Stackable: true), 3);
+        var target = new ActorRuntimeState(targetId, actorContentId, 10, targetBag);
+        var profile = new MeleeAttackProfile(range: 2, damage: 6, cooldownSeconds: 1);
+
+        if (!MeleeCombat.TryAttack(attacker, target, 1, profile, out var attacking, out var hit)
+            || hit.CurrentHealth != 4 || hit.IsDead || attacking.MeleeCooldownRemaining != 1)
+            problems.Add("a valid melee attack should apply damage once and start the attacker's cooldown");
+        if (MeleeCombat.TryAttack(attacking, hit, 1, profile, out var blockedAttacker, out var blockedTarget)
+            || blockedAttacker.MeleeCooldownRemaining != 1 || blockedTarget.CurrentHealth != 4)
+            problems.Add("a second attack during cooldown should change neither actor");
+
+        var ready = MeleeCombat.AdvanceCooldown(attacking, 1);
+        if (MeleeCombat.TryAttack(ready, hit, 3, profile, out _, out _))
+            problems.Add("an out-of-range target should not take damage");
+        if (!MeleeCombat.TryAttack(ready, hit, 1, profile, out var finalAttacker, out var deadTarget)
+            || deadTarget.CurrentHealth != 0 || !deadTarget.IsDead)
+            problems.Add("a later valid hit should set actor health to zero and persist a dead state");
+
+        var store = new ActorRuntimeStore().Set(finalAttacker).Set(deadTarget);
+        var defs = new ItemCatalogue();
+        defs.Add(new ItemDef("item.loot", "Loot", null, Stackable: true));
+        var saved = SaveState.FromJson(new SaveState { ItemDefs = defs, ActorStates = store }.ToJson());
+        if (!saved.ActorStates.TryGet(targetId, out var restored)
+            || !restored.IsDead || restored.CurrentHealth != 0 || restored.Inventory.Count("item.loot") != 3
+            || !saved.ActorStates.TryGet(attackerId, out var restoredAttacker)
+            || restoredAttacker.MeleeCooldownRemaining != 1)
+            problems.Add("actor death, carried inventory, world identity, and cooldown should survive save/load");
+    }
+
     /// <summary>
     /// The dialogue test: load a conversation from JSON, then — given the flags the state
     /// already carries — take the gated option and let it advance the node and write its
@@ -373,12 +460,20 @@ internal static class Program
         };
 
         state.ItemDefs.Add(new ItemDef("potion_heal", "Healing Potion", Slot: null, Stackable: true));
-        state.ItemDefs.Add(new ItemDef("sword_iron", "Iron Sword", Slot: "mainhand", Stackable: false));
+        state.ItemDefs.Add(new ItemDef("sword_iron", "Iron Sword", Slot: "mainhand", Stackable: false)
+        {
+            StatBonuses = new[] { new EquipmentStatBonus(ActorAttribute.Strength, 3) },
+            AttachmentBone = "RightHand",
+            MeleeAttack = new MeleeAttackProfile(1.5, 7, 0.8)
+        });
 
         // Add, then the save happens around it — this is the sequence the check exists for.
         state.Player.Bag.Add(state.ItemDefs.Get("potion_heal")!, 3);
         state.Player.Bag.Add(state.ItemDefs.Get("sword_iron")!);
-        state.Player.Equip.Set("mainhand", "sword_iron");
+        if (!EquipmentSystem.TryEquip(state.Player, state.ItemDefs,
+            new ContentId<ItemContentKind>("sword_iron"), out var player))
+            throw new InvalidOperationException("The save fixture could not equip the iron sword.");
+        state = state with { Player = player };
 
         return state;
     }
@@ -562,7 +657,7 @@ internal static class Program
         {
             if (!actual.ItemDefs.TryGet(id, out var got))
                 problems.Add($"ItemDef '{id}' is missing");
-            else if (!def.Equals(got))
+            else if (!ItemDefinitionsEqual(def, got))
                 problems.Add($"ItemDef '{id}': {def} != {got}");
         }
 
@@ -601,5 +696,16 @@ internal static class Program
             problems.Add($"Dialogue tree '{expected.Dialogue.Tree}' != '{actual.Dialogue.Tree}'");
         if (expected.Dialogue.Node != actual.Dialogue.Node)
             problems.Add($"Dialogue node '{expected.Dialogue.Node}' != '{actual.Dialogue.Node}'");
+    }
+
+    private static bool ItemDefinitionsEqual(ItemDef left, ItemDef right)
+    {
+        if (left.Id != right.Id || left.Name != right.Name || left.Slot != right.Slot
+            || left.Stackable != right.Stackable || left.AttachmentBone != right.AttachmentBone
+            || left.MeleeAttack != right.MeleeAttack || left.StatBonuses.Count != right.StatBonuses.Count)
+            return false;
+        for (var i = 0; i < left.StatBonuses.Count; i++)
+            if (left.StatBonuses[i] != right.StatBonuses[i]) return false;
+        return true;
     }
 }

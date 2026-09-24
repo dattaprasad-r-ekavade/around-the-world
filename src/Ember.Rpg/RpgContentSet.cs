@@ -144,6 +144,13 @@ public sealed class RpgContentSet
         foreach (var (id, _) in save.ItemDefs.All) registry.Register(id);
 
         var errors = new List<ContentDiagnostic>();
+        foreach (var actor in save.ActorStates.Entries)
+        {
+            AddReferenceError(registry.CheckReference($"actor instance '{actor.WorldInstanceId}'.ActorId", actor.ActorId), errors);
+            foreach (var item in actor.Inventory.Entries)
+                AddReferenceError(registry.CheckReference(
+                    $"actor instance '{actor.WorldInstanceId}' inventory", item.ItemId), errors);
+        }
         foreach (var entity in save.Entities)
             if (entity.ActorId is { } actorId)
                 AddReferenceError(registry.CheckReference($"entity '{entity.Id}'.ActorId", actorId), errors);

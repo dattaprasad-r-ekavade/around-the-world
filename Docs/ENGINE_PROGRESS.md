@@ -917,3 +917,20 @@ At this update, 107 of 154 roadmap rows are complete (69.5%). Task 97 is next. T
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — emptied container persists, failed transfers preserve both sides, pickup/drop conserve item counts, world-item save/load retains identity |
 
 At this update, 109 of 154 roadmap rows are complete (70.8%). Task 99 is next. The Stage 10 live loader/save/restart integration gate remains Pending.
+
+## Tasks 99–101 — equipment, melee, and persistent actor state — 24 September 2026
+
+- Added equipment stat bonuses, attachment-bone metadata, and melee profiles to item definitions. Equip/unequip returns a new player record after moving items between bag and slots; current derived stats and bone descriptors are rebuilt from the saved slots and definitions.
+- Added range-, damage-, and cooldown-driven melee rules. Invalid, out-of-range, dead-target, and cooldown-blocked attempts leave both actor records unchanged.
+- Added `ActorRuntimeStore` keyed by world-instance GUID. Health/death, cooldown, and an actor's inventory now round-trip in `SaveState`, including a dead looted actor that remains dead after load.
+- Bone attachment data stays graphics-free in `Ember.Rpg`; the game/view layer resolves its descriptors against the loaded skin with `GltfBoneAttachment`.
+
+### Task 99–101 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — equip/swap/unequip, attachment rebuild, melee range/cooldown/death, actor loot/death save/load |
+
+At this update, 112 of 154 roadmap rows are complete (72.7%). Task 102 is next. The Stage 10 live loader/restart and Stage 11 branching-quest integration gates remain Pending.

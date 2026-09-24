@@ -57,10 +57,14 @@ public sealed record SaveState
     /// <summary>Loose world items keyed by the stable world-instance GUID value.</summary>
     public WorldItemStore WorldItems { get; init; } = new();
 
+    /// <summary>Persistent actor health, death, cooldown, and inventory keyed by world instance.</summary>
+    public ActorRuntimeStore ActorStates { get; init; } = new();
+
     public string ToJson()
     {
         ContainerInventories.Validate();
         WorldItems.Validate();
+        ActorStates.Validate();
         return JsonSerializer.Serialize(this, JsonOptions);
     }
 
@@ -70,6 +74,7 @@ public sealed record SaveState
             ?? throw new JsonException("The save was empty.");
         state.ContainerInventories.Validate();
         state.WorldItems.Validate();
+        state.ActorStates.Validate();
         return state;
     }
 

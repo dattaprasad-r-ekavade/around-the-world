@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+
 namespace Ember.Rpg;
 
 /// <summary>
@@ -13,6 +16,9 @@ public sealed record ItemDef
     public string Name { get; init; } = string.Empty;
     public string? Slot { get; init; }
     public bool Stackable { get; init; }
+    public IReadOnlyList<EquipmentStatBonus> StatBonuses { get; init; } = Array.Empty<EquipmentStatBonus>();
+    public string? AttachmentBone { get; init; }
+    public MeleeAttackProfile? MeleeAttack { get; init; }
 
     public ItemDef() { }
 

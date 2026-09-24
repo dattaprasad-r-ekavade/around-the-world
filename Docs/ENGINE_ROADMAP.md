@@ -226,9 +226,9 @@ Extend existing `Ember.Rpg` records, flags, inventory, dialogue, and quests wher
 | [x] | 96 | Add timed stat modifiers with explicit stacking/expiry rules. | Applying, stacking, expiring, and saving/loading a modifier give expected values. |
 | [x] | 97 | Persist container contents by world-instance ID using existing inventory primitives. | Looting and cell reload cannot recreate taken items. |
 | [x] | 98 | Add atomic pickup/drop transfers between inventory and world instances. | Failed transfer preserves the original item; successful transfer neither duplicates nor loses it. |
-| [ ] | 99 | Connect equipment slots to stats and visual bone attachments. | Equip/unequip updates modifiers and attachment once; save/load preserves both. |
-| [ ] | 100 | Add a basic melee attack with range, cooldown, and damage rules. | One attack applies damage once; out-of-range targets take none. |
-| [ ] | 101 | Persist actor death and inventory state. | A dead looted actor stays dead and looted after travel/restart. |
+| [x] | 99 | Connect equipment slots to stats and visual bone attachments. | Equip/unequip updates modifiers and attachment once; save/load preserves both. |
+| [x] | 100 | Add a basic melee attack with range, cooldown, and damage rules. | One attack applies damage once; out-of-range targets take none. |
+| [x] | 101 | Persist actor death and inventory state. | A dead looted actor stays dead and looted after travel/restart. |
 | [ ] | 102 | Add one targeted spell using the modifier system, resource cost, and casting cooldown. | Invalid casts consume nothing; valid casts apply their cost/effect exactly once. |
 | [ ] | 103 | Add faction membership and reputation records. | Changes persist and two actors/factions do not share mutable state accidentally. |
 | [ ] | 104 | Evaluate dialogue choices against stats, flags, and faction conditions using existing dialogue structures. | Choices appear correctly and execute effects once, including after reload. |

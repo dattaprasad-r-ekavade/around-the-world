@@ -30,4 +30,12 @@ public sealed class EquipSlots
     public bool Remove(string slot) => _slots.Remove(slot);
 
     public void Clear() => _slots.Clear();
+
+    /// <summary>A detached copy for equipment changes that must not partially mutate a player save.</summary>
+    public EquipSlots Copy()
+    {
+        var copy = new EquipSlots();
+        foreach (var (slot, itemId) in _slots) copy.Set(slot, itemId);
+        return copy;
+    }
 }
