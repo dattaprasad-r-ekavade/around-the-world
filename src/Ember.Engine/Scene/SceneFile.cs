@@ -22,7 +22,12 @@ public static class SceneFile
     public static SceneGraph Load(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A scene path is required.", nameof(path));
-        var json = File.ReadAllText(path);
+        return LoadFromJson(File.ReadAllText(path));
+    }
+
+    internal static SceneGraph LoadFromJson(string json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) throw new ArgumentException("Scene JSON is required.", nameof(json));
         SceneDocument document;
         try
         {
@@ -35,6 +40,12 @@ public static class SceneFile
         }
 
         return FromDocument(document);
+    }
+
+    internal static string SerializeToJson(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        return JsonSerializer.Serialize(ToDocument(scene), JsonOptions);
     }
 
     public static void Save(SceneGraph scene, string path) => SaveAtomic(scene, path);
@@ -52,11 +63,10 @@ public static class SceneFile
 
         // Build and validate before touching the destination, so an invalid scene cannot
         // destroy the last valid save.
-        var document = ToDocument(scene);
         var tempPath = fullPath + $".{Guid.NewGuid():N}.tmp";
         try
         {
-            var json = JsonSerializer.Serialize(document, JsonOptions);
+            var json = SerializeToJson(scene);
             File.WriteAllText(tempPath, json);
 
             if (File.Exists(fullPath)) File.Replace(tempPath, fullPath, null);

@@ -1,9 +1,43 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
 
 namespace Ember.World;
+
+public readonly record struct WorldTransformState(Vector3 Position, Quaternion Rotation, Vector3 Scale)
+{
+    internal static WorldTransformState FromTransform(Transform transform)
+    {
+        var rotation = transform.Rotation;
+        var rotationLengthSquared = rotation.LengthSquared();
+        if (!IsFinite(transform.Position) || !IsFinite(rotation) || !float.IsFinite(rotationLengthSquared)
+            || rotationLengthSquared < 1e-8f || !IsFinite(transform.Scale))
+            throw new ArgumentException("World instance transform must contain finite values and a nonzero rotation.", nameof(transform));
+        return new WorldTransformState(transform.Position, Quaternion.Normalize(rotation), transform.Scale);
+    }
+
+    internal Transform ToTransform() => new() { Position = Position, Rotation = Rotation, Scale = Scale };
+
+    internal void Validate()
+    {
+        var rotationLengthSquared = Rotation.LengthSquared();
+        if (!IsFinite(Position) || !IsFinite(Rotation) || !float.IsFinite(rotationLengthSquared)
+            || rotationLengthSquared < 1e-8f || !IsFinite(Scale))
+            throw new ArgumentException("World instance transform state must contain finite values and a nonzero rotation.");
+    }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static bool IsFinite(Quaternion value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y)
+        && float.IsFinite(value.Z) && float.IsFinite(value.W);
+}
+
+public readonly record struct WorldCellChangeEntry(Guid CellId, WorldInstanceId InstanceId,
+    WorldTransformState? Transform, bool? Enabled, bool Deleted);
 
 /// <summary>Retains per-instance transform and enabled overrides while a world cell is unloaded.</summary>
 public sealed class WorldCellChangeStore
@@ -24,7 +58,7 @@ public sealed class WorldCellChangeStore
     {
         ArgumentNullException.ThrowIfNull(transform);
         EnsureValidKey(cellId, instanceId);
-        var snapshot = TransformSnapshot.Create(transform);
+        var snapshot = WorldTransformState.FromTransform(transform);
         var change = GetOrCreate(cellId, instanceId);
         EnsureNotDeleted(cellId, instanceId, change);
         change.Transform = snapshot;
@@ -51,6 +85,41 @@ public sealed class WorldCellChangeStore
         return _cells.TryGetValue(cellId, out var changes)
             && changes.TryGetValue(instanceId, out var change)
             && change.Deleted;
+    }
+
+    public IReadOnlyList<WorldCellChangeEntry> ExportSnapshot()
+    {
+        EnsureOwnerThread();
+        return _cells
+            .SelectMany(cell => cell.Value.Select(change => new WorldCellChangeEntry(
+                cell.Key, change.Key, change.Value.Transform, change.Value.Enabled, change.Value.Deleted)))
+            .OrderBy(entry => entry.CellId)
+            .ThenBy(entry => entry.InstanceId.Value)
+            .ToArray();
+    }
+
+    public void ImportSnapshot(IEnumerable<WorldCellChangeEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        EnsureOwnerThread();
+        if (_cells.Count != 0)
+            throw new InvalidOperationException("World cell changes can only be restored into an empty store.");
+
+        foreach (var entry in entries)
+        {
+            EnsureValidKey(entry.CellId, entry.InstanceId);
+            entry.Transform?.Validate();
+            if (entry.Transform is null && entry.Enabled is null && !entry.Deleted)
+                throw new ArgumentException("A world cell change entry must contain an override or tombstone.", nameof(entries));
+            var change = GetOrCreate(entry.CellId, entry.InstanceId);
+            if (change.Transform is not null || change.Enabled is not null || change.Deleted)
+                throw new ArgumentException($"Duplicate world cell change for instance {entry.InstanceId.Value}.", nameof(entries));
+            change.Transform = entry.Transform is { } transform
+                ? WorldTransformState.FromTransform(transform.ToTransform())
+                : null;
+            change.Enabled = entry.Enabled;
+            change.Deleted = entry.Deleted;
+        }
     }
 
     /// <summary>Applies stored overrides to a newly loaded scene using its current identity snapshot.</summary>
@@ -128,36 +197,8 @@ public sealed class WorldCellChangeStore
 
     private sealed class InstanceChange
     {
-        public TransformSnapshot? Transform { get; set; }
+        public WorldTransformState? Transform { get; set; }
         public bool? Enabled { get; set; }
         public bool Deleted { get; set; }
-    }
-
-    private readonly record struct TransformSnapshot(Vector3 Position, Quaternion Rotation, Vector3 Scale)
-    {
-        public static TransformSnapshot Create(Transform transform)
-        {
-            var rotation = transform.Rotation;
-            var rotationLengthSquared = rotation.LengthSquared();
-            if (!IsFinite(transform.Position) || !IsFinite(rotation) || !float.IsFinite(rotationLengthSquared)
-                || rotationLengthSquared < 1e-8f
-                || !IsFinite(transform.Scale))
-                throw new ArgumentException("World instance transform must contain finite values and a nonzero rotation.", nameof(transform));
-            return new TransformSnapshot(transform.Position, Quaternion.Normalize(rotation), transform.Scale);
-        }
-
-        public Transform ToTransform() => new()
-        {
-            Position = Position,
-            Rotation = Rotation,
-            Scale = Scale
-        };
-
-        private static bool IsFinite(Vector3 value) =>
-            float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
-
-        private static bool IsFinite(Quaternion value) =>
-            float.IsFinite(value.X) && float.IsFinite(value.Y)
-            && float.IsFinite(value.Z) && float.IsFinite(value.W);
     }
 }

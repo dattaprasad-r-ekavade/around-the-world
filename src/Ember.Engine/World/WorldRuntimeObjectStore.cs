@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ember.Scene;
 
 namespace Ember.World;
 
 /// <summary>Stable identity for one runtime-created object record in its owning cell.</summary>
 public readonly record struct WorldRuntimeObjectIdentity(Guid CellId, Guid SceneObjectId, WorldInstanceId InstanceId);
+
+public sealed record WorldRuntimeObjectEntry(Guid CellId, Guid SceneObjectId,
+    WorldInstanceId InstanceId, SceneObject SceneObject);
 
 /// <summary>Retains runtime-created scene objects across cell unload and reload.</summary>
 public sealed class WorldRuntimeObjectStore
@@ -21,6 +25,40 @@ public sealed class WorldRuntimeObjectStore
             var count = 0;
             foreach (var records in _cells.Values) count += records.Count;
             return count;
+        }
+    }
+
+    public IReadOnlyList<WorldRuntimeObjectEntry> ExportSnapshot()
+    {
+        EnsureOwnerThread();
+        return _cells
+            .SelectMany(cell => cell.Value.Values.Select(record => new WorldRuntimeObjectEntry(
+                cell.Key, record.SceneObjectId, record.InstanceId, SceneObjectCopy.Copy(record.Object))))
+            .OrderBy(entry => entry.CellId)
+            .ThenBy(entry => entry.InstanceId.Value)
+            .ToArray();
+    }
+
+    public void ImportSnapshot(IEnumerable<WorldRuntimeObjectEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        EnsureOwnerThread();
+        if (_cells.Count != 0)
+            throw new InvalidOperationException("Runtime objects can only be restored into an empty store.");
+
+        foreach (var entry in entries)
+        {
+            if (entry.CellId == Guid.Empty || entry.SceneObjectId == Guid.Empty || entry.InstanceId.Value == Guid.Empty)
+                throw new ArgumentException("Runtime object record IDs cannot be empty.", nameof(entries));
+            ArgumentNullException.ThrowIfNull(entry.SceneObject);
+            if (entry.SceneObject.Id != entry.SceneObjectId)
+                throw new ArgumentException("Runtime object record scene ID does not match its object.", nameof(entries));
+
+            if (!_cells.TryGetValue(entry.CellId, out var records))
+                _cells.Add(entry.CellId, records = new Dictionary<WorldInstanceId, RuntimeObjectRecord>());
+            if (!records.TryAdd(entry.InstanceId, new RuntimeObjectRecord(entry.SceneObjectId,
+                    entry.InstanceId, SceneObjectCopy.Copy(entry.SceneObject))))
+                throw new ArgumentException($"Duplicate runtime object record {entry.InstanceId.Value} in cell {entry.CellId}.", nameof(entries));
         }
     }
 

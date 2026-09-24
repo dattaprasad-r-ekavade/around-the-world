@@ -805,3 +805,20 @@ At this update, 99 of 154 roadmap rows are complete (64.3%). Task 89 is next. Th
 | `WorldInstanceTransferTests` | PASS — destination has the moved object after reload; source does not; stable IDs are preserved |
 
 At this update, 100 of 154 roadmap rows are complete (64.9%). Task 90 is next. Runtime records and changes are still memory-only; Stage 10's save/restart gate remains pending until versioned world-save serialization is complete.
+
+## Task 90 — versioned world save and restart — 24 September 2026
+
+- Added version-1 `WorldSaveFile` and validated `WorldSaveSnapshot` capture/restore for player cell, position, and facing; world-instance identity mappings; transform/enabled overrides; deletion tombstones; and runtime-created object records.
+- Runtime object scene data is stored through the existing validated scene format. Loading rejects unsupported versions, incomplete transforms, duplicate IDs, and cross-references to the wrong cell or instance.
+- Saves write and flush a temporary file beside the target, then replace the prior file only after serialization succeeds. A test holds the previous save open to force replacement failure and verifies its bytes and readability are unchanged.
+- The restart fixture creates a fresh set of stores, restores the save, reloads the authored cell, and confirms the moved/disabled object, removed object, runtime item, player pose, and stable IDs are restored.
+
+### Task 90 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 174 tests, 0 failed, 0 skipped |
+| `WorldSaveFileTests` | PASS — restart restored world state; failed replacement preserved the prior save |
+
+At this update, 101 of 154 roadmap rows are complete (65.6%). Task 91 is next. The Stage 10 integration gate remains Pending until the live world loader uses these stores through a full two-cell gameplay pass.

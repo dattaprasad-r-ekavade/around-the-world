@@ -1,9 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using System.Collections.ObjectModel;
 using Ember.Scene;
 
 namespace Ember.World;
+
+public readonly record struct WorldInstanceIdentityEntry(Guid CellId, Guid SceneObjectId, WorldInstanceId InstanceId);
 
 /// <summary>A runtime identity for one placed object; distinct in meaning from cell and asset IDs.</summary>
 public readonly record struct WorldInstanceId
@@ -89,6 +92,26 @@ public sealed class WorldInstanceIdentityMap
             _bySource.Add(source, instanceId);
             throw;
         }
+    }
+
+    public IReadOnlyList<WorldInstanceIdentityEntry> ExportSnapshot()
+    {
+        EnsureOwnerThread();
+        return _bySource
+            .Select(pair => new WorldInstanceIdentityEntry(pair.Key.CellId, pair.Key.SceneObjectId, pair.Value))
+            .OrderBy(entry => entry.CellId)
+            .ThenBy(entry => entry.SceneObjectId)
+            .ToArray();
+    }
+
+    public void ImportSnapshot(IEnumerable<WorldInstanceIdentityEntry> entries)
+    {
+        ArgumentNullException.ThrowIfNull(entries);
+        EnsureOwnerThread();
+        if (_bySource.Count != 0)
+            throw new InvalidOperationException("World instance identities can only be restored into an empty map.");
+        foreach (var entry in entries)
+            Register(entry.CellId, entry.SceneObjectId, entry.InstanceId);
     }
 
     /// <summary>Returns the same identity for the same cell and authored scene object across reloads.</summary>
