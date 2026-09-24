@@ -360,7 +360,8 @@ public sealed class CharacterStudioGame : EngineHost
         _frameMilliseconds = gameTime.ElapsedGameTime.TotalMilliseconds;
         var sceneBounds = GetSceneBounds() ?? new Bounds3(new Vector3(-1f), Vector3.One);
         var lightViewProjection = DirectionalShadowCamera.CreateViewProjection(
-            sceneBounds, _sceneLighting.DirectionalDirection);
+            sceneBounds, _camera.View, _camera.Projection, _sceneLighting.DirectionalDirection,
+            _shadowMap!.Size);
         RenderShadowMap(lightViewProjection);
 
         GraphicsDevice.Clear(new Color(12, 16, 24));
@@ -1102,7 +1103,8 @@ public sealed class CharacterStudioGame : EngineHost
 
             var sceneBounds = GetSceneBounds() ?? new Bounds3(new Vector3(-1f), Vector3.One);
             var lightViewProjection = DirectionalShadowCamera.CreateViewProjection(
-                sceneBounds, _sceneLighting.DirectionalDirection);
+                sceneBounds, _camera.View, _camera.Projection, _sceneLighting.DirectionalDirection,
+                _shadowMap!.Size);
             _sequenceExportTarget ??= new SequenceFrameRenderTarget(GraphicsDevice);
             _sequenceExportTarget.RenderPng(frame.Width, frame.Height, frame.OutputPath, () =>
             {

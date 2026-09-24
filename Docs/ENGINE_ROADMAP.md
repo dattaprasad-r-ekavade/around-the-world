@@ -271,10 +271,10 @@ This stage targets the requested visual style. It does not require modern PBR. P
 | [x] | 123 | Add simple time-of-day sky, fog, and directional light parameters. | A fixed clock value reproduces the same appearance; changing time updates all cells consistently. |
 | [x] | 124 | Add a basic water surface with explicit transparency/depth rules. | Shoreline geometry remains visible as intended and sorting limitations are documented. |
 | [x] | 125 | Add authored near/far mesh representations with distance thresholds and hysteresis. | Repeated threshold crossings do not flicker; distant scenery uses the cheaper representation. |
-| [ ] | 126 | Add shared static-mesh instancing for one repeated opaque prop type. | The benchmark shows reduced draw submissions with equivalent placement/materials. |
-| [ ] | 127 | Run the benchmark through populated cells and record average/p95 frame time, loading spikes, and memory/resource counts. | Measured failures become specific optimization tasks before increasing world density. |
+| [x] | 126 | Add shared static-mesh instancing for one repeated opaque prop type. | The benchmark shows reduced draw submissions with equivalent placement/materials. |
+| [x] | 127 | Run the benchmark through populated cells and record average/p95 frame time, loading spikes, and memory/resource counts. | Measured failures become specific optimization tasks before increasing world density. |
 
-**Gate:** choose actual cell dimensions, visibility distances, active actor budgets, and proposed map extent from recorded measurements. Do not extrapolate whole-world performance from an empty terrain test.
+**Gate:** the final repeated reference run met the provisional average/p95, activation, working-set, terrain-chunk, resource-stability, and frame-tail targets. An earlier run recorded 14 intervals above 100 ms; the repeat had none, so task 144 captures phase attribution before increasing world density if the tail recurs. Do not extrapolate whole-world performance from this 3×3 blockout.
 
 ## Stage 14 — Tools for building the RPG world
 
@@ -307,6 +307,12 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [ ] | 143 | Record an expansion decision: measured budgets, approved world dimensions, content density, and remaining mechanics. | Larger-map work has explicit limits and new atomic tasks; failed gates remain blockers. |
 
 **Release F: cell-based RPG foundation.** A functioning small piece of the intended larger game establishes readiness to expand. Producing the full map, quests, characters, and art remains a separate content workload.
+
+## Stage 13 follow-up — before increasing world density
+
+| Done | ID | Implement only this | Pass when |
+| --- | --- | --- | --- |
+| [ ] | 144 | Add timestamped phase markers to the outdoor benchmark so frames over 50 ms can be attributed to cell activation, terrain work, scene submission, garbage collection, or external scheduling. | Every frame over 100 ms in the reference route is classified; engine-owned causes become separate, atomic optimization tasks before denser content is added. |
 
 ## Later: pick one need, then write new atomic tasks
 
@@ -510,7 +516,7 @@ The code quality is high for a project at this stage. Validation errors name the
 | Sev | Finding | Where | Suggested fix |
 | --- | --- | --- | --- |
 | Medium | **The minimal template draws non-skinned GLBs as brown cubes, with no warning.** `LoadCharacterInstances` skips any GLB without a skin, and `Draw` falls back to `DrawCube` for every object that isn't a character. A CharacterStudio scene with a static environment, like the Release A courtyard, therefore renders as boxes in a packaged game. That violates the "unsupported content must fail clearly" rule. | `templates/MinimalGame/Program.cs:181-188,227` | Either render static GLBs (see the shared-renderer suggestion below) or refuse to load, naming the object and asset. Add the Release A scene as a fixture for the consumer. |
-| Medium | **The RpgSlice player jitters against its camera.** The camera follows `GetInterpolatedPose(...)`, but the player cube is drawn at `_player.Pose.Position`, which is the latest physics step. Unless the frame rate is an exact multiple of the step rate, the two drift apart every frame. | `samples/RpgSlice/RpgSliceGame.cs:111-112,148-149` | Store the interpolated position in `UpdateMovement` and use it for both the camera and the draw. |
+| Medium — Resolved 24 September 2026 | **The RpgSlice player jittered against its camera.** The game now stores the interpolated physics position and uses it for both the camera target and player draw. | `samples/RpgSlice/RpgSliceGame.cs` | Keep both render transforms sourced from the same interpolated pose. |
 | Medium | **Packaging only follows the startup scene.** World manifests, cell and interior scenes, sequences, audio clips, and compiled `.fx` output are not collected. As a result, `RpgSlice` cannot be packaged, and task 142 would find this late. | `Project/EngineProjectPackage.cs:23-25,50-109` | Before task 84, collect packaging roots from the project file (startup scene, optional world manifest, and an explicit list of extra content). Walk each root through the same validators. Add a packaged-`RpgSlice` fixture. |
 | Low | The package step rewrites `ember.project.json` from only `StartupScenePath`. Any field added to the project file later will be dropped from packages without an error. | `EngineProjectPackage.cs:35` | Copy the validated project document, or round-trip the full document model. |
 | Low | In `CharacterAsset`, the `SkinnedEffect` and the white texture are created before the `try`, so an exception in the `Texture2D` constructor leaks the effect. | `templates/MinimalGame/Program.cs:326-331` | Move both allocations inside the `try` block and make `Dispose` null-safe. |
@@ -520,7 +526,7 @@ The code quality is high for a project at this stage. Validation errors name the
 | Sev | Finding | Where | Suggested fix |
 | --- | --- | --- | --- |
 | Medium — Resolved 24 September 2026 | **A jump request was dropped if the first physics substep was airborne.** The controller now retains the request for the configurable 0.1-second buffer and consumes it only on a grounded step; it expires when the window elapses. Two-substep land-then-jump and buffer-expiry tests cover both paths. | `Physics/PhysicsCharacterController.cs`; `PhysicsWorldTests.cs` | Keep jump buffering covered when changing fixed-step input handling. |
-| Medium | **The shadow camera fits the whole scene's bounds, with no texel snapping.** Shadow resolution falls as the scene grows, and the shadows shimmer whenever the bounds move (for example, when animated characters move). This is fine for a single CharacterStudio showcase. It will not hold up once streamed cells make the "scene" several hundred metres across. | `Render/DirectionalShadowCamera.cs:10-25` | Before Stage 13, fit the shadow volume to the camera's view frustum (one cascade to start). Snap its centre to shadow-map texels. Put a fixed-camera shadow capture into the benchmark from task 119. |
+| Medium — Resolved 24 September 2026 | **The shadow camera fit the whole scene's bounds, with no texel snapping.** The new fit uses the active view frustum capped at 120 m, a stable bounding sphere, and shadow-map-texel snapping. Scene bounds extend caster depth without expanding receiver resolution. CharacterStudio uses the new path for live rendering and sequence export. | `Render/DirectionalShadowCamera.cs`; `DirectionalShadowTests.cs` | Keep the fixed-camera shadow capture in the rendering regression set; the 1280×720 CharacterStudio smoke rendered five scene draws and five shadow draws. |
 | Medium | **`SceneGraph.GetWorldMatrix` allocates a `HashSet` on every call.** CharacterStudio calls it for each object in the shadow pass and again in the main pass. Stage 9 cells will multiply the object count. | `Scene/Scene.cs:68-72` | Cycles are already rejected by `SetParent` and at load, so walk the parent chain with a depth limit and no allocation. Alternatively, cache world matrices with a dirty flag. |
 | Low | Per-frame allocations: `InputActionMap.Sample` builds a new dictionary each frame (`Input/InputActionMap.cs:100`). The shadow pass calls `GetRenderTargets()` each frame (`Render/DirectionalShadowMap.cs:44`). | as listed | Reuse buffers. Measure first with the task 50 diagnostics. |
 | Low | The legacy static texture caches (`StoneTextures`, `PropTextures`, `ItemSprites`, `CharacterSprites`) each have `Clear()`, but nothing calls them, so their textures outlive the host's `GraphicsDevice`. Task 15 deliberately left these caches alone. | `Render/StoneTextures.cs:48` and the others | Call the four `Clear()` methods from `EngineHost.DisposeHost` as a one-line safety net. Do this before task 141's hour-long soak, or that soak will measure them. |
@@ -570,4 +576,4 @@ Done well in the scene, physics, input, and rendering areas:
 1. **Resolved 24 September 2026:** the owner-thread completion path, `Discard`/`Cancel`, and generation stamping are implemented; see the follow-up in `ENGINE_PROGRESS.md`. These were prerequisites for tasks 79–81.
 2. **Resolved 24 September 2026:** world manifest v2 owns cell width, indexes cells by ID and exterior coordinate, migrates v1, and supports distance-ordered entered/left ring updates with hysteresis. Saving no longer requires scenes to exist; duplicate scene paths are rejected.
 3. **Resolved 24 September 2026:** task 79 uses a cost-based budget and was verified in `RpgSlice` on a 3×3 grid with one delayed cell.
-4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a sixth copy.
+4. Re-audit the shared atomic-write and content-path recommendation against the now-implemented world-save and package paths; the original "before task 90" checkpoint is past, so any remaining duplication needs a current, scoped follow-up.

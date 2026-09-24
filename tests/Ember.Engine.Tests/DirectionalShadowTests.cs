@@ -32,6 +32,54 @@ public sealed class DirectionalShadowTests
     }
 
     [Fact]
+    public void CameraShadowFitContainsVisibleFrustumWithinTheShadowDistance()
+    {
+        var camera = new OrbitCamera();
+        camera.SetProjection(16f / 9f, far: 1000f);
+        camera.Reset(new Vector3(4f, 2f, -3f), distance: 12f, yaw: 0.6f, pitch: -0.2f);
+        var sceneBounds = new Bounds3(new Vector3(-80f), new Vector3(80f));
+        const float shadowDistance = 45f;
+        var shadow = DirectionalShadowCamera.CreateViewProjection(sceneBounds,
+            camera.View, camera.Projection, new Vector3(-0.4f, -1f, -0.25f),
+            shadowMapSize: 1024, shadowDistance: shadowDistance);
+        var receiverCorners = GetClippedFrustumCorners(camera.View, camera.Projection, shadowDistance);
+
+        foreach (var corner in receiverCorners)
+        {
+            var clip = Vector4.Transform(new Vector4(corner, 1f), shadow);
+            Assert.True(clip.W > 0f);
+            Assert.InRange(clip.X / clip.W, -1.0001f, 1.0001f);
+            Assert.InRange(clip.Y / clip.W, -1.0001f, 1.0001f);
+            Assert.InRange(clip.Z / clip.W, -0.0001f, 1.0001f);
+        }
+    }
+
+    [Fact]
+    public void CameraShadowFitDoesNotMoveForSubTexelCameraTranslation()
+    {
+        var camera = new OrbitCamera();
+        camera.SetProjection(16f / 9f, far: 1000f);
+        camera.Reset(new Vector3(4f, 2f, -3f), distance: 12f, yaw: 0.6f, pitch: -0.2f);
+        var sceneBounds = new Bounds3(new Vector3(-80f), new Vector3(80f));
+        var lightDirection = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
+        const int shadowMapSize = 1024;
+        const float shadowDistance = 45f;
+        var first = DirectionalShadowCamera.CreateViewProjection(sceneBounds,
+            camera.View, camera.Projection, lightDirection, shadowMapSize, shadowDistance);
+
+        var inverseView = Matrix.Invert(camera.View);
+        var cameraPosition = Vector3.Transform(Vector3.Zero, inverseView);
+        var cameraForward = Vector3.TransformNormal(Vector3.Forward, inverseView);
+        var cameraTarget = cameraPosition + cameraForward;
+        var offset = Vector3.Normalize(Vector3.Cross(lightDirection, Vector3.Up)) * 0.00001f;
+        var movedView = Matrix.CreateLookAt(cameraPosition + offset, cameraTarget + offset, Vector3.Up);
+        var second = DirectionalShadowCamera.CreateViewProjection(sceneBounds,
+            movedView, camera.Projection, lightDirection, shadowMapSize, shadowDistance);
+
+        AssertMatrixNear(first, second, 0.0001f);
+    }
+
+    [Fact]
     public void LightCameraRejectsZeroOrNonfiniteDirection()
     {
         var bounds = new Bounds3(Vector3.Zero, Vector3.One);
@@ -77,5 +125,54 @@ public sealed class DirectionalShadowTests
 
         Assert.True(StaticSceneCuller.IsVisible(localBounds, scaledAndTranslated, frustum));
         Assert.True(StaticSceneCuller.IsVisible(null, Matrix.Identity, frustum));
+    }
+
+    private static Vector3[] GetClippedFrustumCorners(Matrix view, Matrix projection, float distance)
+    {
+        var inverseViewProjection = Matrix.Invert(view * projection);
+        var cameraPosition = Vector3.Transform(Vector3.Zero, Matrix.Invert(view));
+        var points = new Vector3[16];
+        var index = 0;
+        for (var y = 0; y < 2; y++)
+        for (var x = 0; x < 2; x++)
+        {
+            var screenX = x == 0 ? -1f : 1f;
+            var screenY = y == 0 ? -1f : 1f;
+            var near = Unproject(new Vector3(screenX, screenY, 0f), inverseViewProjection);
+            var far = Unproject(new Vector3(screenX, screenY, 1f), inverseViewProjection);
+            var ray = Vector3.Normalize(far - cameraPosition);
+            var clipped = cameraPosition + ray * MathF.Min(distance,
+                Vector3.Distance(cameraPosition, far));
+            points[index++] = near;
+            points[index++] = clipped;
+        }
+
+        return points;
+    }
+
+    private static Vector3 Unproject(Vector3 point, Matrix inverseViewProjection)
+    {
+        var world = Vector4.Transform(new Vector4(point, 1f), inverseViewProjection);
+        return new Vector3(world.X, world.Y, world.Z) / world.W;
+    }
+
+    private static void AssertMatrixNear(Matrix expected, Matrix actual, float tolerance)
+    {
+        var expectedValues = new[]
+        {
+            expected.M11, expected.M12, expected.M13, expected.M14,
+            expected.M21, expected.M22, expected.M23, expected.M24,
+            expected.M31, expected.M32, expected.M33, expected.M34,
+            expected.M41, expected.M42, expected.M43, expected.M44
+        };
+        var actualValues = new[]
+        {
+            actual.M11, actual.M12, actual.M13, actual.M14,
+            actual.M21, actual.M22, actual.M23, actual.M24,
+            actual.M31, actual.M32, actual.M33, actual.M34,
+            actual.M41, actual.M42, actual.M43, actual.M44
+        };
+        for (var i = 0; i < expectedValues.Length; i++)
+            Assert.InRange(MathF.Abs(expectedValues[i] - actualValues[i]), 0f, tolerance);
     }
 }

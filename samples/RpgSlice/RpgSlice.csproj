@@ -9,12 +9,18 @@
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>RpgSlice</RootNamespace>
     <AssemblyName>RpgSlice</AssemblyName>
+    <MonoGamePlatform>Windows</MonoGamePlatform>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
     <None Update="Content\World\**\*" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <MonoGameContentReference Include="Content\RpgSlice.mgcb" />
+    <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5.1" />
   </ItemGroup>
 
 </Project>

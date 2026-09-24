@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -47,6 +48,20 @@ internal sealed class RpgSliceCellStreamer : IDisposable
                     yield return active;
         }
     }
+
+    public int ActiveCellCount
+    {
+        get
+        {
+            var count = 0;
+            foreach (var entry in _cells.Values)
+                if (entry.Operation.State == CellLifecycleState.Active) count++;
+            return count;
+        }
+    }
+
+    public int ActivationAttemptCount { get; private set; }
+    public double LongestActivationMilliseconds { get; private set; }
 
     public void Start(Vector3 playerPosition)
     {
@@ -163,14 +178,22 @@ internal sealed class RpgSliceCellStreamer : IDisposable
             operation.PumpCompletions();
             if (operation.State == CellLifecycleState.Ready)
             {
+                var activationClock = Stopwatch.StartNew();
                 try
                 {
-                    operation.Activate(prepared => ActiveCell.Create(_physics, prepared));
+                    operation.Activate(prepared => ActiveCell.Create(_physics, prepared, _world.ExteriorCellWidth));
                     _collisionGate.MarkCollisionReady(pair.Key);
                 }
                 catch (Exception exception)
                 {
                     Console.WriteLine($"RpgSlice: cell ({pair.Key.X}, {pair.Key.Z}) activation failed: {exception}");
+                }
+                finally
+                {
+                    activationClock.Stop();
+                    ActivationAttemptCount++;
+                    LongestActivationMilliseconds = Math.Max(LongestActivationMilliseconds,
+                        activationClock.Elapsed.TotalMilliseconds);
                 }
             }
             if (operation.State == CellLifecycleState.Failed && !pair.Value.FailureReported)
@@ -242,22 +265,29 @@ internal sealed class RpgSliceCellStreamer : IDisposable
         private bool _disposed;
 
         private ActiveCell(PhysicsWorld physics, ExteriorCellCoordinate coordinate,
-            SceneGraph scene, List<PhysicsObjectId> colliders)
+            SceneGraph scene, Matrix worldTransform, List<PhysicsObjectId> colliders)
         {
             _physics = physics;
             Coordinate = coordinate;
             Scene = scene;
+            WorldTransform = worldTransform;
             _colliders = colliders;
         }
 
         public ExteriorCellCoordinate Coordinate { get; }
         public SceneGraph Scene { get; }
+        public Matrix WorldTransform { get; }
 
-        internal static ActiveCell Create(PhysicsWorld physics, PreparedCell prepared)
+        internal static ActiveCell Create(PhysicsWorld physics, PreparedCell prepared, float cellWidth)
         {
             var colliders = new List<PhysicsObjectId>();
             try
             {
+                var offsetX = (float)(prepared.Coordinate.X * (double)cellWidth);
+                var offsetZ = (float)(prepared.Coordinate.Z * (double)cellWidth);
+                if (!float.IsFinite(offsetX) || !float.IsFinite(offsetZ))
+                    throw new InvalidOperationException($"Cell ({prepared.Coordinate.X}, {prepared.Coordinate.Z}) exceeds finite world space.");
+                var worldTransform = Matrix.CreateTranslation(offsetX, 0f, offsetZ);
                 var vertices = new Vector3[prepared.Terrain.Vertices.Count];
                 for (var index = 0; index < vertices.Length; index++)
                     vertices[index] = prepared.Terrain.Vertices[index].Position;
@@ -271,7 +301,7 @@ internal sealed class RpgSliceCellStreamer : IDisposable
                     if (item.GltfAsset is not null || item.CharacterSettings is not null)
                         throw new InvalidOperationException(
                             $"RpgSlice blockout cell does not support GLB collider '{item.Name}'.");
-                    var world = prepared.Scene.GetWorldMatrix(item.Id);
+                    var world = prepared.Scene.GetWorldMatrix(item.Id) * worldTransform;
                     if (!world.Decompose(out var scale, out var rotation, out var position))
                         throw new InvalidOperationException($"Cell object '{item.Name}' has an invalid transform.");
                     scale = new Vector3(MathF.Abs(scale.X), MathF.Abs(scale.Y), MathF.Abs(scale.Z));
@@ -280,7 +310,7 @@ internal sealed class RpgSliceCellStreamer : IDisposable
                     colliders.Add(physics.AddStaticBox(position, scale, rotation));
                 }
 
-                return new ActiveCell(physics, prepared.Coordinate, prepared.Scene, colliders);
+                return new ActiveCell(physics, prepared.Coordinate, prepared.Scene, worldTransform, colliders);
             }
             catch
             {

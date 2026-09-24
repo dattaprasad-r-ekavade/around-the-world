@@ -479,6 +479,14 @@ public sealed class SceneRenderer
 
     private void BuildCube()
     {
+        var (vertices, indices) = CreateCubeMesh();
+        Array.Copy(vertices, _cube, vertices.Length);
+        Array.Copy(indices, _cubeIndices, indices.Length);
+    }
+
+    /// <summary>Creates the same outward-wound unit cube used by the immediate scene draw path.</summary>
+    public static (VertexPositionNormalTexture[] Vertices, short[] Indices) CreateCubeMesh()
+    {
         var positions = new[]
         {
             new Vector3(-0.5f, -0.5f, 0.5f), new Vector3(0.5f, -0.5f, 0.5f), new Vector3(0.5f, 0.5f, 0.5f), new Vector3(-0.5f, 0.5f, 0.5f),
@@ -496,11 +504,14 @@ public sealed class SceneRenderer
             Vector3.Backward, Vector3.Forward, Vector3.Left, Vector3.Right, Vector3.Up, Vector3.Down
         };
 
+        var vertices = new VertexPositionNormalTexture[24];
+        var indices = new short[36];
+
         for (var face = 0; face < 6; face++)
         {
             for (var vertex = 0; vertex < 4; vertex++)
             {
-                _cube[face * 4 + vertex] = new VertexPositionNormalTexture(
+                vertices[face * 4 + vertex] = new VertexPositionNormalTexture(
                     positions[face * 4 + vertex],
                     normals[face],
                     new Vector2(vertex == 1 || vertex == 2 ? 1f : 0f, vertex >= 2 ? 0f : 1f));
@@ -509,13 +520,15 @@ public sealed class SceneRenderer
             // Wound so the *outside* of each face is the one presented to the camera.
             var index = face * 6;
             var vertexIndex = face * 4;
-            _cubeIndices[index] = (short)vertexIndex;
-            _cubeIndices[index + 1] = (short)(vertexIndex + 2);
-            _cubeIndices[index + 2] = (short)(vertexIndex + 1);
-            _cubeIndices[index + 3] = (short)vertexIndex;
-            _cubeIndices[index + 4] = (short)(vertexIndex + 3);
-            _cubeIndices[index + 5] = (short)(vertexIndex + 2);
+            indices[index] = (short)vertexIndex;
+            indices[index + 1] = (short)(vertexIndex + 2);
+            indices[index + 2] = (short)(vertexIndex + 1);
+            indices[index + 3] = (short)vertexIndex;
+            indices[index + 4] = (short)(vertexIndex + 3);
+            indices[index + 5] = (short)(vertexIndex + 2);
         }
+
+        return (vertices, indices);
     }
 
     /// <summary>

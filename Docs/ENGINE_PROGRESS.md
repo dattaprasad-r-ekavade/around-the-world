@@ -1142,3 +1142,27 @@ At this update, 136 of 154 roadmap rows are complete (88.3%). Task 126 is next. 
 | Check | Result |
 | --- | --- |
 | Focused jump-buffer tests | PASS — catch-up landing/jump and expiry, 2 passed |
+
+## Code-review fix and tasks 126–127 — 24 September 2026
+
+- Resolved the Stage 13 shadow-camera review finding. CharacterStudio now fits one stable orthographic shadow volume to the active camera frustum, caps receivers at 120 m, and snaps the center to the shadow map's texel grid. Scene bounds extend the caster depth range without reducing receiver resolution. Live rendering and sequence export use the same fit.
+- Added tests for frustum coverage and sub-texel stability. A Release CharacterStudio capture rendered five scene draws and five shadow draws at 1280×720.
+- RpgSlice now uploads an instanced cube mesh for repeated foliage when HiDef is supported, with the existing individual-draw path as the Reach fallback. Its cell scenes and static colliders also receive the manifest coordinate offset; without that transform the populated-cell benchmark drew and collided props at the origin. The player draw and follow camera now share the same interpolated physics pose, resolving the RpgSlice jitter review finding.
+- The first physical route exposed a blockout boulder on the original straight return. The reproducible benchmark route now detours around that obstacle; each lap is 122 m and crosses the same four cell boundaries.
+- `RpgSlice --benchmark` drives one warmup lap and ten measured laps. It records frame timing, main-thread cell activation, working set, active cells, terrain chunks, tracked renderer resources, boundary crossings, and per-lap resource peaks.
+
+### Tasks 126–127 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 214 passed, 0 failed, 0 skipped |
+| CharacterStudio Release screenshot | PASS — 1280×720; five scene draws and five shadow draws |
+| RpgSlice Release screenshot | PASS — HiDef instancing enabled; cell props are distributed at their world coordinates |
+| RpgSlice fixed outdoor benchmark | PASS — final repeat: 10 laps, 40 cell crossings; 1.60 ms average, 2.61 ms p95, 28.88 ms maximum; longest activation 33.34 ms; 196.3 MiB peak working set |
+| Foliage submission comparison | PASS — nine repeated props reduced from nine individual submissions to one instanced submission |
+| Per-lap resource trend | PASS — each measured lap peaked at 9 active cells, 16 terrain chunks, and 26 tracked renderer resources; working set ranged 194.1–196.4 MiB |
+
+The final frame, activation, memory, terrain, and resource-stability targets pass on the Intel Core i5-1035G1 / Intel UHD reference PC. One prior run observed 14 frame intervals above 100 ms (18 above 50 ms); a repeat on the final render pose recorded none, and cell activation never exceeded 33.34 ms. Task 144 adds phase attribution if the long frame tail recurs before increasing world density. Passing on this small 3×3 blockout is not a capacity claim for a denser settlement or a larger map.
+
+At this update, 138 of 155 roadmap rows are complete (89.0%). Task 128 is next. Task 144 is a required performance-triage gate before adding world density.

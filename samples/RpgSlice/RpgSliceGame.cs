@@ -9,9 +9,11 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
+using System.Text;
 
 namespace RpgSlice;
 
@@ -22,12 +24,15 @@ public sealed class RpgSliceGame : EngineHost
     private readonly string _worldManifestPath;
     private readonly bool _smokeControls;
     private readonly bool _streamingSmokeRequested;
+    private readonly bool _benchmarkRequested;
     private readonly bool _timePaused;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
     private readonly List<PointLight> _lights = new();
     private readonly List<string> _faults = new();
+    private readonly List<StaticMeshInstance> _foliageInstances = new(32);
     private SceneRenderer _renderer = null!;
+    private InstancedStaticMeshRenderer? _foliageInstancer;
     private WorldManifest _world = null!;
     private HeightmapTerrainRenderer _terrain = null!;
     private WaterSurfaceRenderer _water = null!;
@@ -39,19 +44,26 @@ public sealed class RpgSliceGame : EngineHost
     private RpgSliceCellStreamer _cellStreamer = null!;
     private ThirdPersonFollowCamera _camera = null!;
     private float _timeOfDayHours = 12f;
+    private Vector3 _renderPlayerPosition;
     private RpgSliceStreamingSmoke? _streamingSmoke;
+    private RpgSliceOutdoorBenchmark? _benchmark;
+    private bool _benchmarkReportWritten;
     private bool _smokeRan;
 
     public RpgSliceGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: GameWindowTitle)
     {
+        if (GraphicsAdapter.DefaultAdapter.IsProfileSupported(GraphicsProfile.HiDef))
+            _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _worldManifestPath = ParseOption(args, "--world")
             ?? Path.Combine(AppContext.BaseDirectory, "Content", "World", WorldManifest.DefaultFileName);
         _smokeControls = HasArgument(args, "--smoke-controls");
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
+        _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
-        if (_smokeControls && _streamingSmokeRequested)
-            throw new ArgumentException("Choose either --smoke-controls or --streaming-smoke.", nameof(args));
+        if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0) > 1)
+            throw new ArgumentException("Choose one of --smoke-controls, --streaming-smoke, or --benchmark.", nameof(args));
+        if (_benchmarkRequested) _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
             if (!float.TryParse(timeText, NumberStyles.Float, CultureInfo.InvariantCulture, out _timeOfDayHours)
@@ -71,6 +83,23 @@ public sealed class RpgSliceGame : EngineHost
             throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
 
         _renderer = new SceneRenderer(GraphicsDevice);
+        if (GraphicsDevice.GraphicsProfile == GraphicsProfile.HiDef)
+        {
+            try
+            {
+                var (vertices, indices) = SceneRenderer.CreateCubeMesh();
+                _foliageInstancer = new InstancedStaticMeshRenderer(GraphicsDevice,
+                    Content.Load<Effect>("Effects/InstancedStaticMesh"), vertices, indices);
+            }
+            catch (Exception exception)
+            {
+                _faults.Add($"static-mesh instancing unavailable; foliage uses individual draws ({exception.GetType().Name})");
+            }
+        }
+        else
+        {
+            _faults.Add("static-mesh instancing requires HiDef; foliage uses individual draws");
+        }
         _terrainSource = new RpgSliceTerrainSource();
         _terrainSettings = new TerrainChunkSettings(_world.ExteriorCellWidth,
             VertexSpacing: 4f, TextureRepeatMetres: 6f);
@@ -91,6 +120,7 @@ public sealed class RpgSliceGame : EngineHost
         _collisionGate.CollisionRequired += _cellStreamer.Request;
         _cellStreamer.Start(Vector3.Zero);
         _player = new PhysicsCharacterController(_physics, new Vector3(16f, 1.1f, 23f));
+        _renderPlayerPosition = _player.Pose.Position;
         _player.SetHorizontalMovementGate((current, proposed, clearance) =>
             _collisionGate.Evaluate(current, proposed, clearance).CanMove);
         _camera = new ThirdPersonFollowCamera { TargetOffset = new Vector3(0f, 0.2f, 0f) };
@@ -100,6 +130,8 @@ public sealed class RpgSliceGame : EngineHost
         _lights.Add(new PointLight(new Vector3(12f, 12f, 19f), new Vector3(0.9f, 0.82f, 0.65f) * 1.7f, 28f));
 
         Console.WriteLine($"RpgSlice: loaded exterior cell at ({originCell.X}, {originCell.Z}) from {_world.FilePath}");
+        Console.WriteLine($"RpgSlice: graphics profile {GraphicsDevice.GraphicsProfile}; "
+            + $"static-mesh instancing={(_foliageInstancer is null ? "unavailable" : "enabled")}.");
         if (_smokeControls)
         {
             RunMovementSmoke();
@@ -110,10 +142,18 @@ public sealed class RpgSliceGame : EngineHost
         {
             _streamingSmoke = new RpgSliceStreamingSmoke(_world);
         }
+        else if (_benchmarkRequested)
+        {
+            _benchmark = new RpgSliceOutdoorBenchmark(_player.Pose.Position);
+            Console.WriteLine($"RpgSlice: outdoor benchmark started on {GraphicsDevice.Adapter.Description}, "
+                + $"{GraphicsDevice.Viewport.Width}x{GraphicsDevice.Viewport.Height}, "
+                + $"{GraphicsDevice.GraphicsProfile}; complete one warmup and ten measured laps.");
+        }
     }
 
     protected override void Update(GameTime gameTime)
     {
+        _benchmark?.RecordFrame(Stopwatch.GetTimestamp());
         BeginHostFrame();
         if (!_smokeRan)
         {
@@ -145,14 +185,52 @@ public sealed class RpgSliceGame : EngineHost
         if (_actions.ConsumePressed(GameplayActionNames.Jump)) _player.RequestJump();
 
         _player.SetMoveInput(_camera.MoveDirection(input.ReadMovement()));
+        if (_benchmark is { IsComplete: false } routeBenchmark)
+            _player.SetMoveInput(routeBenchmark.GetMoveDirection(_player.Pose.Position));
         var result = _physicsStepper.Advance(elapsedSeconds, seconds => _physics.Step(seconds));
         var position = _physics.GetInterpolatedPose(_player.PhysicsBodyId, result.InterpolationAlpha).Position;
+        _renderPlayerPosition = position;
         _camera.Follow(_physics, position);
-        Window.Title = _player.IsMovementWaitingForCell
-            ? _collisionGate.LastMovementResult.State == ExteriorCellCollisionState.MissingCell
-                ? "RPG Slice — No exterior cell at boundary"
-                : "RPG Slice — Waiting for cell collision"
-            : GameWindowTitle;
+        if (_benchmark is { IsMeasuring: true } benchmark && !benchmark.IsComplete)
+        {
+            var benchmarkElapsedSeconds = benchmark.MeasuredElapsedSeconds;
+            var workingSetBytes = 0L;
+            if (benchmark.ShouldSampleWorkingSet(benchmarkElapsedSeconds))
+            {
+                using var process = Process.GetCurrentProcess();
+                workingSetBytes = process.WorkingSet64;
+            }
+            var trackedResources = 2 + _terrain.CachedChunkCount + 4
+                + (_foliageInstancer?.OwnedGraphicsResourceCount ?? 0);
+            benchmark.ObserveRuntime(_world.GetExteriorCoordinate(position), _cellStreamer.ActiveCellCount,
+                _terrain.CachedChunkCount, trackedResources, workingSetBytes, benchmarkElapsedSeconds);
+        }
+        if (_benchmark is { IsComplete: true } && !_benchmarkReportWritten)
+        {
+            _benchmarkReportWritten = true;
+            var report = _benchmark.BuildReport(_cellStreamer.LongestActivationMilliseconds,
+                _cellStreamer.ActivationAttemptCount, _foliageInstancer is not null,
+                GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height,
+                GraphicsDevice.Adapter.Description);
+            var reportPath = Path.Combine(Path.GetTempPath(), "ember-rpgslice-outdoor-benchmark.txt");
+            File.WriteAllText(reportPath, report, Encoding.UTF8);
+            Console.WriteLine(report);
+            Console.WriteLine($"RpgSlice benchmark report saved to {reportPath}");
+            Exit();
+        }
+        if (_benchmark is { IsComplete: false } runningBenchmark)
+        {
+            Window.Title = $"RPG Slice — {runningBenchmark.ProgressLabel}, leg {runningBenchmark.CurrentLeg}/{runningBenchmark.LegCount}, "
+                + $"target ({runningBenchmark.CurrentTarget.X:0}, {runningBenchmark.CurrentTarget.Y:0})";
+        }
+        else
+        {
+            Window.Title = _player.IsMovementWaitingForCell
+                ? _collisionGate.LastMovementResult.State == ExteriorCellCollisionState.MissingCell
+                    ? "RPG Slice — No exterior cell at boundary"
+                    : "RPG Slice — Waiting for cell collision"
+                : GameWindowTitle;
+        }
     }
 
     private void RunMovementSmoke()
@@ -202,20 +280,37 @@ public sealed class RpgSliceGame : EngineHost
         _renderer.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
             _camera.Yaw, StoneTextures.StonePalette.Sandstone, _lights);
         _terrain.Draw(_camera.View, _camera.Projection, _camera.Position, environment);
+        _foliageInstances.Clear();
         foreach (var activeCell in _cellStreamer.ActiveCells)
-        foreach (var sceneObject in activeCell.Scene.Objects.Where(item => item.Enabled))
         {
-            if (sceneObject.Name == "Ground") continue;
-            var colour = sceneObject.Name switch
+            foreach (var sceneObject in activeCell.Scene.Objects)
             {
-                "Foliage" => new Color(60, 111, 71),
-                "Trunk" => new Color(117, 82, 54),
-                _ => new Color(137, 125, 108)
-            };
-            _renderer.DrawCube(activeCell.Scene.GetWorldMatrix(sceneObject.Id), colour);
+                if (!sceneObject.Enabled || sceneObject.Name == "Ground") continue;
+                var colour = sceneObject.Name switch
+                {
+                    "Foliage" => new Color(60, 111, 71),
+                    "Trunk" => new Color(117, 82, 54),
+                    _ => new Color(137, 125, 108)
+                };
+                var world = activeCell.Scene.GetWorldMatrix(sceneObject.Id) * activeCell.WorldTransform;
+                if (sceneObject.Name == "Foliage" && _foliageInstancer is not null)
+                    _foliageInstances.Add(new StaticMeshInstance(world, colour));
+                else
+                    _renderer.DrawCube(world, colour);
+            }
         }
 
-        var playerPosition = _player.Pose.Position;
+        if (_foliageInstancer is not null && _foliageInstances.Count > 0)
+        {
+            _foliageInstancer.Draw(_foliageInstances, _camera.View * _camera.Projection,
+                _camera.Position, environment.LightDirection, environment.DirectionalLightColor,
+                environment.AmbientLightColor, environment.FogColor.ToVector3(),
+                environment.FogStart, environment.FogEnd);
+            _benchmark?.ObserveInstancing(_foliageInstancer.LastInstanceCount,
+                _foliageInstancer.LastDrawCallCount);
+        }
+
+        var playerPosition = _renderPlayerPosition;
         _renderer.DrawCube(playerPosition, new Vector3(0.7f, 1.7f, 0.7f), new Color(65, 112, 178), 0f);
         _water.Draw(_camera.View, _camera.Projection, _camera.Position, environment, waterLevel: 0.4f);
         base.Draw(gameTime);
@@ -230,6 +325,7 @@ public sealed class RpgSliceGame : EngineHost
         _streamingSmoke?.Dispose();
         _streamingSmoke = null;
         _cellStreamer?.Dispose();
+        _foliageInstancer?.Dispose();
         _water?.Dispose();
         _terrain?.Dispose();
         _player?.Dispose();
