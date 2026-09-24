@@ -282,7 +282,7 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 128 | Add a cell browser for creating/opening exterior and interior cells. | IDs remain stable after renaming; coordinates cannot collide. |
+| [x] | 128 | Add a cell browser for creating/opening exterior and interior cells. | IDs remain stable after renaming; coordinates cannot collide. |
 | [ ] | 129 | Add an actor/item placement palette backed by registered RPG definitions. | New placements get unique instance IDs and reopen correctly. |
 | [ ] | 130 | Add a door destination/spawn picker. | Selecting a destination creates a valid travel link and exposes broken links visibly. |
 | [ ] | 131 | Add path-node/edge editing with reachability visualization. | A route authored in the tool can be followed by an NPC in play mode. |
@@ -333,14 +333,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 122–123 — masked materials share alpha rejection between scene and shadow passes; outdoor sky, fog, and lighting now follow a deterministic clock profile.
-- Current task: 124 — add a basic water surface with explicit transparency and depth rules.
-- Current checklist: 134 of 154 ordered rows complete (87.0%); task 124 is the first unchecked row.
-- Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor budgets remain Pending.
-- Latest changes: MASK alpha and cutoff import, cutout-aware scene/shadow shaders, deterministic `OutdoorEnvironmentProfile`, terrain normals, and shared sky/fog/directional lighting across streamed cells.
-- Verification: see the dated 24 September entries in `ENGINE_PROGRESS.md` for build, full-suite, shader, outdoor lighting, and cell-seam results.
-- Limits: glTF BLEND materials remain unsupported; RpgSlice still renders blockout props as cubes. Water and measured outdoor budgets remain pending. Benchmark budgets are targets only; task 127 records actual performance.
-- Next action: task 124, add a basic water surface with explicit transparency and depth rules.
+- Last completed task: 128 — CharacterStudio can create and browse world manifests, create exterior/interior scene files, open cells, and rename cells while preserving their IDs and coordinates.
+- Current task: 129 — add an actor/item placement palette backed by registered RPG definitions.
+- Current checklist: 139 of 155 ordered rows complete (89.7%); task 129 is the first unchecked baseline row.
+- Current gates: the Stage 13 reference benchmark gate passed on the recorded 3×3 blockout. The Stage 14 settlement-authoring gate and earlier Release B/C/D integration gates remain Pending. Task 144 remains required before increasing world density if the long-frame tail recurs.
+- Latest changes: a filesystem-backed cell workspace and CharacterStudio World Cells panel; cell scene switching saves the prior scene first and has a Save As path for untitled work.
+- Verification: see the 24 September 2026 task 128 entry in `ENGINE_PROGRESS.md` for the Release build, test suite, and CharacterStudio capture.
+- Limits: cell names are represented by their scene-file names; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: task 129, expose registered RPG actor and item definitions in the placement palette.
 
 Suggested request to an implementing AI:
 

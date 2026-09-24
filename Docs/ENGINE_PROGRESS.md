@@ -1166,3 +1166,20 @@ At this update, 136 of 154 roadmap rows are complete (88.3%). Task 126 is next. 
 The final frame, activation, memory, terrain, and resource-stability targets pass on the Intel Core i5-1035G1 / Intel UHD reference PC. One prior run observed 14 frame intervals above 100 ms (18 above 50 ms); a repeat on the final render pose recorded none, and cell activation never exceeded 33.34 ms. Task 144 adds phase attribution if the long frame tail recurs before increasing world density. Passing on this small 3×3 blockout is not a capacity claim for a denser settlement or a larger map.
 
 At this update, 138 of 155 roadmap rows are complete (89.0%). Task 128 is next. Task 144 is a required performance-triage gate before adding world density.
+
+## Task 128 — CharacterStudio world cell browser — 24 September 2026
+
+- Added `WorldCellWorkspace` operations to create an empty world manifest, create an empty exterior or interior scene, and rename a cell by copying its scene to a unique path before atomically updating the manifest. The cell `Guid` and exterior coordinates survive renaming; duplicate coordinates are rejected by the manifest validator and the newly created scene file is rolled back.
+- Added a World Cells editor window in CharacterStudio to open/create a manifest, list and open cells, create exterior/interior cells, rename a selected cell, and save an untitled current scene before switching. If the active cell is renamed, subsequent saves follow its new scene path.
+- New cells use distinct scene files even when names collide. Cell switching builds the replacement scene preview before swapping, clears the prior undo/redo selection state, and leaves the active scene intact when loading fails.
+
+### Task 128 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 217 passed, 0 failed, 0 skipped; includes create, rename, ID/coordinate preservation, duplicate-coordinate rollback, and unique paths |
+| CharacterStudio Release screenshot smoke | PASS — 1280×720; World Cells window rendered and process shut down cleanly |
+| Direct mouse-driven editor actions | Not exercised; corresponding workspace file operations are covered by regression tests |
+
+At this update, 139 of 155 roadmap rows are complete (89.7%). Task 129 is next. Task 144 remains a performance-triage gate before increasing world density if the long-frame tail recurs.

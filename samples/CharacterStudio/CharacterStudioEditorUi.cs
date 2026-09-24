@@ -1,5 +1,6 @@
 using Ember.Scene;
 using Ember.Render;
+using Ember.World;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -50,10 +51,23 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Func<SequenceExportEditorInfo> _getSequenceExportInfo;
     private readonly Action<SequenceExportEditorRequest> _startSequenceExport;
     private readonly Action _cancelSequenceExport;
+    private readonly Action<string> _saveSceneAs;
+    private readonly Func<string, string, string?> _openWorldCell;
+    private readonly Action<string, string, Guid> _worldCellRenamed;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
     private string _sequenceExportDirectory = Path.Combine(Environment.CurrentDirectory, "SequenceFrames");
+    private string _worldManifestPath = Path.Combine(Environment.CurrentDirectory, WorldManifest.DefaultFileName);
+    private string _worldStatus = "Open or create a world manifest.";
+    private string _cellName = "New Cell";
+    private string _renameCellName = string.Empty;
+    private string _sceneSaveAsPath = Path.Combine(Environment.CurrentDirectory, "Scenes", "Untitled.json");
+    private WorldManifest? _worldManifest;
+    private Guid? _selectedWorldCellId;
+    private int _exteriorCellX;
+    private int _exteriorCellZ;
+    private float _exteriorCellWidth = WorldManifest.Version1DefaultExteriorCellWidth;
     private int _sequenceExportWidth = 1280;
     private int _sequenceExportHeight = 720;
     private int _sequenceExportFrameRate = 30;
@@ -98,7 +112,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
         Action<float> seekSequence, Action<bool> setSequencePreviewEnabled,
         Func<SequenceExportEditorInfo> getSequenceExportInfo,
-        Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport)
+        Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
+        Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
+        Action<string, string, Guid> worldCellRenamed)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -123,6 +139,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _getSequenceExportInfo = getSequenceExportInfo ?? throw new ArgumentNullException(nameof(getSequenceExportInfo));
         _startSequenceExport = startSequenceExport ?? throw new ArgumentNullException(nameof(startSequenceExport));
         _cancelSequenceExport = cancelSequenceExport ?? throw new ArgumentNullException(nameof(cancelSequenceExport));
+        _saveSceneAs = saveSceneAs ?? throw new ArgumentNullException(nameof(saveSceneAs));
+        _openWorldCell = openWorldCell ?? throw new ArgumentNullException(nameof(openWorldCell));
+        _worldCellRenamed = worldCellRenamed ?? throw new ArgumentNullException(nameof(worldCellRenamed));
         _context = ImGui.CreateContext();
         try
         {
@@ -148,6 +167,15 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _history = history ?? throw new ArgumentNullException(nameof(history));
 
     public void CompletePendingEdit(SceneGraph scene) => CommitActiveTransformEdit(scene);
+
+    public void ResetSceneSelection()
+    {
+        _selectedObjectId = null;
+        _selectedAssetId = null;
+        _activeTransformObjectId = null;
+        _activeTransformStart = null;
+        _initialSelectionSet = false;
+    }
 
     public void AddTextInput(char character)
     {
@@ -180,9 +208,178 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         ImGui.NewFrame();
         DrawPanel(scene);
         DrawSequencePanel();
+        DrawWorldCellPanel();
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
+    }
+
+    private void DrawWorldCellPanel()
+    {
+        ImGui.SetNextWindowPos(new NumericsVector2(400f, 16f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(380f, 530f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("World Cells", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputTextWithHint("##worldManifestPath", "Path to world.json", ref _worldManifestPath, 1024);
+        if (ImGui.Button("Open manifest")) LoadWorldManifest();
+        ImGui.SameLine();
+        if (ImGui.Button("Create world")) CreateWorldManifest();
+        ImGui.Text("Exterior cell width (used for new worlds)");
+        if (_worldManifest is not null) ImGui.BeginDisabled();
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputFloat("##exteriorCellWidth", ref _exteriorCellWidth, 1f, 8f, "%.1f");
+        if (_worldManifest is not null) ImGui.EndDisabled();
+
+        if (_worldManifest is not null)
+        {
+            ImGui.TextDisabled($"{_worldManifest.Cells.Count} cells · {Path.GetFileName(_worldManifest.FilePath)}");
+            ImGui.BeginChild("World cell list", new NumericsVector2(0f, 145f), ImGuiChildFlags.Borders);
+            foreach (var cell in _worldManifest.Cells)
+            {
+                var location = cell.ExteriorCoordinate is { } coordinate
+                    ? $"({coordinate.X}, {coordinate.Z})"
+                    : "interior";
+                var label = $"{WorldCellWorkspace.GetCellName(cell)} · {location}##{cell.Id:N}";
+                if (ImGui.Selectable(label, _selectedWorldCellId == cell.Id))
+                {
+                    _selectedWorldCellId = cell.Id;
+                    _renameCellName = WorldCellWorkspace.GetCellName(cell);
+                }
+            }
+            ImGui.EndChild();
+
+            var selectedCell = _selectedWorldCellId is { } selectedId
+                ? _worldManifest.FindCell(selectedId)
+                : null;
+            if (selectedCell is null) ImGui.BeginDisabled();
+            if (ImGui.Button("Open selected cell"))
+            {
+                var error = _openWorldCell(_worldManifest.ResolveScenePath(selectedCell!.Id),
+                    _worldManifest.RootDirectory);
+                _worldStatus = error ?? $"Opened {WorldCellWorkspace.GetCellName(selectedCell)}.";
+            }
+            if (selectedCell is null) ImGui.EndDisabled();
+
+            ImGui.SetNextItemWidth(-1f);
+            ImGui.InputTextWithHint("##renameCellName", "New cell name", ref _renameCellName, 128);
+            if (selectedCell is null) ImGui.BeginDisabled();
+            if (ImGui.Button("Rename selected")) RenameSelectedCell(selectedCell!);
+            if (selectedCell is null) ImGui.EndDisabled();
+        }
+        else
+        {
+            ImGui.TextDisabled("Open or create a manifest to edit cells.");
+        }
+
+        ImGui.Separator();
+        ImGui.Text("Create cell");
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputTextWithHint("##newCellName", "Cell name", ref _cellName, 128);
+        ImGui.Text("Exterior coordinate");
+        ImGui.SetNextItemWidth(150f);
+        ImGui.InputInt("X##exteriorCellX", ref _exteriorCellX);
+        ImGui.SameLine();
+        ImGui.SetNextItemWidth(150f);
+        ImGui.InputInt("Z##exteriorCellZ", ref _exteriorCellZ);
+        var canCreate = _worldManifest is not null;
+        if (!canCreate) ImGui.BeginDisabled();
+        if (ImGui.Button("Create exterior"))
+            CreateCell(WorldCellKind.Exterior, new ExteriorCellCoordinate(_exteriorCellX, _exteriorCellZ));
+        ImGui.SameLine();
+        if (ImGui.Button("Create interior")) CreateCell(WorldCellKind.Interior, null);
+        if (!canCreate) ImGui.EndDisabled();
+
+        ImGui.Separator();
+        ImGui.TextWrapped("Cell switching saves the current scene first. Save As is available for a new scene.");
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputTextWithHint("##sceneSaveAsPath", "Save current scene as...", ref _sceneSaveAsPath, 1024);
+        if (ImGui.Button("Save current scene as..."))
+            _worldStatus = RunSceneSaveAs(_sceneSaveAsPath);
+        ImGui.TextWrapped(_worldStatus);
+        ImGui.End();
+    }
+
+    private void LoadWorldManifest()
+    {
+        try
+        {
+            _worldManifest = WorldManifest.Load(_worldManifestPath);
+            _exteriorCellWidth = _worldManifest.ExteriorCellWidth;
+            _selectedWorldCellId = null;
+            _worldStatus = $"Loaded {Path.GetFileName(_worldManifest.FilePath)}.";
+        }
+        catch (Exception exception)
+        {
+            _worldStatus = $"Could not open world: {exception.Message}";
+        }
+    }
+
+    private void CreateWorldManifest()
+    {
+        try
+        {
+            _worldManifest = WorldCellWorkspace.CreateWorld(_worldManifestPath, _exteriorCellWidth);
+            _selectedWorldCellId = null;
+            _worldStatus = $"Created {Path.GetFileName(_worldManifest.FilePath)}.";
+        }
+        catch (Exception exception)
+        {
+            _worldStatus = $"Could not create world: {exception.Message}";
+        }
+    }
+
+    private void CreateCell(WorldCellKind kind, ExteriorCellCoordinate? coordinate)
+    {
+        try
+        {
+            var cell = WorldCellWorkspace.CreateCell(_worldManifest!.FilePath, kind, _cellName, coordinate);
+            _worldManifest = WorldManifest.Load(_worldManifest.FilePath);
+            _selectedWorldCellId = cell.Id;
+            _cellName = WorldCellWorkspace.GetCellName(cell);
+            _worldStatus = $"Created {kind.ToString().ToLowerInvariant()} cell '{_cellName}'.";
+        }
+        catch (Exception exception)
+        {
+            _worldStatus = $"Could not create cell: {exception.Message}";
+        }
+    }
+
+    private void RenameSelectedCell(WorldCellDefinition selectedCell)
+    {
+        try
+        {
+            var oldScenePath = _worldManifest!.ResolveScenePath(selectedCell.Id);
+            var renamed = WorldCellWorkspace.RenameCell(_worldManifest.FilePath, selectedCell.Id, _renameCellName);
+            _worldManifest = WorldManifest.Load(_worldManifest.FilePath);
+            var newScenePath = _worldManifest.ResolveScenePath(renamed.Id);
+            _worldCellRenamed(oldScenePath, newScenePath, renamed.Id);
+            _selectedWorldCellId = renamed.Id;
+            _renameCellName = WorldCellWorkspace.GetCellName(renamed);
+            _cellName = _renameCellName;
+            _worldStatus = $"Renamed cell to '{_renameCellName}'.";
+        }
+        catch (Exception exception)
+        {
+            _worldStatus = $"Could not rename cell: {exception.Message}";
+        }
+    }
+
+    private string RunSceneSaveAs(string path)
+    {
+        try
+        {
+            _saveSceneAs(path);
+            return $"Saved current scene to {Path.GetFileName(path)}.";
+        }
+        catch (Exception exception)
+        {
+            return $"Could not save scene: {exception.Message}";
+        }
     }
 
     public void Render()

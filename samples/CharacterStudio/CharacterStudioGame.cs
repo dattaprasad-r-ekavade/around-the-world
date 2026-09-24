@@ -35,15 +35,15 @@ public sealed class CharacterStudioGame : EngineHost
     private static readonly Guid WideCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0001");
     private static readonly Guid CloseCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0002");
 
-    private readonly SceneGraph _sceneData;
+    private SceneGraph _sceneData;
     private readonly EngineProjectFile? _project;
-    private readonly bool _loadAssetsFromProject;
+    private string _sceneAssetRoot = AppContext.BaseDirectory;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
-    private readonly SceneCommandHistory _editorHistory = new();
+    private SceneCommandHistory _editorHistory = new();
     private readonly SceneLighting _sceneLighting = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
-    private readonly string? _sceneSavePath;
+    private string? _sceneSavePath;
     private readonly string? _openSequencePath;
     private readonly string? _saveSequencePath;
     private readonly string? _startupSequenceExportDirectory;
@@ -182,7 +182,7 @@ public sealed class CharacterStudioGame : EngineHost
                 _reimportStatus = "Open failed; recovery scene is unsaved unless you use --save to another path.";
             }
         }
-        _loadAssetsFromProject = _project is not null && openedExistingScene;
+        _sceneAssetRoot = _project?.RootDirectory ?? AppContext.BaseDirectory;
 
         // Never let S overwrite a malformed or unsupported source with the fallback scene.
         // An explicit --save path remains available for recovery/Save As.
@@ -210,7 +210,8 @@ public sealed class CharacterStudioGame : EngineHost
                 () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
-                GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport);
+                GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
+                SaveSceneAs, OpenWorldCell, OnWorldCellRenamed);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -502,7 +503,7 @@ public sealed class CharacterStudioGame : EngineHost
         });
     }
 
-    private Dictionary<Guid, string> ResolveSceneAssets(SceneGraph? scene = null)
+    private Dictionary<Guid, string> ResolveSceneAssets(SceneGraph? scene = null, string? contentRoot = null)
     {
         scene ??= CurrentScene;
         var result = new Dictionary<Guid, string>();
@@ -518,14 +519,14 @@ public sealed class CharacterStudioGame : EngineHost
             }
         }
 
-        if (references.Count == 0 && _project is null)
+        if (references.Count == 0 && _project is null && contentRoot is null)
             references.Add(DefaultAsset.AssetId, (DefaultAsset, Guid.Empty));
         foreach (var (assetId, entry) in references)
         {
             var (reference, objectId) = entry;
-            var resolvedPath = _loadAssetsFromProject
-                ? _project!.ResolveContentPath(reference.SourcePath)
-                : Path.GetFullPath(reference.SourcePath, AppContext.BaseDirectory);
+            var resolvedPath = _project is not null
+                ? _project.ResolveContentPath(reference.SourcePath)
+                : Path.GetFullPath(reference.SourcePath, contentRoot ?? _sceneAssetRoot);
             if (!File.Exists(resolvedPath))
                 throw new FileNotFoundException(
                     $"Scene object {objectId} references missing GLB asset {assetId} at project-relative path '{reference.SourcePath}' resolved to '{resolvedPath}'.",
@@ -1285,17 +1286,17 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
-    private void SaveScene()
+    private bool SaveScene()
     {
         if (_playSession is not null)
         {
             _reimportStatus = "Stop play mode before saving the authored scene.";
-            return;
+            return false;
         }
         if (_sceneSavePath is null)
         {
             _reimportStatus = _blockedSaveReason ?? "Pass --save <path> to enable S: save scene";
-            return;
+            return false;
         }
 
         try
@@ -1304,12 +1305,99 @@ public sealed class CharacterStudioGame : EngineHost
             SceneFile.SaveAtomic(_sceneData, _sceneSavePath);
             _reimportStatus = $"Scene saved to {Path.GetFileName(_sceneSavePath)}.";
             Console.WriteLine($"Saved scene to {Path.GetFullPath(_sceneSavePath)}");
+            return true;
         }
         catch (Exception exception)
         {
             _reimportStatus = $"Scene save failed: {exception.Message}";
             Console.WriteLine($"CharacterStudio scene save failed: {exception.Message}");
+            return false;
         }
+    }
+
+    private void SaveSceneAs(string path)
+    {
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before saving the authored scene.");
+        if (string.IsNullOrWhiteSpace(path))
+            throw new ArgumentException("A scene save path is required.", nameof(path));
+
+        _editorUi?.CompletePendingEdit(_sceneData);
+        CaptureCharacterSettings();
+        var fullPath = Path.GetFullPath(path);
+        SceneFile.SaveAtomic(_sceneData, fullPath);
+        _sceneSavePath = fullPath;
+        _reimportStatus = $"Scene saved to {Path.GetFileName(fullPath)}.";
+        Console.WriteLine($"Saved scene to {fullPath}");
+    }
+
+    private string? OpenWorldCell(string scenePath, string worldRoot)
+    {
+        if (_playSession is not null) return "Stop play mode before opening another cell.";
+        if (_sequenceExportJob?.IsRunning == true) return "Wait for sequence export to finish before opening another cell.";
+        if (_sceneSavePath is null)
+            return "Save the current scene first with Save As; cell switching preserves saved work.";
+        if (_preview is null) return "Character preview is not ready.";
+
+        _editorUi?.CompletePendingEdit(_sceneData);
+        CaptureCharacterSettings();
+        if (!SaveScene()) return _reimportStatus;
+
+        PreviewResources? replacement = null;
+        AttachmentBoxRenderer? attachmentCandidate = null;
+        try
+        {
+            var fullScenePath = Path.GetFullPath(scenePath);
+            var assetRoot = _project?.RootDirectory ?? Path.GetFullPath(worldRoot);
+            var candidate = SceneFile.Load(fullScenePath);
+            var loadedPreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(candidate, assetRoot), candidate);
+            replacement = loadedPreview;
+            if (replacement.HasSkinnedCharacters)
+            {
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    replacement.MaximumJointCount);
+                if (replacement.AttachmentsByInstanceId.Count > 0 && _attachmentRenderer is null)
+                    attachmentCandidate = new AttachmentBoxRenderer(GraphicsDevice);
+            }
+
+            var cleanupError = _preview.Reload(() => loadedPreview);
+            replacement = null; // ownership transferred to ReloadableAsset
+            if (attachmentCandidate is not null)
+            {
+                _attachmentRenderer = _sceneResources!.Own(attachmentCandidate);
+                attachmentCandidate = null;
+            }
+            _sceneData = candidate;
+            _sceneSavePath = fullScenePath;
+            _sceneAssetRoot = assetRoot;
+            _editorHistory = new SceneCommandHistory();
+            _editorUi?.SetHistory(_editorHistory);
+            _editorUi?.ResetSceneSelection();
+            _farLodByObjectId.Clear();
+
+            BuildSequencePreview();
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            var opened = $"Opened {Path.GetFileName(fullScenePath)}.";
+            if (cleanupError is not null)
+                opened += $" Previous preview cleanup reported: {cleanupError.Message}";
+            _reimportStatus = opened;
+            return opened;
+        }
+        catch (Exception exception)
+        {
+            replacement?.Dispose();
+            attachmentCandidate?.Dispose();
+            _reimportStatus = $"Could not open cell: {exception.Message}";
+            return _reimportStatus;
+        }
+    }
+
+    private void OnWorldCellRenamed(string previousScenePath, string renamedScenePath, Guid cellId)
+    {
+        if (_sceneSavePath is null || !PathsReferToSameFile(_sceneSavePath, previousScenePath)) return;
+        _sceneSavePath = Path.GetFullPath(renamedScenePath);
+        _reimportStatus = $"Active cell {cellId} renamed; future saves target {Path.GetFileName(_sceneSavePath)}.";
     }
 
     private static bool PathsReferToSameFile(string first, string second)
