@@ -740,3 +740,20 @@ At this update, 95 of 154 roadmap rows are complete (61.7%). Task 85 is next. Th
 | `WorldInstanceIdentityMapTests` | PASS — two shared-asset placements keep distinct IDs and reuse them after cell scene reload |
 
 At this update, 96 of 154 roadmap rows are complete (62.3%). Task 86 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
+
+## Task 86 — per-cell instance change store — 24 September 2026
+
+- Added `WorldCellChangeStore`, keyed by cell ID and `WorldInstanceId`, with independent transform and enabled-state overrides. Transform values are validated and copied when recorded so later edits to a mutable scene transform do not alter the stored snapshot.
+- A newly loaded scene reapplies changes through its identity snapshot. Overrides for one cell do not affect another cell, and the store remains in memory across cell unload/reload. Versioned disk persistence is part of the later world-save tasks.
+- The reload fixture moves and disables one of two objects that share a GLB, then reloads the authored scene and reapplies only that instance's changes.
+
+### Task 86 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 166 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — loaded the exterior fixture and moved 2.50 m |
+| `WorldCellChangeStoreTests` | PASS — transform/enabled overrides survived reload and remained cell-scoped |
+
+At this update, 97 of 154 roadmap rows are complete (63.0%). Task 87 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
