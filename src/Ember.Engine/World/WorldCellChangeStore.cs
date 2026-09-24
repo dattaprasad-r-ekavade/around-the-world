@@ -87,6 +87,14 @@ public sealed class WorldCellChangeStore
             && change.Deleted;
     }
 
+    public bool Remove(Guid cellId, WorldInstanceId instanceId)
+    {
+        EnsureValidKey(cellId, instanceId);
+        if (!_cells.TryGetValue(cellId, out var changes) || !changes.Remove(instanceId)) return false;
+        if (changes.Count == 0) _cells.Remove(cellId);
+        return true;
+    }
+
     public IReadOnlyList<WorldCellChangeEntry> ExportSnapshot()
     {
         EnsureOwnerThread();

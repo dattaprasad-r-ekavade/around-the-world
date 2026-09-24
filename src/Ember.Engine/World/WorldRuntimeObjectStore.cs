@@ -214,6 +214,21 @@ public sealed class WorldRuntimeObjectStore
         return restored;
     }
 
+    public bool Remove(Guid cellId, WorldInstanceId instanceId, WorldInstanceIdentityMap identities)
+    {
+        ArgumentNullException.ThrowIfNull(identities);
+        EnsureOwnerThread();
+        if (cellId == Guid.Empty || instanceId.Value == Guid.Empty)
+            throw new ArgumentException("Removing a runtime object requires nonempty IDs.");
+        if (!_cells.TryGetValue(cellId, out var records) || !records.TryGetValue(instanceId, out var record))
+            return false;
+        if (!identities.Remove(cellId, record.SceneObjectId, instanceId))
+            throw new InvalidOperationException("Runtime object identity mapping is missing during removal.");
+        records.Remove(instanceId);
+        if (records.Count == 0) _cells.Remove(cellId);
+        return true;
+    }
+
     private void EnsureOwnerThread()
     {
         var currentThreadId = Environment.CurrentManagedThreadId;

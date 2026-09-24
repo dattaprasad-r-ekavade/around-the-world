@@ -94,6 +94,20 @@ public sealed class WorldInstanceIdentityMap
         }
     }
 
+    public bool Remove(Guid cellId, Guid sceneObjectId, WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        if (cellId == Guid.Empty || sceneObjectId == Guid.Empty || instanceId.Value == Guid.Empty)
+            throw new ArgumentException("Removing a world identity requires nonempty IDs.");
+        var source = new InstanceSource(cellId, sceneObjectId);
+        if (!_bySource.TryGetValue(source, out var current)) return false;
+        if (current != instanceId)
+            throw new InvalidOperationException($"Scene object {sceneObjectId} in cell {cellId} has another world instance ID.");
+        _bySource.Remove(source);
+        _instanceValues.Remove(instanceId.Value);
+        return true;
+    }
+
     public IReadOnlyList<WorldInstanceIdentityEntry> ExportSnapshot()
     {
         EnsureOwnerThread();

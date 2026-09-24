@@ -208,6 +208,7 @@ internal static class SceneObjectCopy
             GltfAsset = source.GltfAsset,
             CharacterSettings = CopySettings(source.CharacterSettings),
             Door = source.Door,
+            ResetPolicy = source.ResetPolicy,
             SpawnPoint = source.SpawnPoint is null
                 ? null
                 : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())

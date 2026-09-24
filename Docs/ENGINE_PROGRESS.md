@@ -854,3 +854,20 @@ At this update, 102 of 154 roadmap rows are complete (66.2%). Task 92 is next. T
 | `WorldSaveRequestQueueTests` | PASS — mid-travel save captured one stable outcome; later requests ran after a write error |
 
 At this update, 103 of 154 roadmap rows are complete (66.9%). Task 93 is next. The Stage 10 integration gate remains Pending until a live game loop queues saves and runs the multi-cell restart scenario.
+
+## Task 93 — explicit cell reset policy — 24 September 2026
+
+- Added per-object `WorldInstanceResetPolicy` to authored scene objects and runtime object records. The default is `Preserve`; `ResetOnCellReset` opts an instance into reset, while `QuestPersistent` explicitly keeps quest state. Scene serialization is now version 4 and continues loading versions 1–3 with the default policy.
+- Added `WorldCellResetService` for a stable unload/reload boundary. It clears changes and deletion tombstones only for resettable authored instances and removes resettable runtime records and their identity mappings. Preserved and quest-persistent changes/objects remain available to restore.
+- The fixture moves and disables a resettable object, tombstones a quest object, and creates resettable, quest-persistent, and default runtime items. After reset and reload, the resettable object returns to authored state; the quest tombstone and persistent runtime items remain.
+
+### Task 93 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 180 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — version-3 sample scene loaded and player moved 2.50 m |
+| `WorldCellResetServiceTests` | PASS — resettable data reset; default and quest-persistent state survived |
+
+At this update, 104 of 154 roadmap rows are complete (67.5%). Task 94 is next. The Stage 10 integration gate remains Pending until the live world loader wires these stores into gameplay and the full two-cell restart scenario is exercised.

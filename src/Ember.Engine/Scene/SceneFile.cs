@@ -11,7 +11,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 3;
+    public const int CurrentVersion = 4;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -80,8 +80,8 @@ public static class SceneFile
 
     private static SceneGraph FromDocument(SceneDocument document)
     {
-        if (document.Version != 1 && document.Version != 2 && document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1, 2, or {CurrentVersion}.");
+        if (document.Version != 1 && document.Version != 2 && document.Version != 3 && document.Version != CurrentVersion)
+            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1, 2, 3, or {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
         foreach (var data in document.Objects) ValidateData(data, document.Version);
@@ -101,7 +101,8 @@ public static class SceneFile
                 GltfAsset = ToGltfAsset(data),
                 CharacterSettings = ToCharacterSettings(data.Character),
                 Door = ToDoorComponent(data.Door),
-                SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id)
+                SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id),
+                ResetPolicy = data.ResetPolicy
             };
             scene.Add(item);
             parents.Add(data.Id, data.ParentId);
@@ -143,6 +144,7 @@ public static class SceneFile
                     Character = ToCharacterData(value.CharacterSettings),
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
+                    ResetPolicy = value.ResetPolicy,
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
                     Scale = [transform.Scale.X, transform.Scale.Y, transform.Scale.Z]
@@ -273,6 +275,10 @@ public static class SceneFile
 
         if (documentVersion < 3 && (data.Door is not null || data.SpawnPoint is not null))
             throw new InvalidDataException($"Object {data.Id} world travel components require scene version 3.");
+        if (!Enum.IsDefined(data.ResetPolicy))
+            throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
+        if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
+            throw new InvalidDataException($"Object {data.Id} reset policy requires scene version 4.");
         if (data.SpawnPoint is { Id: var spawnId } && spawnId == Guid.Empty)
             throw new InvalidDataException($"Object {data.Id} has an empty spawn ID.");
         if (data.Door is { } door)
@@ -385,6 +391,7 @@ public static class SceneFile
         public SceneCharacterData? Character { get; set; }
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
+        public WorldInstanceResetPolicy ResetPolicy { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }

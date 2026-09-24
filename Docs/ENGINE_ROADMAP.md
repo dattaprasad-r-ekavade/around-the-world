@@ -211,7 +211,7 @@ Authored definitions are immutable. Save changes by stable world-instance ID, no
 | [x] | 90 | Write/read a versioned world save containing player location and cell changes using safe replacement. | Restart restores the same world; a failed write preserves the previous save. |
 | [x] | 91 | Validate save/content versions and add one schema migration fixture. | A supported old fixture migrates; unsupported or missing definitions produce actionable diagnostics. |
 | [x] | 92 | Queue save requests until a stable simulation boundary, including during travel. | A save requested mid-transition restores one complete location, not mixed source/destination state. |
-| [ ] | 93 | Add explicit cell reset policy, defaulting to no reset. | Resettable content resets only under its rule; persistent/quest-marked instances remain unchanged. |
+| [x] | 93 | Add explicit cell reset policy, defaulting to no reset. | Resettable content resets only under its rule; persistent/quest-marked instances remain unchanged. |
 
 **Gate: Pending.** CPU fixtures now cover object edits, deletion, runtime objects, cell transfer, and save/restart. The world loader and RpgSlice still need to connect these stores for a live two-cell gameplay pass. Then move, create, and delete objects across two cells; travel inside; save and restart. Every instance must have the expected location/state exactly once.
 
