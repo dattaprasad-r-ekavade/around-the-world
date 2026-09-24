@@ -127,6 +127,62 @@ public sealed class WorldSaveFileTests
         }
     }
 
+    [Fact]
+    public void VersionZeroPlayerOnlySaveMigratesToCurrentVersion()
+    {
+        var directory = TemporaryDirectory();
+        var path = Path.Combine(directory, "legacy-save.json");
+        try
+        {
+            var cellId = Guid.NewGuid();
+            File.WriteAllText(path,
+                $"{{\"Version\":0,\"PlayerLocation\":{{\"CellId\":\"{cellId}\",\"Position\":[4,1,-2],\"Facing\":[0,0.5,0,0.8660254]}}}}");
+
+            var migrated = WorldSaveFile.Load(path);
+
+            Assert.Equal(cellId, migrated.PlayerLocation.CellId);
+            Assert.Equal(new Vector3(4f, 1f, -2f), migrated.PlayerLocation.Position);
+            Assert.Empty(migrated.Identities);
+            Assert.Empty(migrated.Changes);
+            Assert.Empty(migrated.RuntimeObjects);
+            WorldSaveFile.SaveAtomic(path, migrated);
+            Assert.Equal(WorldSaveFile.CurrentVersion, ReadVersion(path));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void LoadingAgainstWorldRejectsMissingCellDefinitions()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var definedCellId = Guid.NewGuid();
+            var missingCellId = Guid.NewGuid();
+            File.WriteAllText(Path.Combine(directory, "scene.json"), "{}");
+            var manifestPath = Path.Combine(directory, "world.json");
+            WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition { Id = definedCellId, Kind = WorldCellKind.Interior, ScenePath = "scene.json" }
+            ]);
+            var world = WorldManifest.Load(manifestPath);
+            var savePath = Path.Combine(directory, "world-save.json");
+            WorldSaveFile.SaveAtomic(savePath, new WorldSaveSnapshot(
+                new WorldPlayerLocation(missingCellId, Vector3.Zero, Quaternion.Identity), [], [], []));
+
+            var exception = Assert.Throws<InvalidDataException>(() => WorldSaveFile.Load(savePath, world));
+            Assert.Contains("player location", exception.Message, StringComparison.Ordinal);
+            Assert.Contains(missingCellId.ToString(), exception.Message, StringComparison.Ordinal);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static int ReadVersion(string path)
     {
         using var document = System.Text.Json.JsonDocument.Parse(File.ReadAllText(path));

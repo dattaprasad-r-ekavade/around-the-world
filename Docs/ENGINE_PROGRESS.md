@@ -822,3 +822,19 @@ At this update, 100 of 154 roadmap rows are complete (64.9%). Task 90 is next. R
 | `WorldSaveFileTests` | PASS — restart restored world state; failed replacement preserved the prior save |
 
 At this update, 101 of 154 roadmap rows are complete (65.6%). Task 91 is next. The Stage 10 integration gate remains Pending until the live world loader uses these stores through a full two-cell gameplay pass.
+
+## Task 91 — validate world-save versions and references — 24 September 2026
+
+- Added a version-0 migration for the earlier player-location-only save shape. Missing state lists migrate to empty identity, change, and runtime-object lists; saving the migrated snapshot writes current version 1.
+- Unsupported versions remain rejected with the accepted versions in the diagnostic. Added `WorldSaveFile.Load(path, world)` to validate the player location and every stored identity/change/runtime object against the current world manifest.
+- Missing cell definitions now report the exact save record and cell ID. The fixtures cover legacy migration, an unsupported version, and a player location referring to an absent cell.
+
+### Task 91 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 176 tests, 0 failed, 0 skipped |
+| `WorldSaveFileTests` | PASS — version-0 save migrated, unsupported version rejected, missing cell diagnosed |
+
+At this update, 102 of 154 roadmap rows are complete (66.2%). Task 92 is next. The Stage 10 integration gate remains Pending until save requests are coordinated with live travel and the world loader.

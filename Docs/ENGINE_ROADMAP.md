@@ -209,7 +209,7 @@ Authored definitions are immutable. Save changes by stable world-instance ID, no
 | [x] | 88 | Add runtime-created object records with persistent IDs. | A spawned test item survives reload without acquiring a duplicate ID. |
 | [x] | 89 | Transfer an instance between cell ownership records atomically. | Moving an item across a boundary and reloading both cells leaves exactly one instance. |
 | [x] | 90 | Write/read a versioned world save containing player location and cell changes using safe replacement. | Restart restores the same world; a failed write preserves the previous save. |
-| [ ] | 91 | Validate save/content versions and add one schema migration fixture. | A supported old fixture migrates; unsupported or missing definitions produce actionable diagnostics. |
+| [x] | 91 | Validate save/content versions and add one schema migration fixture. | A supported old fixture migrates; unsupported or missing definitions produce actionable diagnostics. |
 | [ ] | 92 | Queue save requests until a stable simulation boundary, including during travel. | A save requested mid-transition restores one complete location, not mixed source/destination state. |
 | [ ] | 93 | Add explicit cell reset policy, defaulting to no reset. | Resettable content resets only under its rule; persistent/quest-marked instances remain unchanged. |
 

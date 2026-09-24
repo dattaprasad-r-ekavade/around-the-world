@@ -91,6 +91,24 @@ public sealed class WorldSaveSnapshot
         runtimeObjects.ImportSnapshot(RuntimeObjects);
     }
 
+    public void ValidateAgainstWorld(WorldManifest world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        EnsureCellExists(world, PlayerLocation.CellId, "player location");
+        foreach (var entry in Identities)
+            EnsureCellExists(world, entry.CellId, $"instance identity {entry.InstanceId.Value}");
+        foreach (var entry in Changes)
+            EnsureCellExists(world, entry.CellId, $"cell change {entry.InstanceId.Value}");
+        foreach (var entry in RuntimeObjects)
+            EnsureCellExists(world, entry.CellId, $"runtime object {entry.SceneObjectId}");
+    }
+
+    private static void EnsureCellExists(WorldManifest world, Guid cellId, string reference)
+    {
+        if (world.FindCell(cellId) is null)
+            throw new InvalidDataException($"World save {reference} refers to cell {cellId}, which is missing from world manifest '{world.FilePath}'.");
+    }
+
     private void Validate()
     {
         var sources = new HashSet<(Guid CellId, Guid SceneObjectId)>();
@@ -210,8 +228,18 @@ public static class WorldSaveFile
             throw new InvalidDataException($"World-save JSON is invalid: {exception.Message}", exception);
         }
 
-        if (document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported world-save version {document.Version}; expected {CurrentVersion}.");
+        if (document.Version == 0)
+        {
+            // Version 0 stored only the player location; persistent object state was not yet supported.
+            document.InstanceIdentities ??= new List<IdentityDocument>();
+            document.CellChanges ??= new List<CellChangeDocument>();
+            document.RuntimeObjects ??= new List<RuntimeObjectDocument>();
+            document.Version = CurrentVersion;
+        }
+        else if (document.Version != CurrentVersion)
+        {
+            throw new InvalidDataException($"Unsupported world-save version {document.Version}; expected 0 or {CurrentVersion}.");
+        }
         if (document.PlayerLocation is null)
             throw new InvalidDataException("World save has no player location.");
         if (document.InstanceIdentities is null || document.CellChanges is null || document.RuntimeObjects is null)
@@ -260,6 +288,14 @@ public static class WorldSaveFile
         {
             throw new InvalidDataException($"World-save data is invalid: {exception.Message}", exception);
         }
+    }
+
+    public static WorldSaveSnapshot Load(string path, WorldManifest world)
+    {
+        ArgumentNullException.ThrowIfNull(world);
+        var snapshot = Load(path);
+        snapshot.ValidateAgainstWorld(world);
+        return snapshot;
     }
 
     private static WorldSaveDocument ToDocument(WorldSaveSnapshot snapshot) => new()
