@@ -1,5 +1,6 @@
 using Ember.Scene;
 using Ember.Render;
+using Ember.Rpg;
 using Ember.World;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
@@ -23,6 +24,7 @@ internal sealed record SequenceExportEditorInfo(
     bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
 internal sealed record SequenceExportEditorRequest(
     string OutputDirectory, float StartTime, float EndTime, int FrameRate, int Width, int Height);
+internal sealed record RpgPlacementOption(WorldEntityKind Kind, string Id, string Name);
 
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed class CharacterStudioEditorUi : IDisposable
@@ -54,6 +56,7 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Action<string> _saveSceneAs;
     private readonly Func<string, string, string?> _openWorldCell;
     private readonly Action<string, string, Guid> _worldCellRenamed;
+    private readonly Func<string?> _getCurrentScenePath;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -63,6 +66,17 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private string _cellName = "New Cell";
     private string _renameCellName = string.Empty;
     private string _sceneSaveAsPath = Path.Combine(Environment.CurrentDirectory, "Scenes", "Untitled.json");
+    private string _rpgContentPath = Path.Combine(AppContext.BaseDirectory, "Assets", "RpgPlacementDefinitions.json");
+    private string _rpgPlacementStatus = "Load RPG placement definitions.";
+    private RpgContentSet? _rpgContent;
+    private string? _selectedRpgDefinitionKey;
+    private NumericsVector3 _rpgPlacementPosition = NumericsVector3.Zero;
+    private NumericsVector3 _spawnMarkerPosition = NumericsVector3.Zero;
+    private string _travelStatus = "Open a world manifest to author travel links.";
+    private Guid? _selectedTravelCellId;
+    private Guid? _selectedTravelSpawnId;
+    private readonly Dictionary<Guid, string> _doorLinkStatuses = new();
+    private readonly Dictionary<Guid, (string Path, DateTime LastWriteUtc, SceneGraph Scene)> _travelSceneCache = new();
     private WorldManifest? _worldManifest;
     private Guid? _selectedWorldCellId;
     private int _exteriorCellX;
@@ -114,7 +128,7 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         Func<SequenceExportEditorInfo> getSequenceExportInfo,
         Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
         Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
-        Action<string, string, Guid> worldCellRenamed)
+        Action<string, string, Guid> worldCellRenamed, Func<string?> getCurrentScenePath)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -142,6 +156,8 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _saveSceneAs = saveSceneAs ?? throw new ArgumentNullException(nameof(saveSceneAs));
         _openWorldCell = openWorldCell ?? throw new ArgumentNullException(nameof(openWorldCell));
         _worldCellRenamed = worldCellRenamed ?? throw new ArgumentNullException(nameof(worldCellRenamed));
+        _getCurrentScenePath = getCurrentScenePath ?? throw new ArgumentNullException(nameof(getCurrentScenePath));
+        LoadRpgPlacementContent();
         _context = ImGui.CreateContext();
         try
         {
@@ -209,9 +225,295 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         DrawPanel(scene);
         DrawSequencePanel();
         DrawWorldCellPanel();
+        DrawRpgPlacementPanel(scene);
+        DrawWorldTravelPanel(scene);
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
+    }
+
+    private void DrawRpgPlacementPanel(SceneGraph scene)
+    {
+        ImGui.SetNextWindowPos(new NumericsVector2(800f, 16f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(450f, 286f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("RPG Placement", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputTextWithHint("##rpgContentPath", "Path to registered RPG definitions", ref _rpgContentPath, 1024);
+        if (ImGui.Button("Load definitions")) LoadRpgPlacementContent();
+        ImGui.SameLine();
+        ImGui.TextDisabled(_rpgContent is null ? "No definitions loaded" :
+            $"{_rpgContent.Actors.Count} actors · {_rpgContent.Items.Count} items");
+
+        if (_rpgContent is not null)
+        {
+            var options = GetRpgPlacementOptions();
+            ImGui.BeginChild("RPG definition list", new NumericsVector2(0f, 112f), ImGuiChildFlags.Borders);
+            foreach (var option in options)
+            {
+                var key = RpgPlacementKey(option);
+                if (ImGui.Selectable($"{option.Name} · {option.Kind}##{key}",
+                    string.Equals(_selectedRpgDefinitionKey, key, StringComparison.Ordinal)))
+                    _selectedRpgDefinitionKey = key;
+            }
+            ImGui.EndChild();
+
+            ImGui.SetNextItemWidth(-1f);
+            ImGui.InputFloat3("Position", ref _rpgPlacementPosition);
+            var selected = options.FirstOrDefault(option =>
+                string.Equals(RpgPlacementKey(option), _selectedRpgDefinitionKey, StringComparison.Ordinal));
+            var canPlace = selected is not null && !_isPlaying();
+            if (!canPlace) ImGui.BeginDisabled();
+            if (ImGui.Button("Place selected definition")) PlaceRpgDefinition(scene, selected!);
+            if (!canPlace) ImGui.EndDisabled();
+        }
+
+        ImGui.TextWrapped(_rpgPlacementStatus);
+        ImGui.End();
+    }
+
+    private IReadOnlyList<RpgPlacementOption> GetRpgPlacementOptions()
+    {
+        if (_rpgContent is null) return Array.Empty<RpgPlacementOption>();
+        return _rpgContent.Actors.All.Values
+            .Select(actor => new RpgPlacementOption(WorldEntityKind.Actor, actor.Id.Value, actor.Name))
+            .Concat(_rpgContent.Items.All.Values
+                .Select(item => new RpgPlacementOption(WorldEntityKind.Item, item.Id.Value, item.Name)))
+            .OrderBy(option => option.Kind)
+            .ThenBy(option => option.Name, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(option => option.Id, StringComparer.Ordinal)
+            .ToArray();
+    }
+
+    private static string RpgPlacementKey(RpgPlacementOption option) => $"{option.Kind}:{option.Id}";
+
+    private void LoadRpgPlacementContent()
+    {
+        _rpgContent = null;
+        _selectedRpgDefinitionKey = null;
+        try
+        {
+            _rpgContent = RpgContentJson.Load(_rpgContentPath);
+            _rpgPlacementStatus = $"Loaded definitions from {Path.GetFileName(_rpgContentPath)}.";
+        }
+        catch (Exception exception)
+        {
+            _rpgPlacementStatus = $"Could not load definitions: {exception.Message}";
+        }
+    }
+
+    private void PlaceRpgDefinition(SceneGraph scene, RpgPlacementOption option)
+    {
+        try
+        {
+            var placement = SceneObjectFactory.CreateWorldEntityPlacement(scene, option.Kind, option.Id,
+                option.Name, new Vector3(_rpgPlacementPosition.X, _rpgPlacementPosition.Y, _rpgPlacementPosition.Z));
+            CommitActiveTransformEdit(scene);
+            RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(placement)));
+            _selectedObjectId = placement.Id;
+            _rpgPlacementStatus = $"Placed {option.Kind.ToString().ToLowerInvariant()} '{option.Name}' " +
+                $"with instance ID {placement.WorldEntity!.InstanceId}.";
+        }
+        catch (Exception exception)
+        {
+            _rpgPlacementStatus = $"Could not place definition: {exception.Message}";
+        }
+    }
+
+    private void DrawWorldTravelPanel(SceneGraph scene)
+    {
+        ImGui.SetNextWindowPos(new NumericsVector2(800f, 310f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(450f, 400f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("World Travel", ImGuiWindowFlags.NoCollapse))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var activeCell = FindCurrentWorldCell();
+        if (_worldManifest is null)
+        {
+            ImGui.TextWrapped("Open a world manifest in World Cells before adding spawn markers or door links.");
+            ImGui.TextWrapped(_travelStatus);
+            ImGui.End();
+            return;
+        }
+
+        if (_selectedTravelCellId is null || _worldManifest.FindCell(_selectedTravelCellId.Value) is null)
+            _selectedTravelCellId = activeCell?.Id;
+        ImGui.TextDisabled(activeCell is null
+            ? "Save/open a scene that belongs to this world to edit its links."
+            : $"Active cell: {WorldCellWorkspace.GetCellName(activeCell)}");
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputFloat3("Spawn position", ref _spawnMarkerPosition);
+        var canAddSpawn = activeCell is not null && !_isPlaying();
+        if (!canAddSpawn) ImGui.BeginDisabled();
+        if (ImGui.Button("Add spawn marker to active cell")) AddSpawnMarker(scene);
+        if (!canAddSpawn) ImGui.EndDisabled();
+
+        ImGui.Separator();
+        ImGui.Text("Destination cell");
+        ImGui.BeginChild("Travel destination cells", new NumericsVector2(0f, 70f), ImGuiChildFlags.Borders);
+        foreach (var cell in _worldManifest.Cells)
+        {
+            var location = cell.ExteriorCoordinate is { } coordinate
+                ? $"Exterior ({coordinate.X}, {coordinate.Z})"
+                : "Interior";
+            if (ImGui.Selectable($"{WorldCellWorkspace.GetCellName(cell)} · {location}##travel-{cell.Id:N}",
+                _selectedTravelCellId == cell.Id))
+            {
+                _selectedTravelCellId = cell.Id;
+                _selectedTravelSpawnId = null;
+                _travelStatus = $"Selected {WorldCellWorkspace.GetCellName(cell)}.";
+            }
+        }
+        ImGui.EndChild();
+
+        var targetCell = _selectedTravelCellId is { } targetId ? _worldManifest.FindCell(targetId) : null;
+        SceneGraph? targetScene = null;
+        if (targetCell is not null)
+        {
+            try { targetScene = LoadTravelScene(targetCell, scene, activeCell); }
+            catch (Exception exception) { _travelStatus = $"Could not open destination scene: {exception.Message}"; }
+        }
+
+        ImGui.Text("Destination spawn");
+        ImGui.BeginChild("Travel destination spawns", new NumericsVector2(0f, 62f), ImGuiChildFlags.Borders);
+        if (targetScene is not null)
+        {
+            foreach (var marker in targetScene.Objects.Where(item => item.SpawnPoint is not null)
+                .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                if (ImGui.Selectable($"{marker.Name} · {marker.SpawnPoint!.Id:N}##spawn-{marker.Id:N}",
+                    _selectedTravelSpawnId == marker.SpawnPoint.Id))
+                    _selectedTravelSpawnId = marker.SpawnPoint.Id;
+            }
+        }
+        ImGui.EndChild();
+
+        var selectedObject = _selectedObjectId is { } objectId ? scene.Find(objectId) : null;
+        var selectedSpawn = targetScene?.Objects.FirstOrDefault(item => item.SpawnPoint?.Id == _selectedTravelSpawnId);
+        var canLink = !_isPlaying() && activeCell is not null && selectedObject is not null && targetCell is not null
+            && selectedSpawn?.SpawnPoint is not null;
+        if (!canLink) ImGui.BeginDisabled();
+        if (ImGui.Button(selectedObject?.Door is null ? "Link selected object to spawn" : "Update selected door link"))
+            ApplyDoorLink(scene, selectedObject!, targetCell!, targetScene!, selectedSpawn!);
+        if (!canLink) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button("Check door links")) CheckDoorLinks(scene, activeCell);
+
+        ImGui.BeginChild("Door link statuses", new NumericsVector2(0f, 52f), ImGuiChildFlags.Borders);
+        foreach (var door in scene.Objects.Where(item => item.Door is not null).OrderBy(item => item.Name,
+            StringComparer.OrdinalIgnoreCase))
+        {
+            var status = _doorLinkStatuses.GetValueOrDefault(door.Id, "Not checked");
+            var color = status.StartsWith("Broken:", StringComparison.Ordinal)
+                ? new NumericsVector4(1f, 0.35f, 0.3f, 1f)
+                : status == "Not checked" ? new NumericsVector4(0.75f, 0.75f, 0.75f, 1f)
+                : new NumericsVector4(0.4f, 0.9f, 0.5f, 1f);
+            ImGui.TextColored(color, $"{door.Name}: {status}");
+        }
+        ImGui.EndChild();
+
+        ImGui.TextWrapped(_travelStatus);
+        ImGui.End();
+    }
+
+    private void AddSpawnMarker(SceneGraph scene)
+    {
+        try
+        {
+            var marker = SceneObjectFactory.CreateSpawnMarker(scene, "Spawn",
+                new Vector3(_spawnMarkerPosition.X, _spawnMarkerPosition.Y, _spawnMarkerPosition.Z));
+            CommitActiveTransformEdit(scene);
+            RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(marker)));
+            _selectedObjectId = marker.Id;
+            _selectedTravelSpawnId = marker.SpawnPoint!.Id;
+            _travelStatus = $"Added spawn '{marker.Name}' with stable ID {marker.SpawnPoint.Id}.";
+        }
+        catch (Exception exception)
+        {
+            _travelStatus = $"Could not add spawn marker: {exception.Message}";
+        }
+    }
+
+    private void ApplyDoorLink(SceneGraph scene, SceneObject doorObject, WorldCellDefinition targetCell,
+        SceneGraph targetScene, SceneObject spawnObject)
+    {
+        try
+        {
+            var replacement = new WorldDoorComponent(targetCell.Id, spawnObject.SpawnPoint!.Id,
+                doorObject.Door?.Facing ?? Quaternion.Identity);
+            var destination = WorldTravelValidator.ResolveDestination(_worldManifest!,
+                new Dictionary<Guid, SceneGraph> { [targetCell.Id] = targetScene }, replacement);
+            CommitActiveTransformEdit(scene);
+            RunStructureChange(scene, () => _history.Execute(scene,
+                new WorldDoorEditCommand(doorObject.Id, replacement)));
+            _doorLinkStatuses[doorObject.Id] = $"Valid → {destination.Position.X:0.##}, {destination.Position.Y:0.##}, {destination.Position.Z:0.##}";
+            _travelStatus = $"Linked '{doorObject.Name}' to {WorldCellWorkspace.GetCellName(targetCell)} / {spawnObject.Name}.";
+        }
+        catch (Exception exception)
+        {
+            _travelStatus = $"Could not create door link: {exception.Message}";
+        }
+    }
+
+    private void CheckDoorLinks(SceneGraph scene, WorldCellDefinition? activeCell)
+    {
+        _doorLinkStatuses.Clear();
+        if (_worldManifest is null) return;
+        foreach (var item in scene.Objects.Where(item => item.Door is not null))
+        {
+            try
+            {
+                var door = item.Door!;
+                var targetCell = _worldManifest.FindCell(door.DestinationCellId)
+                    ?? throw new InvalidDataException($"Unknown cell {door.DestinationCellId}.");
+                var targetScene = LoadTravelScene(targetCell, scene, activeCell);
+                var destination = WorldTravelValidator.ResolveDestination(_worldManifest,
+                    new Dictionary<Guid, SceneGraph> { [targetCell.Id] = targetScene }, door);
+                _doorLinkStatuses[item.Id] = $"Valid → {destination.Position.X:0.##}, {destination.Position.Y:0.##}, {destination.Position.Z:0.##}";
+            }
+            catch (Exception exception)
+            {
+                _doorLinkStatuses[item.Id] = $"Broken: {exception.Message}";
+            }
+        }
+        _travelStatus = $"Checked {_doorLinkStatuses.Count} door link(s).";
+    }
+
+    private WorldCellDefinition? FindCurrentWorldCell()
+    {
+        if (_worldManifest is null || string.IsNullOrWhiteSpace(_getCurrentScenePath())) return null;
+        string currentPath;
+        try { currentPath = Path.GetFullPath(_getCurrentScenePath()!); }
+        catch { return null; }
+        foreach (var cell in _worldManifest.Cells)
+        {
+            var scenePath = _worldManifest.ResolveScenePath(cell.Id);
+            if (string.Equals(currentPath, Path.GetFullPath(scenePath), StringComparison.OrdinalIgnoreCase))
+                return cell;
+        }
+        return null;
+    }
+
+    private SceneGraph LoadTravelScene(WorldCellDefinition cell, SceneGraph currentScene,
+        WorldCellDefinition? activeCell)
+    {
+        if (activeCell?.Id == cell.Id) return currentScene;
+        var path = _worldManifest!.ResolveScenePath(cell.Id);
+        var lastWriteUtc = File.GetLastWriteTimeUtc(path);
+        if (_travelSceneCache.TryGetValue(cell.Id, out var cached)
+            && string.Equals(cached.Path, path, StringComparison.OrdinalIgnoreCase)
+            && cached.LastWriteUtc == lastWriteUtc)
+            return cached.Scene;
+        var loaded = SceneFile.Load(path);
+        _travelSceneCache[cell.Id] = (path, lastWriteUtc, loaded);
+        return loaded;
     }
 
     private void DrawWorldCellPanel()

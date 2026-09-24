@@ -1208,3 +1208,21 @@ At this update, 139 of 155 roadmap rows are complete (89.7%). Task 129 is next. 
 | Check | Result |
 | --- | --- |
 | `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj -c Release --no-restore --filter FullyQualifiedName~GltfAnimationTests --nologo` | PASS — 13 passed, 0 failed, 0 skipped |
+
+## Tasks 129–130 — RPG placement palette and door travel picker — 24 September 2026
+
+- Task 129: scene format version 6 stores a typed actor/item definition ID and stable world-instance ID. CharacterStudio loads validated RPG content and lists registered actors/items in a placement palette. New placements receive unique scene and instance IDs; duplication creates a fresh instance ID, scene save/load preserves it, and the identity map adopts the authored ID while rejecting conflicts or drift. These are logical placements and do not yet bind character/item models or animation sets.
+- Task 130: CharacterStudio can add stable spawn markers to the active world cell, select a destination cell and spawn marker, validate the destination with `WorldTravelValidator`, and assign the link through undoable scene history. The panel checks every authored door and labels unresolved cell/spawn references as broken.
+- The sample palette content registers two actors and two items. The travel picker uses the active in-memory scene for unsaved spawn edits and reloads cached destination scenes when their path or modification time changes.
+
+### Tasks 129–130 and review-fix checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 225 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check/Ember.Rpg.Check.csproj -c Release --no-build --no-restore` | PASS — save then load equals original |
+| CharacterStudio Release screenshot smoke | PASS — 1280×720; RPG panel loaded both sample catalogues and the World Travel panel rendered |
+| Direct mouse-driven editor actions | Not automated; placement, stable-ID persistence, validator rejection, and command undo/redo have regression coverage. The visible broken-link status still needs a direct editor interaction check. |
+
+At this update, 141 of 155 ordered rows are complete (91.0%). Task 131 is next. Task 144 remains a conditional performance-triage gate before increasing world density if the long-frame tail recurs.

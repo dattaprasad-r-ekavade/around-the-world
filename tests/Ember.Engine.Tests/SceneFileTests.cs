@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using Ember.Scene;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Xunit;
 
@@ -42,6 +43,53 @@ public sealed class SceneFileTests
         {
             Delete(path);
         }
+    }
+
+    [Fact]
+    public void SaveAndLoadPreservesRegisteredRpgPlacementAndStableInstanceId()
+    {
+        var scene = new SceneGraph();
+        var objectId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        scene.Add(new SceneObject(objectId, "Town Guard")
+        {
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.town-guard", instanceId),
+            Transform = new Transform { Position = new Vector3(3f, 0f, 5f) }
+        });
+        var path = TemporaryPath();
+        try
+        {
+            SceneFile.SaveAtomic(scene, path);
+            var json = File.ReadAllText(path);
+            var loaded = SceneFile.Load(path);
+
+            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
+            Assert.Equal(WorldEntityKind.Actor, loaded.Find(objectId)!.WorldEntity!.Kind);
+            Assert.Equal("actors.town-guard", loaded.Find(objectId)!.WorldEntity!.DefinitionId);
+            Assert.Equal(instanceId, loaded.Find(objectId)!.WorldEntity!.InstanceId);
+            Assert.Equal(new Vector3(3f, 0f, 5f), loaded.Find(objectId)!.Transform.Position);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
+    public void SaveRejectsDuplicateAuthoredWorldEntityInstanceIds()
+    {
+        var sharedInstanceId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(Guid.NewGuid(), "Actor")
+        {
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.guard", sharedInstanceId)
+        });
+        scene.Add(new SceneObject(Guid.NewGuid(), "Item")
+        {
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item, "items.sword", sharedInstanceId)
+        });
+
+        Assert.Throws<InvalidDataException>(() => SceneFile.SaveAtomic(scene, TemporaryPath()));
     }
 
     [Fact]
@@ -96,7 +144,7 @@ public sealed class SceneFileTests
             var loaded = SceneFile.Load(path);
             var lod = loaded.Find(objectId)!.StaticMeshLod!;
 
-            Assert.Contains("\"Version\": 5", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
             Assert.Equal(near.AssetId, lod.NearAsset.AssetId);
             Assert.Equal(near.SourcePath, lod.NearAsset.SourcePath);
             Assert.Equal(far.AssetId, lod.FarAsset.AssetId);
@@ -234,7 +282,7 @@ public sealed class SceneFileTests
             var first = loaded.Find(firstId)!.CharacterSettings!;
             var second = loaded.Find(secondId)!.CharacterSettings!;
 
-            Assert.Contains("\"Version\": 5", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
             Assert.Equal("Walk", first.ClipName);
             Assert.Equal(0.35f, first.Time);
             Assert.Equal(1.5f, first.Speed);
@@ -271,7 +319,7 @@ public sealed class SceneFileTests
 
             Assert.Null(loaded.Find(Guid.Parse("30303030-3030-3030-3030-303030303030"))!.CharacterSettings);
             SceneFile.SaveAtomic(loaded, path);
-            Assert.Contains("\"Version\": 5", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 6", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {

@@ -62,6 +62,41 @@ public sealed class WorldInstanceIdentityMapTests
         Assert.Throws<ArgumentException>(() => new WorldInstanceId(Guid.Empty));
     }
 
+    [Fact]
+    public void AuthoredRpgPlacementIdentitySurvivesReloadAndRejectsConflicts()
+    {
+        var cellId = Guid.NewGuid();
+        var objectId = Guid.NewGuid();
+        var authoredInstanceId = Guid.NewGuid();
+        var scenePath = Path.Combine(Path.GetTempPath(), "ember-authored-instance-" + Guid.NewGuid().ToString("N") + ".json");
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(objectId, "Guard")
+        {
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.guard", authoredInstanceId)
+        });
+
+        try
+        {
+            SceneFile.SaveAtomic(scene, scenePath);
+            var restoredScene = SceneFile.Load(scenePath);
+            var placed = restoredScene.Find(objectId)!;
+            var identities = new WorldInstanceIdentityMap();
+            Assert.Equal(authoredInstanceId, identities.GetOrCreate(cellId, placed).Value);
+            placed.WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.guard", Guid.NewGuid());
+            Assert.Throws<InvalidOperationException>(() => identities.GetOrCreate(cellId, placed));
+
+            var conflict = new SceneObject(Guid.NewGuid(), "Duplicate")
+            {
+                WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.guard", authoredInstanceId)
+            };
+            Assert.Throws<InvalidOperationException>(() => identities.GetOrCreate(Guid.NewGuid(), conflict));
+        }
+        finally
+        {
+            if (File.Exists(scenePath)) File.Delete(scenePath);
+        }
+    }
+
     private static SceneObject CreateAssetObject(Guid objectId, Guid assetId, Vector3 position) =>
         new(objectId, "Placed asset")
         {

@@ -137,12 +137,29 @@ public sealed class WorldInstanceIdentityMap
             throw new ArgumentException("World cell ID cannot be empty.", nameof(cellId));
 
         var source = new InstanceSource(cellId, sceneObject.Id);
-        if (_bySource.TryGetValue(source, out var existing)) return existing;
+        if (_bySource.TryGetValue(source, out var existing))
+        {
+            if (sceneObject.WorldEntity is { } authored && authored.InstanceId != existing.Value)
+                throw new InvalidOperationException(
+                    $"Scene object {sceneObject.Id} in cell {cellId} has authored world instance ID {authored.InstanceId}, " +
+                    $"but its runtime identity is {existing.Value}.");
+            return existing;
+        }
 
-        Guid value;
-        do { value = Guid.NewGuid(); }
-        while (value == cellId || value == sceneObject.Id
-            || value == sceneObject.GltfAsset?.AssetId || !_instanceValues.Add(value));
+        var value = sceneObject.WorldEntity?.InstanceId ?? Guid.Empty;
+        if (value != Guid.Empty)
+        {
+            if (value == cellId || value == sceneObject.Id || value == sceneObject.GltfAsset?.AssetId
+                || !_instanceValues.Add(value))
+                throw new InvalidOperationException(
+                    $"Authored world entity instance ID {value} is already reserved or conflicts with another ID.");
+        }
+        else
+        {
+            do { value = Guid.NewGuid(); }
+            while (value == cellId || value == sceneObject.Id
+                || value == sceneObject.GltfAsset?.AssetId || !_instanceValues.Add(value));
+        }
 
         var instanceId = new WorldInstanceId(value);
         _bySource.Add(source, instanceId);

@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -27,6 +28,9 @@
              CopyToOutputDirectory="PreserveNewest" />
     <Content Include="..\..\samples\CharacterStudio\Assets\Fox.glb"
              Link="Assets\Fox.glb"
+             CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\..\samples\CharacterStudio\Assets\RpgPlacementDefinitions.json"
+             Link="Assets\RpgPlacementDefinitions.json"
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

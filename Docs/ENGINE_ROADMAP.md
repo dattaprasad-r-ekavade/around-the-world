@@ -283,8 +283,8 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
 | [x] | 128 | Add a cell browser for creating/opening exterior and interior cells. | IDs remain stable after renaming; coordinates cannot collide. |
-| [ ] | 129 | Add an actor/item placement palette backed by registered RPG definitions. | New placements get unique instance IDs and reopen correctly. |
-| [ ] | 130 | Add a door destination/spawn picker. | Selecting a destination creates a valid travel link and exposes broken links visibly. |
+| [x] | 129 | Add an actor/item placement palette backed by registered RPG definitions. | New placements get unique instance IDs and reopen correctly. |
+| [x] | 130 | Add a door destination/spawn picker. | Selecting a destination creates a valid travel link and exposes broken links visibly. |
 | [ ] | 131 | Add path-node/edge editing with reachability visualization. | A route authored in the tool can be followed by an NPC in play mode. |
 | [ ] | 132 | Add a dialogue record panel with condition/effect editing. | The branching conversation can be edited and validated without source changes. |
 | [ ] | 133 | Add a quest objective/event-reference panel. | Missing target IDs are identified before play/package, and valid objectives run. |
@@ -333,14 +333,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 128 — CharacterStudio can create and browse world manifests, create exterior/interior scene files, open cells, and rename cells while preserving their IDs and coordinates.
-- Current task: 129 — add an actor/item placement palette backed by registered RPG definitions.
-- Current checklist: 139 of 155 ordered rows complete (89.7%); task 129 is the first unchecked baseline row.
+- Last completed task: 130 — CharacterStudio can place registered RPG actors/items with stable world-instance IDs and edit/check cell-to-spawn door links.
+- Current task: 131 — add path-node/edge editing with reachability visualization.
+- Current checklist: 141 of 155 ordered rows complete (91.0%); task 131 is the first unchecked baseline row.
 - Current gates: the Stage 13 reference benchmark gate passed on the recorded 3×3 blockout. The Stage 14 settlement-authoring gate and earlier Release B/C/D integration gates remain Pending. Task 144 remains required before increasing world density if the long-frame tail recurs.
-- Latest changes: a filesystem-backed cell workspace and CharacterStudio World Cells panel; cell scene switching saves the prior scene first and has a Save As path for untitled work.
-- Verification: see the 24 September 2026 task 128 entry in `ENGINE_PROGRESS.md` for the Release build, test suite, and CharacterStudio capture.
+- Latest changes: registered RPG definitions feed a CharacterStudio placement palette; placements persist stable IDs in scene version 6. The World Travel panel adds spawn markers, validates door links, supports undo/redo, and displays broken-link diagnostics.
+- Verification: see the 24 September 2026 tasks 129–130 entry in `ENGINE_PROGRESS.md` for the Release build, full test suite, RPG save/load check, and CharacterStudio capture.
 - Limits: cell names are represented by their scene-file names; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: task 129, expose registered RPG actor and item definitions in the placement palette.
+- Next action: task 131, add path-node/edge authoring and reachability visualization.
 
 Suggested request to an implementing AI:
 

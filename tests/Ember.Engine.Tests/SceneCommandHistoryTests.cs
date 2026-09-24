@@ -1,5 +1,6 @@
 using System;
 using Ember.Scene;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Xunit;
 
@@ -127,6 +128,55 @@ public sealed class SceneCommandHistoryTests
         Assert.Equal("Assets/Fox.glb", scene.Find(first.Id)!.GltfAsset!.SourcePath);
         Assert.Equal("Assets/Fox.glb", scene.Find(second.Id)!.GltfAsset!.SourcePath);
         Assert.Equal(new Vector3(100f, 0f, 0f), scene.Find(second.Id)!.Transform.Position);
+    }
+
+    [Fact]
+    public void RpgPlacementFactoryAndDuplicateUseUniqueStableInstanceIds()
+    {
+        var scene = new SceneGraph();
+        var history = new SceneCommandHistory();
+        var first = SceneObjectFactory.CreateWorldEntityPlacement(scene, WorldEntityKind.Actor,
+            "actors.guard", "Guard", new Vector3(2f, 0f, 3f));
+        history.Execute(scene, new CreateSceneObjectCommand(first));
+        var second = SceneObjectFactory.CreateWorldEntityPlacement(scene, WorldEntityKind.Actor,
+            "actors.guard", "Guard", new Vector3(4f, 0f, 3f));
+        history.Execute(scene, new CreateSceneObjectCommand(second));
+        var item = SceneObjectFactory.CreateWorldEntityPlacement(scene, WorldEntityKind.Item,
+            "items.sword", "Iron Sword", new Vector3(3f, 0f, 3f));
+        var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, first.Id);
+
+        Assert.NotEqual(first.Id, second.Id);
+        Assert.NotEqual(first.WorldEntity!.InstanceId, second.WorldEntity!.InstanceId);
+        Assert.NotEqual(first.Name, second.Name);
+        Assert.Equal("actors.guard", second.WorldEntity.DefinitionId);
+        Assert.Equal(WorldEntityKind.Item, item.WorldEntity!.Kind);
+        Assert.NotEqual(first.WorldEntity.InstanceId, item.WorldEntity.InstanceId);
+        Assert.NotEqual(first.WorldEntity.InstanceId, duplicate.WorldEntity!.InstanceId);
+        Assert.Equal(WorldEntityKind.Actor, duplicate.WorldEntity.Kind);
+    }
+
+    [Fact]
+    public void SpawnMarkerFactoryAndDoorEditUndoRedoPreserveStableReferences()
+    {
+        var scene = new SceneGraph();
+        var history = new SceneCommandHistory();
+        var marker = SceneObjectFactory.CreateSpawnMarker(scene, "Entrance", new Vector3(1f, 2f, 3f));
+        scene.Add(marker);
+        var otherMarker = SceneObjectFactory.CreateSpawnMarker(scene, "Entrance", Vector3.Zero);
+        scene.Add(otherMarker);
+        var doorObject = new SceneObject(Guid.NewGuid(), "Door");
+        scene.Add(doorObject);
+        var link = new WorldDoorComponent(Guid.NewGuid(), marker.SpawnPoint!.Id, Quaternion.Identity);
+
+        history.Execute(scene, new WorldDoorEditCommand(doorObject.Id, link));
+        Assert.Same(link, doorObject.Door);
+        Assert.True(history.Undo(scene));
+        Assert.Null(doorObject.Door);
+        Assert.True(history.Redo(scene));
+        Assert.Same(link, scene.Find(doorObject.Id)!.Door);
+        Assert.NotEqual(marker.Id, otherMarker.Id);
+        Assert.NotEqual(marker.SpawnPoint.Id, otherMarker.SpawnPoint!.Id);
+        Assert.NotEqual(marker.Name, otherMarker.Name);
     }
 
     [Fact]

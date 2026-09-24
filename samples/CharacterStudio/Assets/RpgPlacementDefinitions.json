@@ -1,0 +1,25 @@
+{
+  "actors": [
+    {
+      "id": "actors.town-guard",
+      "name": "Town Guard"
+    },
+    {
+      "id": "actors.villager",
+      "name": "Villager"
+    }
+  ],
+  "items": [
+    {
+      "id": "items.iron-sword",
+      "name": "Iron Sword",
+      "slot": "mainhand",
+      "stackable": false
+    },
+    {
+      "id": "items.health-potion",
+      "name": "Health Potion",
+      "stackable": true
+    }
+  ]
+}

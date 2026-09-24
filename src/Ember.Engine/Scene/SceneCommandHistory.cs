@@ -144,6 +144,54 @@ public static class SceneObjectDuplicator
 /// <summary>Creates a new scene object that instances an already imported GLB asset.</summary>
 public static class SceneObjectFactory
 {
+    public static SceneObject CreateSpawnMarker(SceneGraph scene, string displayName, Vector3 position)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (string.IsNullOrWhiteSpace(displayName))
+            throw new ArgumentException("Spawn marker name is required.", nameof(displayName));
+        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+            throw new ArgumentException("Spawn marker position must be finite.", nameof(position));
+
+        var sceneObjectId = Guid.NewGuid();
+        while (scene.Find(sceneObjectId) is not null) sceneObjectId = Guid.NewGuid();
+        var spawnIds = scene.Objects.Where(item => item.SpawnPoint is not null)
+            .Select(item => item.SpawnPoint!.Id).ToHashSet();
+        var spawnId = Guid.NewGuid();
+        while (spawnIds.Contains(spawnId)) spawnId = Guid.NewGuid();
+        return new SceneObject(sceneObjectId,
+            SceneObjectCopy.UniqueName(displayName, scene.Objects.Select(item => item.Name)))
+        {
+            SpawnPoint = new WorldSpawnComponent(spawnId),
+            Transform = new Transform { Position = position }
+        };
+    }
+
+    public static SceneObject CreateWorldEntityPlacement(SceneGraph scene, WorldEntityKind kind,
+        string definitionId, string displayName, Vector3 position)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (string.IsNullOrWhiteSpace(displayName))
+            throw new ArgumentException("World entity display name is required.", nameof(displayName));
+        if (!float.IsFinite(position.X) || !float.IsFinite(position.Y) || !float.IsFinite(position.Z))
+            throw new ArgumentException("World entity position must be finite.", nameof(position));
+
+        var sceneObjectId = Guid.NewGuid();
+        while (scene.Find(sceneObjectId) is not null) sceneObjectId = Guid.NewGuid();
+        var usedInstanceIds = scene.Objects
+            .Where(item => item.WorldEntity is not null)
+            .Select(item => item.WorldEntity!.InstanceId)
+            .ToHashSet();
+        var instanceId = Guid.NewGuid();
+        while (usedInstanceIds.Contains(instanceId)) instanceId = Guid.NewGuid();
+
+        return new SceneObject(sceneObjectId,
+            SceneObjectCopy.UniqueName(displayName, scene.Objects.Select(item => item.Name)))
+        {
+            WorldEntity = new WorldEntityPlacementComponent(kind, definitionId, instanceId),
+            Transform = new Transform { Position = position }
+        };
+    }
+
     public static SceneObject CreateAssetInstance(SceneGraph scene, GltfAssetReference asset, Vector3 position)
     {
         ArgumentNullException.ThrowIfNull(scene);
@@ -160,6 +208,45 @@ public static class SceneObjectFactory
             GltfAsset = asset,
             Transform = new Transform { Position = position }
         };
+    }
+}
+
+/// <summary>A reversible edit to one scene object's inter-cell door destination.</summary>
+public sealed class WorldDoorEditCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly WorldDoorComponent _replacement;
+    private WorldDoorComponent? _previous;
+    private bool _captured;
+
+    public WorldDoorEditCommand(Guid objectId, WorldDoorComponent replacement)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        _objectId = objectId;
+        _replacement = replacement ?? throw new ArgumentNullException(nameof(replacement));
+    }
+
+    public void Apply(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        var item = scene.Find(_objectId)
+            ?? throw new InvalidOperationException($"Cannot edit missing door object {_objectId}.");
+        if (!_captured)
+        {
+            _previous = item.Door;
+            _captured = true;
+        }
+        item.Door = _replacement;
+    }
+
+    public void Revert(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!_captured)
+            throw new InvalidOperationException("Cannot undo a door edit that was not applied.");
+        var item = scene.Find(_objectId)
+            ?? throw new InvalidOperationException($"Cannot undo missing door object {_objectId}.");
+        item.Door = _previous;
     }
 }
 
@@ -210,6 +297,12 @@ internal static class SceneObjectCopy
             CharacterSettings = CopySettings(source.CharacterSettings),
             Door = source.Door,
             ResetPolicy = source.ResetPolicy,
+            WorldEntity = source.WorldEntity is null
+                ? null
+                : id is null
+                    ? source.WorldEntity
+                    : new WorldEntityPlacementComponent(source.WorldEntity.Kind,
+                        source.WorldEntity.DefinitionId, Guid.NewGuid()),
             SpawnPoint = source.SpawnPoint is null
                 ? null
                 : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())

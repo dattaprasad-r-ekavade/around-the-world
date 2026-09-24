@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -22,6 +23,7 @@
     <Content Include="Assets\Fox.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\ReleaseACourtyard.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\InteractionChime.wav" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\RpgPlacementDefinitions.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Scenes\ReleaseAShowcase.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

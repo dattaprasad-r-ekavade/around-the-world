@@ -211,7 +211,7 @@ public sealed class CharacterStudioGame : EngineHost
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
-                SaveSceneAs, OpenWorldCell, OnWorldCellRenamed);
+                SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,

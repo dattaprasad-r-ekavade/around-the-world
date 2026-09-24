@@ -100,6 +100,7 @@ public sealed class SceneObject
     public GltfCharacterSettings? CharacterSettings { get; set; }
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }
+    public WorldEntityPlacementComponent? WorldEntity { get; set; }
     public WorldInstanceResetPolicy ResetPolicy { get; set; } = WorldInstanceResetPolicy.Preserve;
 }
 

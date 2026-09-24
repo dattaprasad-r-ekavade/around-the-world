@@ -11,7 +11,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 5;
+    public const int CurrentVersion = 6;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -87,6 +87,7 @@ public static class SceneFile
         foreach (var data in document.Objects) ValidateData(data, document.Version);
         ValidateAssetReferences(document.Objects);
         ValidateAttachmentIds(document.Objects);
+        ValidateWorldEntityInstanceIds(document.Objects);
 
         var scene = new SceneGraph();
         var parents = new Dictionary<Guid, Guid?>();
@@ -103,6 +104,7 @@ public static class SceneFile
                 CharacterSettings = ToCharacterSettings(data.Character),
                 Door = ToDoorComponent(data.Door),
                 SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id),
+                WorldEntity = ToWorldEntityComponent(data.WorldEntity),
                 ResetPolicy = data.ResetPolicy
             };
             scene.Add(item);
@@ -146,6 +148,7 @@ public static class SceneFile
                     Character = ToCharacterData(value.CharacterSettings),
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
+                    WorldEntity = ToWorldEntityData(value.WorldEntity),
                     ResetPolicy = value.ResetPolicy,
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
@@ -161,6 +164,7 @@ public static class SceneFile
 
         ValidateAssetReferences(objects);
         ValidateAttachmentIds(objects);
+        ValidateWorldEntityInstanceIds(objects);
         ValidateAcyclic(objects);
         return new SceneDocument { Version = CurrentVersion, Objects = objects };
     }
@@ -210,6 +214,21 @@ public static class SceneFile
             ? null
             : new WorldDoorComponent(data.DestinationCellId, data.DestinationSpawnId,
                 new Quaternion(data.Facing![0], data.Facing[1], data.Facing[2], data.Facing[3]));
+
+    private static WorldEntityPlacementComponent? ToWorldEntityComponent(SceneWorldEntityData? data) =>
+        data is null
+            ? null
+            : new WorldEntityPlacementComponent(data.Kind, data.DefinitionId!, data.InstanceId);
+
+    private static SceneWorldEntityData? ToWorldEntityData(WorldEntityPlacementComponent? component) =>
+        component is null
+            ? null
+            : new SceneWorldEntityData
+            {
+                Kind = component.Kind,
+                DefinitionId = component.DefinitionId,
+                InstanceId = component.InstanceId
+            };
 
     private static SceneDoorData? ToDoorData(WorldDoorComponent? door) =>
         door is null
@@ -326,12 +345,22 @@ public static class SceneFile
 
         if (documentVersion < 3 && (data.Door is not null || data.SpawnPoint is not null))
             throw new InvalidDataException($"Object {data.Id} world travel components require scene version 3.");
+        if (documentVersion < 6 && data.WorldEntity is not null)
+            throw new InvalidDataException($"Object {data.Id} world entity placement requires scene version 6.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
             throw new InvalidDataException($"Object {data.Id} reset policy requires scene version 4.");
         if (data.SpawnPoint is { Id: var spawnId } && spawnId == Guid.Empty)
             throw new InvalidDataException($"Object {data.Id} has an empty spawn ID.");
+        if (data.WorldEntity is { } worldEntity)
+        {
+            try { _ = new WorldEntityPlacementComponent(worldEntity.Kind, worldEntity.DefinitionId!, worldEntity.InstanceId); }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException($"Object {data.Id} has an invalid world entity placement: {exception.Message}", exception);
+            }
+        }
         if (data.Door is { } door)
         {
             if (door.DestinationCellId == Guid.Empty || door.DestinationSpawnId == Guid.Empty)
@@ -394,6 +423,17 @@ public static class SceneFile
         }
     }
 
+    private static void ValidateWorldEntityInstanceIds(IEnumerable<SceneObjectData> objects)
+    {
+        var ids = new HashSet<Guid>();
+        foreach (var data in objects)
+        {
+            if (data.WorldEntity is not { } placement) continue;
+            if (!ids.Add(placement.InstanceId))
+                throw new InvalidDataException($"Duplicate world entity instance ID: {placement.InstanceId}.");
+        }
+    }
+
     private static float[] ToArray(Matrix value) =>
     [
         value.M11, value.M12, value.M13, value.M14,
@@ -443,6 +483,7 @@ public static class SceneFile
         public SceneCharacterData? Character { get; set; }
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
+        public SceneWorldEntityData? WorldEntity { get; set; }
         public WorldInstanceResetPolicy ResetPolicy { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
@@ -488,5 +529,12 @@ public static class SceneFile
     private sealed class SceneSpawnData
     {
         public Guid Id { get; set; }
+    }
+
+    private sealed class SceneWorldEntityData
+    {
+        public WorldEntityKind Kind { get; set; }
+        public string? DefinitionId { get; set; }
+        public Guid InstanceId { get; set; }
     }
 }
