@@ -794,7 +794,16 @@ through the capsule controller and stops safely when it cannot make progress bef
 connections. Cell kinds, endpoint IDs, clearance, and door instance IDs are validated. Persist the
 connections with `WorldPathNetworkFile`; cell graphs remain in their per-cell files. The world route
 search returns local `WorldPathLeg`s plus explicit `TransitionToNext` data, so each NPC walks to its
-boundary or door before the later cell-travel system loads the destination and transfers ownership.
+boundary or door before `WorldNpcCellTransition` prepares and activates the destination, then transfers
+the runtime object and its stable world-instance identity. The transition leaves the source cell active,
+since the player may still be using it. Start one transition after each local route leg arrives; the
+destination actor remains uniquely owned when `WorldSaveSnapshot` is captured and restored.
+
+`ActorPerception.Evaluate` checks sight range and casts a physics ray against the World collision layer.
+`Ember.Rpg.EnemyCombatAi.Tick` consumes that visibility result and current actor positions, then returns
+an idle, chase, attack, or dead decision. Apply `DesiredMoveDirection` to the physics character
+controller and commit the returned actor records together. The AI uses `MeleeCombat` for hits and clears
+its target and movement intent when sight is lost or either actor dies.
 
 ## The sample
 

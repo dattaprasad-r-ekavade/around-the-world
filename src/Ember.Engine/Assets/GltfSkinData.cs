@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Graphics;
 using SharpGLTF.Schema2;
 
 namespace Ember.Assets;
@@ -71,6 +72,9 @@ public sealed class GltfSkinData
             ?? throw new NotSupportedException($"Node '{DisplayName(meshNode)}' has no skin to import.");
         if (skin.JointsCount == 0)
             throw new NotSupportedException($"Skin {skin.LogicalIndex} has no joints.");
+        if (skin.JointsCount > SkinnedEffect.MaxBones)
+            throw new NotSupportedException(
+                $"The current SkinnedEffect supports at most {SkinnedEffect.MaxBones} joints; skin {skin.LogicalIndex} has {skin.JointsCount}.");
         if (skin.InverseBindMatrices.Count != 0 && skin.InverseBindMatrices.Count != skin.JointsCount)
             throw new InvalidDataException(
                 $"Skin {skin.LogicalIndex} has {skin.InverseBindMatrices.Count} inverse-bind matrices for {skin.JointsCount} joints.");
@@ -93,6 +97,7 @@ public sealed class GltfSkinData
             if (!sourceTransform.IsSRT)
                 throw new NotSupportedException(
                     $"Skeleton node '{DisplayName(source)}' uses a matrix transform; Ember stores joint transforms as position, rotation, and scale.");
+            ValidateRestTransform(source);
 
             int? parentNodeIndex = null;
             if (source.VisualParent is { } parent)
@@ -139,6 +144,27 @@ public sealed class GltfSkinData
         value.M21, value.M22, value.M23, value.M24,
         value.M31, value.M32, value.M33, value.M34,
         value.M41, value.M42, value.M43, value.M44);
+
+    private static void ValidateRestTransform(Node node)
+    {
+        var transform = node.LocalTransform;
+        var translation = transform.Translation;
+        var rotation = transform.Rotation;
+        var scale = transform.Scale;
+        if (!IsFinite(translation) || !IsFinite(scale)
+            || !float.IsFinite(rotation.X) || !float.IsFinite(rotation.Y)
+            || !float.IsFinite(rotation.Z) || !float.IsFinite(rotation.W))
+            throw new InvalidDataException($"Skeleton node '{DisplayName(node)}' has a non-finite rest transform.");
+
+        var lengthSquared = rotation.LengthSquared();
+        if (!float.IsFinite(lengthSquared) || lengthSquared <= 1e-8f
+            || MathF.Abs(lengthSquared - 1f) > 1e-3f)
+            throw new InvalidDataException(
+                $"Skeleton node '{DisplayName(node)}' has a rest rotation that is not a unit quaternion.");
+    }
+
+    private static bool IsFinite(System.Numerics.Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 
     private static string DisplayName(Node node) =>
         string.IsNullOrWhiteSpace(node.Name) ? $"Node {node.LogicalIndex}" : node.Name;

@@ -213,6 +213,26 @@ public sealed class GltfSceneImporterTests
     }
 
     [Fact]
+    public void RejectsSkinThatExceedsTheSkinnedEffectJointLimitDuringImport()
+    {
+        var model = ModelRoot.CreateModel();
+        var scene = model.UseScene("Scene");
+        var meshNode = scene.CreateNode("Mesh");
+        var rigRoot = scene.CreateNode("RigRoot");
+        var joints = Enumerable.Range(0, SkinnedEffect.MaxBones + 1)
+            .Select(index => rigRoot.CreateNode($"Joint{index}"))
+            .ToArray();
+        var skin = model.CreateSkin("OversizedSkin");
+        skin.BindJoints(System.Numerics.Matrix4x4.Identity, joints);
+        meshNode.Skin = skin;
+
+        var exception = Assert.Throws<NotSupportedException>(() => GltfSkinData.Import(model, meshNode));
+
+        Assert.Contains($"at most {SkinnedEffect.MaxBones} joints", exception.Message, StringComparison.Ordinal);
+        Assert.Contains($"has {SkinnedEffect.MaxBones + 1}", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void ImportsAndNormalizesFourFoxInfluencesPerVertex()
     {
         var model = ModelRoot.Load(FoxFixturePath());

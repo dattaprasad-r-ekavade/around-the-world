@@ -1011,3 +1011,20 @@ At this update, 121 of 154 roadmap rows are complete (78.6%). Task 111 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
 
 At this update, 123 of 154 roadmap rows are complete (79.9%). Task 113 is next. The Stage 10 save/restart integration, Stage 11 branching-quest gate, and Stage 12 multi-NPC schedule/travel gate remain Pending.
+
+## Review fix and tasks 113–115 — NPC travel, perception, and combat AI — 24 September 2026
+
+- Resolved the outstanding character-import review item: `GltfSkinData.Import` rejects skins above the current `SkinnedEffect` joint limit before pose creation. It validates finite rest position/scale/quaternion values and unit rest rotations at import, with errors naming the source skeleton node. Regression coverage rejects a 73-joint skin; the Fox character fixture continues to import.
+- Task 113 adds `WorldNpcCellTransition`. It prepares and activates each destination before atomically moving the runtime object and stable identity across cells. The source stays active for the player's use. A three-cell route crosses an exterior boundary and an interior door, then a world-save reload restores the follower in exactly one cell. A destination collision test confirms failed transfers leave the follower and identity in the source.
+- Task 114 adds `ActorPerception.Evaluate`, which checks range and uses a World-layer physics ray for line of sight. Tests cover a blocking wall, a clear path, distance limits, and geometry behind the target.
+- Task 115 adds a data-only idle/chase/attack/dead enemy state machine in `Ember.Rpg`. It returns movement direction for the engine controller and uses `MeleeCombat` for damage/cooldown. Checks cover pursuit intent, a successful strike, cooldown, target loss, and death. `Ember.Rpg` remains independent of engine physics; the game loop supplies the physics visibility result.
+
+### Review and tasks 113–115 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 194 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — save/load plus enemy pursuit, attack, cooldown, target-loss, and death checks |
+
+At this update, 126 of 154 roadmap rows are complete (81.8%). Task 116 is next. The Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel gate remain Pending.

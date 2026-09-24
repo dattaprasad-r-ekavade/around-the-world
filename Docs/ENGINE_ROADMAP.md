@@ -249,9 +249,9 @@ Begin with authored path nodes rather than a navmesh generator. Implement the na
 | [x] | 110 | Implement route search on that graph. | Known shortest paths and unreachable targets pass fixtures. |
 | [x] | 111 | Move one NPC along a route through the character controller. | It reaches the destination while respecting collision; blocked motion times out safely. |
 | [x] | 112 | Connect exterior boundary nodes and interior door links. | A route can describe travel across cells and through a door without teleporting during local movement. |
-| [ ] | 113 | Add NPC travel execution using cell loading and persistent ownership transfer. | A following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload. |
-| [ ] | 114 | Add sight/range perception with physics line-of-sight queries. | An obstacle blocks detection; removing it allows detection within range. |
-| [ ] | 115 | Add a small idle/chase/attack state machine using existing combat actions. | One enemy notices, pursues, attacks, and stops after losing its target or dying. |
+| [x] | 113 | Add NPC travel execution using cell loading and persistent ownership transfer. | A following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload. |
+| [x] | 114 | Add sight/range perception with physics line-of-sight queries. | An obstacle blocks detection; removing it allows detection within range. |
+| [x] | 115 | Add a small idle/chase/attack state machine using existing combat actions. | One enemy notices, pursues, attacks, and stops after losing its target or dying. |
 | [ ] | 116 | Add near/far/dormant actor update tiers with per-frame work budgets. | Distant actors stop expensive animation/perception updates; reactivation preserves their state. |
 | [ ] | 117 | Add a world clock and a two-destination daily NPC schedule. | Time changes select the correct destination without creating duplicate travel requests. |
 | [ ] | 118 | Define dormant schedule catch-up without replaying every missed frame. | Returning after a time skip produces the expected NPC location/state with bounded work. |
@@ -327,15 +327,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 76–78 — cell lifecycle, owner-thread activation, and exterior loading ring.
-- Current task: 79 — add a bounded per-frame activation/upload queue with work limits and timing diagnostics.
-- Current checklist: 89 of 154 ordered rows complete (57.8%); task 79 is the first unchecked row.
-- Current gate: Release E passed on the tested Windows host; Stage 9 now has a manifest-backed exterior sample, validated cell state, asynchronous CPU preparation, and ring request planning.
-- Changed files for the latest batch: `CellLifecycle.cs`, `WorldCellLoadOperation.cs`, `ExteriorCellLoadingRing.cs`, their engine tests, and this roadmap/progress update.
-- Checks: `dotnet build Ember.sln --nologo` (0 warnings, 0 errors); `dotnet test Ember.sln --no-build --nologo` (143 passed, 0 failed); RPG save/load check passed. Focused lifecycle/preparation/ring tests passed (16 total), including failure cleanup, worker/owner thread identity, atomic active-resource publication, boundary crossing, exact-once requests, and re-request after forgetting an unloaded cell.
-- Results: lifecycle accepts only authored state transitions and disposes preparation data on failure. Cell CPU preparation runs on a worker; activation and unload require the captured owner thread; consumers see active resources only after the activation callback succeeds. The square loading ring uses the shared floor-based grid mapping and suppresses duplicate requests.
-- Limitations: thread-affinity tests use disposable fixtures rather than live graphics-device resources. The ring produces coordinate requests; queue budgeting, cancellation, retention, and concrete world activation remain later tasks.
-- Next action: task 79, add a bounded per-frame activation/upload queue with diagnostics.
+- Last completed tasks: 113–115 — NPC cell transitions, physics sight queries, and enemy combat decisions. Also resolved the character-import review finding about skeleton limits and invalid rest transforms.
+- Current task: 116 — add near/far/dormant actor update tiers with per-frame work budgets.
+- Current checklist: 126 of 154 ordered rows complete (81.8%); task 116 is the first unchecked row.
+- Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel remain Pending.
+- Latest changes: `WorldNpcCellTransition`, `ActorPerception`, `EnemyCombatAi`, their regression checks, and this roadmap/progress update.
+- Verification: see the dated 24 September entry in `ENGINE_PROGRESS.md` for build, full-suite, and RPG check results.
+- Limits: NPC cell transitions are committed one authored portal at a time and deliberately keep the source cell active. The game loop advances its local follower, loads the next cell, then applies the returned AI movement intent to a controller. No navmesh generation, autonomous door animation, or full game sample has been added yet.
+- Next action: task 116, budget actor updates by near/far/dormant tier.
 
 Suggested request to an implementing AI:
 
@@ -535,7 +534,7 @@ The code quality is high for a project at this stage. Validation errors name the
 | High — Resolved 24 September 2026 | **The character importer silently dropped unskinned meshes.** It collected the one skinned node and ignored every other node that had a mesh, so props or armour baked into a character GLB disappeared without an error. | `Assets/GltfSkinnedCharacterData.cs` | Import now rejects an unskinned mesh node with a `NotSupportedException` naming it; `RejectsAdditionalUnskinnedMeshNodesByName` is the negative fixture. |
 | High — Resolved 24 September 2026 | **Every skinned draw allocates a new bone array.** Both `Draw` overloads run `new Matrix[pose.JointCount]`, then copy the skin matrices into it. That is one allocation per mesh, per pass (shadow and main), per character, per frame. NPC counts in Stage 12 will multiply it. | `Assets/SkinnedMeshGpuBuffer.cs:110-112,132-136` | Each GPU buffer now owns one joint-count-sized scratch array and copies both draw paths into it; no bone array is allocated per draw. |
 | Medium — Resolved 24 September 2026 | **A looping clip could sit at exactly `Duration`.** `Seek` allowed the endpoint while looped `Advance` always wrapped into `[0, Duration)`, causing a one-frame endpoint pose before the next advance. | `Assets/GltfAnimationPlayback.cs`; `GltfAnimationTests.cs` | Looped seeks at or beyond the duration now wrap to 0. Regression tests cover endpoint seeking, multiple-period wrapping, reverse non-loop playback reaching 0, and a zero-duration clip. |
-| Medium | **Skeleton and rest-pose limits are checked late.** A skeleton with more than 72 joints imports successfully on the CPU and fails only when uploaded. A rest transform that is NaN or has a zero-length quaternion surfaces later as a pose error rather than an import error. | `Assets/GltfSkinData.cs:101-110`; `SkinnedEffectCompatibility` | Validate the joint count and finite/unit rest TRS inside `GltfSkinData.Import`, reusing the same messages. |
+| Medium — Resolved 24 September 2026 | **Skeleton and rest-pose limits were checked late.** A skeleton with more than 72 joints imported successfully on the CPU and failed only when uploaded. | `Assets/GltfSkinData.cs`; `SkinnedEffectCompatibility` | `GltfSkinData.Import` now rejects skins above the `SkinnedEffect` joint limit before creating node/pose data. It also validates finite rest position/scale/quaternion components and a unit rest quaternion, naming the offending skeleton node. The 73-joint rejection and valid Fox fixture pass. |
 | Medium | **Attachment placement assumes the pose's world matrices are current.** `GltfBoneAttachment.GetWorldMatrix` reads the cached node matrices from the last `ComputeSkinMatrices`. A `SetLocalTransform` without a recompute gives a stale prop position. This matters for task 99 (equipment attachments). | `Assets/GltfBoneAttachment.cs:37-43`; `Assets/GltfSkinPose.cs:51-84` | Add a pose generation counter and assert that it is current, or recompute lazily. |
 | Low | Neither GPU buffer checks for `GraphicsProfile.Reach` before creating a 32-bit index buffer, even though the skinning compatibility check accepts Reach. The shipped consumers use HiDef, so this is latent. | `Assets/StaticMeshGpuBuffer.cs:39-52`; `Assets/SkinnedMeshGpuBuffer.cs:54` | Reject indices above 65,535 on Reach with a clear error, or require HiDef throughout the engine. |
 | Low | `SkinnedMeshGpuBuffer.Draw` accepts any pose with the same joint count, even one from a different skin. Other code uses `UsesSkin`/`ReferenceEquals`. | `Assets/SkinnedMeshGpuBuffer.cs:102,129` | Store the skin and require `pose.UsesSkin(skin)`. |

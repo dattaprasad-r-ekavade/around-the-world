@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Numerics;
 using Ember.Rpg;
 
 namespace Ember.Rpg.Check;
@@ -30,6 +31,7 @@ internal static class Program
             InventoryTransferChecks(problems);
             EquipmentChecks(problems);
             MeleeAndActorPersistenceChecks(problems);
+            EnemyCombatAiChecks(problems);
             SpellAndFactionChecks(problems);
             QuestEventChecks(problems);
             MerchantTradeChecks(problems);
@@ -399,6 +401,47 @@ internal static class Program
             || !saved.ActorStates.TryGet(attackerId, out var restoredAttacker)
             || restoredAttacker.MeleeCooldownRemaining != 1)
             problems.Add("actor death, carried inventory, world identity, and cooldown should survive save/load");
+    }
+
+    private static void EnemyCombatAiChecks(List<string> problems)
+    {
+        var actorId = new ContentId<ActorContentKind>("actor.guard");
+        var enemy = new ActorRuntimeState(Guid.NewGuid(), actorId, 12);
+        var target = new ActorRuntimeState(Guid.NewGuid(), actorId, 10);
+        var profile = new MeleeAttackProfile(range: 1.5, damage: 3, cooldownSeconds: 1);
+        var idle = new EnemyCombatAiMemory();
+
+        var chase = EnemyCombatAi.Tick(idle, enemy, target,
+            new Vector3(0, 1, 0), new Vector3(5, 1, 0), canSeeTarget: true, attackProfile: profile);
+        if (chase.Memory.State != EnemyCombatAiState.Chasing
+            || chase.Memory.TargetWorldInstanceId != target.WorldInstanceId
+            || chase.DesiredMoveDirection != Vector3.UnitX || chase.AttackLanded)
+            problems.Add("a visible distant target should make an enemy pursue in the target's direction");
+
+        var attack = EnemyCombatAi.Tick(chase.Memory, chase.Enemy, chase.Target,
+            new Vector3(3, 1, 0), new Vector3(4, 1, 0), canSeeTarget: true, attackProfile: profile);
+        if (attack.Memory.State != EnemyCombatAiState.Attacking || !attack.AttackLanded
+            || attack.DesiredMoveDirection != Vector3.Zero || attack.Target?.CurrentHealth != 7
+            || attack.Enemy.MeleeCooldownRemaining != 1)
+            problems.Add("an enemy that reaches a visible target should use the existing melee action and stop moving");
+
+        var cooldown = EnemyCombatAi.Tick(attack.Memory, attack.Enemy, attack.Target,
+            new Vector3(3, 1, 0), new Vector3(4, 1, 0), canSeeTarget: true, attackProfile: profile);
+        if (cooldown.AttackLanded || cooldown.Target?.CurrentHealth != 7)
+            problems.Add("an enemy should not deal a second hit during its melee cooldown");
+
+        var lost = EnemyCombatAi.Tick(cooldown.Memory, cooldown.Enemy, cooldown.Target,
+            new Vector3(3, 1, 0), new Vector3(4, 1, 0), canSeeTarget: false, attackProfile: profile);
+        if (lost.Memory.State != EnemyCombatAiState.Idle || lost.Memory.TargetWorldInstanceId.HasValue
+            || lost.DesiredMoveDirection != Vector3.Zero || lost.AttackLanded)
+            problems.Add("an enemy should clear its target and stop when line of sight is lost");
+
+        var deadEnemy = attack.Enemy with { CurrentHealth = 0, IsDead = true };
+        var dead = EnemyCombatAi.Tick(attack.Memory, deadEnemy, attack.Target,
+            new Vector3(3, 1, 0), new Vector3(4, 1, 0), canSeeTarget: true, attackProfile: profile);
+        if (dead.Memory.State != EnemyCombatAiState.Dead || dead.DesiredMoveDirection != Vector3.Zero
+            || dead.AttackLanded || dead.Enemy != deadEnemy)
+            problems.Add("a dead enemy should stop moving and attacking");
     }
 
     private static void SpellAndFactionChecks(List<string> problems)
