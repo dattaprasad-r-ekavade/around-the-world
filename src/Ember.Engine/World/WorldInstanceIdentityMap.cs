@@ -66,6 +66,31 @@ public sealed class WorldInstanceIdentityMap
         _bySource.Add(source, instanceId);
     }
 
+    /// <summary>Moves one stable scene-object identity to its new owning cell.</summary>
+    public void Transfer(Guid sourceCellId, Guid destinationCellId, Guid sceneObjectId, WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        if (sourceCellId == Guid.Empty || destinationCellId == Guid.Empty || sourceCellId == destinationCellId)
+            throw new ArgumentException("Identity transfer requires two different nonempty cell IDs.");
+        if (sceneObjectId == Guid.Empty || instanceId.Value == Guid.Empty)
+            throw new ArgumentException("Identity transfer requires nonempty object and instance IDs.");
+
+        var source = new InstanceSource(sourceCellId, sceneObjectId);
+        var destination = new InstanceSource(destinationCellId, sceneObjectId);
+        if (!_bySource.TryGetValue(source, out var current) || current != instanceId)
+            throw new InvalidOperationException($"World instance {instanceId.Value} is not owned by source cell {sourceCellId}.");
+        if (_bySource.ContainsKey(destination))
+            throw new InvalidOperationException($"Scene object ID {sceneObjectId} is already assigned in destination cell {destinationCellId}.");
+
+        _bySource.Remove(source);
+        try { _bySource.Add(destination, instanceId); }
+        catch
+        {
+            _bySource.Add(source, instanceId);
+            throw;
+        }
+    }
+
     /// <summary>Returns the same identity for the same cell and authored scene object across reloads.</summary>
     public WorldInstanceId GetOrCreate(Guid cellId, SceneObject sceneObject)
     {

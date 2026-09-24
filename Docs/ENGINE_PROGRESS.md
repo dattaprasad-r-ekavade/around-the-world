@@ -789,3 +789,19 @@ At this update, 98 of 154 roadmap rows are complete (63.6%). Task 88 is next. Th
 | `WorldRuntimeObjectStoreTests` | PASS — stable IDs returned after reload; repeated restore added no duplicate |
 
 At this update, 99 of 154 roadmap rows are complete (64.3%). Task 89 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
+
+## Task 89 — atomic world-instance cell transfer — 24 September 2026
+
+- Added `WorldRuntimeObjectStore.Transfer` to move a runtime object record, stable scene-object ID, and `WorldInstanceId` from one cell owner to another. The caller supplies the destination-local transform; the identity map moves with the record.
+- Transfer prevalidates source ownership and destination collisions, stages the destination object, and rolls back the scene, record, and identity mapping if a later commit operation fails. The source object remains intact when prevalidation rejects the move.
+- The fixture moves a spawned relic between two cell scenes, reloads both authored scenes, and restores exactly one copy in the destination with the original world-instance ID.
+
+### Task 89 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 171 tests, 0 failed, 0 skipped |
+| `WorldInstanceTransferTests` | PASS — destination has the moved object after reload; source does not; stable IDs are preserved |
+
+At this update, 100 of 154 roadmap rows are complete (64.9%). Task 90 is next. Runtime records and changes are still memory-only; Stage 10's save/restart gate remains pending until versioned world-save serialization is complete.
