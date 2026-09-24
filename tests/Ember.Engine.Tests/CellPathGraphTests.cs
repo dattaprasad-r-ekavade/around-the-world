@@ -20,6 +20,7 @@ public sealed class CellPathGraphTests
             var graph = new CellPathGraph
             {
                 CellId = cellId,
+                Kind = WorldCellKind.Interior,
                 Nodes = new[]
                 {
                     new CellPathNode(start, new NavigationPoint(1, 2, 3)),
@@ -32,6 +33,7 @@ public sealed class CellPathGraphTests
             var loaded = CellPathGraphFile.Load(path);
 
             Assert.Equal(cellId, loaded.CellId);
+            Assert.Equal(WorldCellKind.Interior, loaded.Kind);
             Assert.Equal(graph.Nodes, loaded.Nodes);
             Assert.Equal(graph.Edges, loaded.Edges);
             Assert.Equal(0.65f, Assert.Single(loaded.Edges).ClearanceRadius);

@@ -247,8 +247,8 @@ Begin with authored path nodes rather than a navmesh generator. Implement the na
 | --- | --- | --- | --- |
 | [x] | 109 | Add per-cell path nodes/edges with obstacle clearance metadata. | Invalid endpoints are rejected and a small graph can be serialized/reopened. |
 | [x] | 110 | Implement route search on that graph. | Known shortest paths and unreachable targets pass fixtures. |
-| [ ] | 111 | Move one NPC along a route through the character controller. | It reaches the destination while respecting collision; blocked motion times out safely. |
-| [ ] | 112 | Connect exterior boundary nodes and interior door links. | A route can describe travel across cells and through a door without teleporting during local movement. |
+| [x] | 111 | Move one NPC along a route through the character controller. | It reaches the destination while respecting collision; blocked motion times out safely. |
+| [x] | 112 | Connect exterior boundary nodes and interior door links. | A route can describe travel across cells and through a door without teleporting during local movement. |
 | [ ] | 113 | Add NPC travel execution using cell loading and persistent ownership transfer. | A following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload. |
 | [ ] | 114 | Add sight/range perception with physics line-of-sight queries. | An obstacle blocks detection; removing it allows detection within range. |
 | [ ] | 115 | Add a small idle/chase/attack state machine using existing combat actions. | One enemy notices, pursues, attacks, and stops after losing its target or dying. |

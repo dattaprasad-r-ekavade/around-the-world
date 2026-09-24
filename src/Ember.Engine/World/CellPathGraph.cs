@@ -32,12 +32,15 @@ public sealed record CellPathEdge(Guid FromNodeId, Guid ToNodeId, float Clearanc
 public sealed record CellPathGraph
 {
     public Guid CellId { get; init; }
+    public WorldCellKind? Kind { get; init; }
     public IReadOnlyList<CellPathNode> Nodes { get; init; } = Array.Empty<CellPathNode>();
     public IReadOnlyList<CellPathEdge> Edges { get; init; } = Array.Empty<CellPathEdge>();
 
     public void Validate()
     {
         if (CellId == Guid.Empty) throw new InvalidDataException("Navigation graph cell ID cannot be empty.");
+        if (Kind is { } kind && !Enum.IsDefined(kind))
+            throw new InvalidDataException($"Navigation graph has unknown cell kind '{kind}'.");
         if (Nodes is null || Edges is null) throw new InvalidDataException("Navigation graph nodes and edges are required.");
 
         var nodes = new Dictionary<Guid, CellPathNode>();

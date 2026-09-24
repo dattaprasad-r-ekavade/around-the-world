@@ -787,8 +787,14 @@ All balances, ownership, faction standing, inventory, and replay IDs round-trip 
 `CellPathGraphFile.SaveAtomic`/`Load`; missing endpoints, duplicate arcs, invalid positions, and
 nonpositive clearance are rejected. `CellRouteSearch.FindShortestRoute` returns the least-distance
 path whose edges fit the requested actor radius, or `null` when no route is available. A missing start
-or target ID is a content error and throws. Local movement and cross-cell door routing are later
-integration steps; the current search is deliberately scoped to one cell graph.
+or target ID is a content error and throws. `PhysicsCharacterPathFollower` follows one local route
+through the capsule controller and stops safely when it cannot make progress before its timeout.
+
+`WorldPathNetwork` connects nodes across authored cell graphs with typed exterior-boundary and door
+connections. Cell kinds, endpoint IDs, clearance, and door instance IDs are validated. Persist the
+connections with `WorldPathNetworkFile`; cell graphs remain in their per-cell files. The world route
+search returns local `WorldPathLeg`s plus explicit `TransitionToNext` data, so each NPC walks to its
+boundary or door before the later cell-travel system loads the destination and transfers ownership.
 
 ## The sample
 

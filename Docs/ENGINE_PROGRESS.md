@@ -995,3 +995,19 @@ At this update, 118 of 154 roadmap rows are complete (76.6%). Task 108 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — only configured skill actions progress, and saved partial use advances the intended rank after reload |
 
 At this update, 121 of 154 roadmap rows are complete (78.6%). Task 111 is next. Stage 10's live world-loader/save/restart and Stage 11's complete branching-quest integration gates remain Pending.
+
+## Tasks 111–112 — physics route following and cross-cell route plans — 24 September 2026
+
+- Added `PhysicsCharacterPathFollower` for one local `CellPathRoute`. It drives the existing capsule controller, advances through waypoints, reports arrival, and stops issuing movement when collision prevents progress through its timeout.
+- Added typed exterior-boundary and door connections between cell graphs. Network validation checks cell kinds, stable endpoint node IDs, clearance, unique arcs, and door-instance IDs. Versioned network files persist connections separately from each cell's navigation graph.
+- Added world-route search that returns separate local node legs and explicit oriented transitions. A cross-cell/door route therefore describes where local movement ends and which cell transition follows, without blending the portal gap into local movement.
+
+### Tasks 111–112 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 189 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
+
+At this update, 123 of 154 roadmap rows are complete (79.9%). Task 113 is next. The Stage 10 save/restart integration, Stage 11 branching-quest gate, and Stage 12 multi-NPC schedule/travel gate remain Pending.
