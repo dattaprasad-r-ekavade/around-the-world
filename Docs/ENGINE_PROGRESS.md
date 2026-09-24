@@ -901,3 +901,19 @@ At this update, 104 of 154 roadmap rows are complete (67.5%). Task 94 is next. T
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — content references, formula fixtures, modifier rules/expiry, and save/load round trip |
 
 At this update, 107 of 154 roadmap rows are complete (69.5%). Task 97 is next. The Stage 10 integration gate remains Pending until the live world loader wires these stores into gameplay and the full two-cell restart scenario is exercised.
+
+## Tasks 97–98 — persistent containers and atomic item transfers — 24 September 2026
+
+- Added `ContainerInventoryStore`, keyed by the stable world-instance GUID value. Bags are copied at store boundaries, and an emptied container remains as an empty record so authored loot cannot refill it after a save/reload.
+- Added `WorldItemStore` for loose item stacks and `InventoryTransfer.TryPickup`/`TryDrop`. Transfers prepare replacement inventory and world-item snapshots; invalid definitions, insufficient counts, duplicate IDs, or overflow return failure with both inputs unchanged.
+- Added save/load validation for duplicate or malformed container/world-item IDs and item entries. The RPG layer uses GUID values for world identities and remains independent of `Ember.Engine`.
+
+### Task 97–98 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — emptied container persists, failed transfers preserve both sides, pickup/drop conserve item counts, world-item save/load retains identity |
+
+At this update, 109 of 154 roadmap rows are complete (70.8%). Task 99 is next. The Stage 10 live loader/save/restart integration gate remains Pending.

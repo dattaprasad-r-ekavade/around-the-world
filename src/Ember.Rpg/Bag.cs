@@ -66,7 +66,7 @@ public sealed class Bag
             {
                 if (_entries[i].ItemId != def.Id) continue;
 
-                _entries[i] = _entries[i] with { Count = _entries[i].Count + count };
+                _entries[i] = _entries[i] with { Count = checked(_entries[i].Count + count) };
                 return;
             }
         }
@@ -112,6 +112,14 @@ public sealed class Bag
     /// then Add, rather than merging into whatever was already there.
     /// </summary>
     public void Clear() => _entries.Clear();
+
+    /// <summary>A detached copy for preparing a state transfer without mutating its source.</summary>
+    public Bag Copy()
+    {
+        var copy = new Bag();
+        foreach (var entry in _entries) copy.Restore(entry);
+        return copy;
+    }
 
     /// <summary>Load path only: put an entry back exactly as written — order, count, no stacking policy.</summary>
     internal void Restore(BagEntry entry) => _entries.Add(entry);

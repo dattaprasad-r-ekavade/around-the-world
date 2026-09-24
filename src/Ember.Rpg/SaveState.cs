@@ -6,8 +6,8 @@ using System.Text.Json;
 namespace Ember.Rpg;
 
 /// <summary>
-/// A save as data: the entities, the flags, the item definitions, the player's bag and
-/// equipment, and where the conversation has got to — and nothing else.
+/// A save as data: entities, flags, item definitions, player inventory and stats, persistent
+/// container/world-item inventories, and where the conversation has got to — and nothing else.
 ///
 /// No quests, no dialogue trees, no maps — those are a game's systems or content, built out
 /// of these (and out of the engine) rather than into this file's format. The format only has
@@ -51,11 +51,27 @@ public sealed record SaveState
     /// <summary>Which conversation is open and which node is showing; both null when nobody is talking.</summary>
     public DialogueProgress Dialogue { get; init; } = new();
 
-    public string ToJson() => JsonSerializer.Serialize(this, JsonOptions);
+    /// <summary>Container bags keyed by the stable world-instance GUID value.</summary>
+    public ContainerInventoryStore ContainerInventories { get; init; } = new();
 
-    public static SaveState FromJson(string json) =>
-        JsonSerializer.Deserialize<SaveState>(json, JsonOptions)
-        ?? throw new JsonException("The save was empty.");
+    /// <summary>Loose world items keyed by the stable world-instance GUID value.</summary>
+    public WorldItemStore WorldItems { get; init; } = new();
+
+    public string ToJson()
+    {
+        ContainerInventories.Validate();
+        WorldItems.Validate();
+        return JsonSerializer.Serialize(this, JsonOptions);
+    }
+
+    public static SaveState FromJson(string json)
+    {
+        var state = JsonSerializer.Deserialize<SaveState>(json, JsonOptions)
+            ?? throw new JsonException("The save was empty.");
+        state.ContainerInventories.Validate();
+        state.WorldItems.Validate();
+        return state;
+    }
 
     public void Write(string path) => File.WriteAllText(path, ToJson());
 

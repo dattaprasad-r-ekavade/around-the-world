@@ -149,6 +149,13 @@ public sealed class RpgContentSet
                 AddReferenceError(registry.CheckReference($"entity '{entity.Id}'.ActorId", actorId), errors);
         foreach (var entry in save.Player.Bag.Entries)
             AddReferenceError(registry.CheckReference($"player bag entry '{entry.ItemId.Value}'", entry.ItemId), errors);
+        foreach (var container in save.ContainerInventories.Entries)
+            foreach (var entry in container.Contents.Entries)
+                AddReferenceError(registry.CheckReference(
+                    $"container '{container.WorldInstanceId}' item '{entry.ItemId.Value}'", entry.ItemId), errors);
+        foreach (var entry in save.WorldItems.Entries)
+            AddReferenceError(registry.CheckReference(
+                $"world item '{entry.WorldInstanceId}'", entry.ItemId), errors);
         foreach (var (slot, itemId) in save.Player.Equip.All)
         {
             if (string.IsNullOrWhiteSpace(itemId))

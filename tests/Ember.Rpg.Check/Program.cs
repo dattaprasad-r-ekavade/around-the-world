@@ -24,6 +24,8 @@ internal static class Program
             ContentValidationChecks(problems);
             ActorStatFormulaChecks(problems);
             ModifierRuleChecks(problems);
+            ContainerPersistenceChecks(problems);
+            InventoryTransferChecks(problems);
 
             original.Write(path);
             var loaded = SaveState.Read(path);
@@ -190,6 +192,80 @@ internal static class Program
         var effective = baseStats.WithModifiers(replaced);
         if (effective.MaximumHealth != 30 || baseStats.MaximumHealth != 26 || baseStats.Attributes.Strength != 10)
             problems.Add("an active modifier should recalculate derived stats without permanently changing base attributes");
+    }
+
+    private static void ContainerPersistenceChecks(List<string> problems)
+    {
+        var itemId = new ContentId<ItemContentKind>("item.apple");
+        var definitions = new ItemCatalogue();
+        definitions.Add(new ItemDef(itemId, "Apple", null, Stackable: true));
+        var chestId = Guid.Parse("b41ee246-9991-4d38-b3a1-124ee936e1a7");
+        var authoredContents = new Bag();
+        authoredContents.Add(definitions.Get(itemId)!, 3);
+        var containers = new ContainerInventoryStore().SetContents(chestId, authoredContents);
+        authoredContents.Clear();
+
+        var lootedContents = containers.GetContents(chestId)!;
+        if (!lootedContents.Remove(itemId, 3))
+            problems.Add("the fixture should be able to loot all items from a container");
+        containers = containers.SetContents(chestId, lootedContents);
+
+        var saved = new SaveState { ItemDefs = definitions, ContainerInventories = containers };
+        var loaded = SaveState.FromJson(saved.ToJson());
+        var restored = loaded.ContainerInventories.GetContents(chestId);
+        if (restored is null || restored.Count(itemId) != 0 || loaded.ContainerInventories.Count != 1)
+            problems.Add("an emptied container should remain empty under the same world instance after save/reload");
+        if (containers.GetContents(chestId)?.Count(itemId) != 0)
+            problems.Add("reading or changing a container bag should not mutate its stored snapshot");
+    }
+
+    private static void InventoryTransferChecks(List<string> problems)
+    {
+        var itemId = new ContentId<ItemContentKind>("item.apple");
+        var unknownId = new ContentId<ItemContentKind>("item.unknown");
+        var definitions = new ItemCatalogue();
+        definitions.Add(new ItemDef(itemId, "Apple", null, Stackable: true));
+        var inventory = new Bag();
+        inventory.Add(definitions.Get(itemId)!, 2);
+        var sourceWorldId = Guid.NewGuid();
+        var worldItems = new WorldItemStore();
+        if (!worldItems.TryAdd(new WorldItemEntry(sourceWorldId, unknownId, 1), out worldItems))
+            problems.Add("the invalid-definition transfer fixture should enter the test world");
+        if (InventoryTransfer.TryPickup(sourceWorldId, inventory, worldItems, definitions,
+            out var failedInventory, out var failedWorld)
+            || inventory.Count(itemId) != 2 || failedInventory.Count(itemId) != 2
+            || !worldItems.TryGet(sourceWorldId, out _) || !failedWorld.TryGet(sourceWorldId, out _))
+            problems.Add("a pickup with a missing item definition should preserve both source and destination");
+
+        if (!new WorldItemStore().TryAdd(new WorldItemEntry(sourceWorldId, itemId, 3), out worldItems))
+        {
+            problems.Add("the valid world-item fixture should enter the test world");
+            return;
+        }
+        if (!InventoryTransfer.TryPickup(sourceWorldId, inventory, worldItems, definitions,
+            out var pickedInventory, out var pickedWorld)
+            || pickedInventory.Count(itemId) != 5 || pickedWorld.TryGet(sourceWorldId, out _)
+            || inventory.Count(itemId) != 2 || !worldItems.TryGet(sourceWorldId, out _))
+            problems.Add("a successful pickup should move the whole stack once and leave the inputs unchanged");
+
+        var droppedId = Guid.NewGuid();
+        if (InventoryTransfer.TryDrop(droppedId, pickedInventory, pickedWorld, definitions, itemId, 6,
+            out var failedDropInventory, out var failedDropWorld)
+            || failedDropInventory.Count(itemId) != 5 || failedDropWorld.Count != 0)
+            problems.Add("an insufficient-inventory drop should preserve both sides");
+        if (!InventoryTransfer.TryDrop(droppedId, pickedInventory, pickedWorld, definitions, itemId, 2,
+            out var droppedInventory, out var droppedWorld)
+            || droppedInventory.Count(itemId) != 3 || !droppedWorld.TryGet(droppedId, out var dropped)
+            || dropped.Count != 2)
+            problems.Add("a successful drop should remove exactly the requested count and create one world instance");
+        if (InventoryTransfer.TryDrop(droppedId, droppedInventory, droppedWorld, definitions, itemId, 1,
+            out var duplicateInventory, out var duplicateWorld)
+            || duplicateInventory.Count(itemId) != 3 || duplicateWorld.Count != 1)
+            problems.Add("a duplicate world instance ID should reject the drop without changing either side");
+
+        var saveRoundTrip = SaveState.FromJson(new SaveState { ItemDefs = definitions, WorldItems = droppedWorld }.ToJson());
+        if (!saveRoundTrip.WorldItems.TryGet(droppedId, out var restored) || restored.Count != 2)
+            problems.Add("dropped world-item identity and count should survive a save/load");
     }
 
     /// <summary>

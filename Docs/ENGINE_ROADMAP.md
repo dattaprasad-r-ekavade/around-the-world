@@ -224,8 +224,8 @@ Extend existing `Ember.Rpg` records, flags, inventory, dialogue, and quests wher
 | [x] | 94 | Register typed content IDs for actors, items, factions, dialogue, and quests. | Broken cross-references identify the source record and missing target. |
 | [x] | 95 | Add actor attributes, skills, and derived health/magicka/stamina through explicit formulas. | Numeric fixtures verify base values and recalculation without accidental permanent changes. |
 | [x] | 96 | Add timed stat modifiers with explicit stacking/expiry rules. | Applying, stacking, expiring, and saving/loading a modifier give expected values. |
-| [ ] | 97 | Persist container contents by world-instance ID using existing inventory primitives. | Looting and cell reload cannot recreate taken items. |
-| [ ] | 98 | Add atomic pickup/drop transfers between inventory and world instances. | Failed transfer preserves the original item; successful transfer neither duplicates nor loses it. |
+| [x] | 97 | Persist container contents by world-instance ID using existing inventory primitives. | Looting and cell reload cannot recreate taken items. |
+| [x] | 98 | Add atomic pickup/drop transfers between inventory and world instances. | Failed transfer preserves the original item; successful transfer neither duplicates nor loses it. |
 | [ ] | 99 | Connect equipment slots to stats and visual bone attachments. | Equip/unequip updates modifiers and attachment once; save/load preserves both. |
 | [ ] | 100 | Add a basic melee attack with range, cooldown, and damage rules. | One attack applies damage once; out-of-range targets take none. |
 | [ ] | 101 | Persist actor death and inventory state. | A dead looted actor stays dead and looted after travel/restart. |
