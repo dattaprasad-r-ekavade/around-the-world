@@ -176,7 +176,7 @@ src/Ember.Rpg/          Entity records, flags, items, dialogue, and quests. Game
 
 samples/FirstLight/     The contract sample: the smallest game that can be built on the above.
 
-samples/RpgSlice/      Manifest-loaded exterior cells with physics movement; `--streaming-smoke` checks budgeted 3x3 loading.
+samples/RpgSlice/      Manifest-loaded exterior cells with physics movement; `--streaming-smoke` checks budgeted 3x3 loading and retained-asset cleanup.
 
 samples/Campaign/       A game built on the engine. A consumer of src/, never part of it.
 

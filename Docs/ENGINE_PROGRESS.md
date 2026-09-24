@@ -642,3 +642,19 @@ The Stage 9 manifest/ring prerequisites are resolved. Continue with task 79: bou
 | RpgSlice managed-DLL `--streaming-smoke --windowed` | PASS — all 9 cells activated after the slow preparation; each frame stayed within 300 cost units and 3 cell steps, total cost 2,250 |
 
 At this point 90 of 154 roadmap rows are complete (58.4%). Task 80 is next. The sample's upload costs are deterministic work units used to validate scheduling; real GPU upload implementations still need to report their own cost estimates.
+
+## Task 80 — retained cells and shared asset references — 24 September 2026
+
+- Added `CellAssetReferencePool<TKey,TAsset>` and cell-owned leases. Assets are created once per key, stay alive while any retained cell holds a lease, and are disposed on the owner thread as soon as the last cell releases them.
+- The loading ring's wider retention radius now feeds explicit left-cell events into the sample smoke. RpgSlice simulates 20 cell-boundary crossings, verifies the retained set stays bounded, and checks a shared asset survives until the last reference is released.
+- The Stage 9 integration gate remains Pending: RpgSlice's 3×3 path validates preparation, scheduling, retention, and shared-resource lifetimes, but it does not yet walk terrain across cells or exercise interiors, collision waits, and failed destination travel.
+
+### Task 80 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 152 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--streaming-smoke --windowed` | PASS — 20 crossings kept shared references bounded and released the asset after its final user left |
+
+Task 80 is complete. Task 81 follows; its cancellation and stale-generation handling was implemented with the owner-thread review fix and will be checked as a roadmap row next.

@@ -112,6 +112,7 @@ public sealed class RpgSliceGame : EngineHost
             {
                 _streamingSmoke.Dispose();
                 _streamingSmoke = null;
+                RpgSliceRetentionSmoke.Run(_world);
                 _smokeRan = true;
                 Exit();
             }
