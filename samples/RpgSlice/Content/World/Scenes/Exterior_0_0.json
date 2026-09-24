@@ -1,5 +1,5 @@
 {
-  "Version": 2,
+  "Version": 3,
   "Objects": [
     {
       "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a11",
@@ -48,6 +48,53 @@
       "Position": [12, 4, 14],
       "Rotation": [0, 0, 0, 1],
       "Scale": [3.4, 3, 3.4]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a40",
+      "Name": "Door to House A",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Door": {
+        "DestinationCellId": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a01",
+        "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a31",
+        "Facing": [0, 0, 0, 1]
+      },
+      "Position": [6, 1, 6],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [1, 2, 0.25]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a41",
+      "Name": "Door to House B",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Door": {
+        "DestinationCellId": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a02",
+        "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a32",
+        "Facing": [0, 0, 0, 1]
+      },
+      "Position": [26, 1, 6],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [1, 2, 0.25]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a42",
+      "Name": "Exterior Return Spawn",
+      "Enabled": false,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "SpawnPoint": { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a30" },
+      "Position": [16, 1.1, 23],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [0.5, 0.5, 0.5]
     }
   ]
 }

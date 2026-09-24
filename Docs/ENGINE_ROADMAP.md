@@ -192,7 +192,7 @@ Start after task 72. Put reusable cell/loading code in `Ember.Engine/World`; kee
 | [x] | 80 | Unload cells outside a wider retention ring using asset reference counts. | Shared assets stay alive while another cell needs them; repeated crossings do not accumulate resources. |
 | [x] | 81 | Cancel obsolete load requests and reject stale completion results. | Rapid travel cannot activate old destination cells or leak their prepared resources. |
 | [x] | 82 | Prevent movement into a required cell until its collision is ready; expose a loading state. | Artificially delayed loading cannot make the player fall through missing terrain. |
-| [ ] | 83 | Add a door component with destination cell ID, spawn ID, and facing. | Validation catches invalid destinations; a door enters an interior at its authored spawn. |
+| [x] | 83 | Add a door component with destination cell ID, spawn ID, and facing. | Validation catches invalid destinations; a door enters an interior at its authored spawn. |
 | [ ] | 84 | Add transactional interior/exterior travel: preserve the source until destination activation succeeds. | Exit returns to the intended exterior; failed destination loading leaves the source playable. |
 
 **Integration gate: Pending.** Walk through a 3×3 exterior test grid, enter two independent interiors, and return. Test slow loads, failed loads, and rapid changes of direction. Record frame-time spikes and resource counts.

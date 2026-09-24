@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Ember.World;
 using Microsoft.Xna.Framework;
 
 namespace Ember.Scene;
@@ -58,6 +59,8 @@ public sealed class SceneObject
     public Guid? ParentId { get; internal set; }
     public GltfAssetReference? GltfAsset { get; set; }
     public GltfCharacterSettings? CharacterSettings { get; set; }
+    public WorldDoorComponent? Door { get; set; }
+    public WorldSpawnComponent? SpawnPoint { get; set; }
 }
 
 /// <summary>Per-instance skeletal clip, playback, and attachment settings saved with a scene object.</summary>

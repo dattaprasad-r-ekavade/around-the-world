@@ -689,3 +689,21 @@ At this update, 92 of 154 roadmap rows are complete (59.7%). Tasks 79–81 are c
 | RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — player moved 2.50 m inside the collision-ready cell |
 
 At this update, 93 of 154 roadmap rows are complete (60.4%). Task 83 is next. The Stage 9 integration gate remains Pending for seamless cross-cell traversal, door travel, and actual interior transitions.
+
+## Task 83 — authored doors and spawn points — 24 September 2026
+
+- Added scene-owned door and spawn components. Doors store a stable destination cell ID, spawn ID, and normalized facing; spawn transforms provide the authored arrival position.
+- Upgraded scene persistence to version 3 while retaining version 1 and 2 loading. Older scene versions reject world-travel components rather than silently dropping them. Scene copy/history preserves door data and gives duplicated spawn points new IDs.
+- Added world travel validation for unknown cells, unloaded destination scenes, duplicate spawn IDs within a cell, and missing destination spawns. Destination resolution returns the spawn's world-space position with the door's facing.
+- Added two interior fixtures to RpgSlice and exterior doors to both. Each interior has a return door to the exterior's authored return spawn.
+
+### Task 83 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 156 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — loaded the exterior fixture and moved 2.50 m |
+| Door resolution fixture | PASS — resolved the selected interior spawn at its authored world position and preserved door facing |
+
+At this update, 94 of 154 roadmap rows are complete (61.0%). Task 84 is next. The Stage 9 integration gate remains Pending for transactional travel, seamless cross-cell traversal, and live interior transitions.

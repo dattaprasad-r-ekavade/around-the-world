@@ -177,7 +177,7 @@ public sealed class SceneFileTests
             var first = loaded.Find(firstId)!.CharacterSettings!;
             var second = loaded.Find(secondId)!.CharacterSettings!;
 
-            Assert.Contains("\"Version\": 2", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 3", json, StringComparison.Ordinal);
             Assert.Equal("Walk", first.ClipName);
             Assert.Equal(0.35f, first.Time);
             Assert.Equal(1.5f, first.Speed);
@@ -214,7 +214,7 @@ public sealed class SceneFileTests
 
             Assert.Null(loaded.Find(Guid.Parse("30303030-3030-3030-3030-303030303030"))!.CharacterSettings);
             SceneFile.SaveAtomic(loaded, path);
-            Assert.Contains("\"Version\": 2", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 3", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {

@@ -10,6 +10,8 @@
     { "id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a06", "kind": "Exterior", "exteriorCoordinate": { "x": 1, "z": 0 }, "scenePath": "Scenes/Exterior_1_0.json" },
     { "id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a07", "kind": "Exterior", "exteriorCoordinate": { "x": -1, "z": 1 }, "scenePath": "Scenes/Exterior_-1_1.json" },
     { "id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a08", "kind": "Exterior", "exteriorCoordinate": { "x": 0, "z": 1 }, "scenePath": "Scenes/Exterior_0_1.json" },
-    { "id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a09", "kind": "Exterior", "exteriorCoordinate": { "x": 1, "z": 1 }, "scenePath": "Scenes/Exterior_1_1.json" }
+    { "id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a09", "kind": "Exterior", "exteriorCoordinate": { "x": 1, "z": 1 }, "scenePath": "Scenes/Exterior_1_1.json" },
+    { "id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a01", "kind": "Interior", "scenePath": "Interiors/House_A.json" },
+    { "id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a02", "kind": "Interior", "scenePath": "Interiors/House_B.json" }
   ]
 }

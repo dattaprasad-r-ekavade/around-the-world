@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Ember.World;
 using Microsoft.Xna.Framework;
 
 namespace Ember.Scene;
@@ -10,7 +11,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 2;
+    public const int CurrentVersion = 3;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -69,8 +70,8 @@ public static class SceneFile
 
     private static SceneGraph FromDocument(SceneDocument document)
     {
-        if (document.Version != 1 && document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1 or {CurrentVersion}.");
+        if (document.Version != 1 && document.Version != 2 && document.Version != CurrentVersion)
+            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1, 2, or {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
         foreach (var data in document.Objects) ValidateData(data, document.Version);
@@ -88,7 +89,9 @@ public static class SceneFile
                 Enabled = data.Enabled,
                 Transform = ToTransform(data),
                 GltfAsset = ToGltfAsset(data),
-                CharacterSettings = ToCharacterSettings(data.Character)
+                CharacterSettings = ToCharacterSettings(data.Character),
+                Door = ToDoorComponent(data.Door),
+                SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id)
             };
             scene.Add(item);
             parents.Add(data.Id, data.ParentId);
@@ -128,6 +131,8 @@ public static class SceneFile
                     GltfAssetId = value.GltfAsset?.AssetId,
                     GltfAssetPath = value.GltfAsset?.SourcePath,
                     Character = ToCharacterData(value.CharacterSettings),
+                    Door = ToDoorData(value.Door),
+                    SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
                     Scale = [transform.Scale.X, transform.Scale.Y, transform.Scale.Z]
@@ -186,6 +191,22 @@ public static class SceneFile
         };
     }
 
+    private static WorldDoorComponent? ToDoorComponent(SceneDoorData? data) =>
+        data is null
+            ? null
+            : new WorldDoorComponent(data.DestinationCellId, data.DestinationSpawnId,
+                new Quaternion(data.Facing![0], data.Facing[1], data.Facing[2], data.Facing[3]));
+
+    private static SceneDoorData? ToDoorData(WorldDoorComponent? door) =>
+        door is null
+            ? null
+            : new SceneDoorData
+            {
+                DestinationCellId = door.DestinationCellId,
+                DestinationSpawnId = door.DestinationSpawnId,
+                Facing = [door.Facing.X, door.Facing.Y, door.Facing.Z, door.Facing.W]
+            };
+
     private static GltfAssetReference? ToGltfAsset(SceneObjectData data) =>
         data.GltfAssetId is { } assetId
             ? new GltfAssetReference(assetId, data.GltfAssetPath!)
@@ -238,6 +259,22 @@ public static class SceneFile
             {
                 throw new InvalidDataException($"Object {data.Id} has an invalid GLB asset reference: {exception.Message}", exception);
             }
+        }
+
+        if (documentVersion < 3 && (data.Door is not null || data.SpawnPoint is not null))
+            throw new InvalidDataException($"Object {data.Id} world travel components require scene version 3.");
+        if (data.SpawnPoint is { Id: var spawnId } && spawnId == Guid.Empty)
+            throw new InvalidDataException($"Object {data.Id} has an empty spawn ID.");
+        if (data.Door is { } door)
+        {
+            if (door.DestinationCellId == Guid.Empty || door.DestinationSpawnId == Guid.Empty)
+                throw new InvalidDataException($"Object {data.Id} has an empty door destination cell or spawn ID.");
+            if (door.Facing is null || door.Facing.Length != 4
+                || door.Facing.Any(value => !float.IsFinite(value)))
+                throw new InvalidDataException($"Object {data.Id} door facing must contain four finite values.");
+            var facingLength = MathF.Sqrt(door.Facing.Sum(value => value * value));
+            if (facingLength < 0.000001f)
+                throw new InvalidDataException($"Object {data.Id} has a zero-length door facing.");
         }
 
         if (data.Position.Any(value => !float.IsFinite(value))
@@ -336,6 +373,8 @@ public static class SceneFile
         public Guid? GltfAssetId { get; set; }
         public string? GltfAssetPath { get; set; }
         public SceneCharacterData? Character { get; set; }
+        public SceneDoorData? Door { get; set; }
+        public SceneSpawnData? SpawnPoint { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }
@@ -358,5 +397,17 @@ public static class SceneFile
         public Guid Id { get; set; }
         public string? BoneName { get; set; }
         public float[]? LocalOffset { get; set; }
+    }
+
+    private sealed class SceneDoorData
+    {
+        public Guid DestinationCellId { get; set; }
+        public Guid DestinationSpawnId { get; set; }
+        public float[]? Facing { get; set; }
+    }
+
+    private sealed class SceneSpawnData
+    {
+        public Guid Id { get; set; }
     }
 }

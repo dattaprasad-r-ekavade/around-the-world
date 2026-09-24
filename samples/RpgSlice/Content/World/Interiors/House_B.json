@@ -1,0 +1,35 @@
+{
+  "Version": 3,
+  "Objects": [
+    {
+      "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a20",
+      "Name": "Ground",
+      "Enabled": true,
+      "Position": [16, -0.5, 16],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [32, 1, 32]
+    },
+    {
+      "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a21",
+      "Name": "Return Door",
+      "Enabled": true,
+      "Door": {
+        "DestinationCellId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a01",
+        "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a30",
+        "Facing": [0, 1, 0, 0]
+      },
+      "Position": [16, 1, 1],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [1, 2, 0.25]
+    },
+    {
+      "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a22",
+      "Name": "House B Entry Spawn",
+      "Enabled": false,
+      "SpawnPoint": { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a32" },
+      "Position": [16, 1.1, 4],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [1, 1, 1]
+    }
+  ]
+}

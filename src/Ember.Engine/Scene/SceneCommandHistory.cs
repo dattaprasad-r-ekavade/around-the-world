@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using Ember.World;
 using Microsoft.Xna.Framework;
 
 namespace Ember.Scene;
@@ -205,7 +206,11 @@ internal static class SceneObjectCopy
             ParentId = source.ParentId,
             Transform = CopyTransform(source.Transform),
             GltfAsset = source.GltfAsset,
-            CharacterSettings = CopySettings(source.CharacterSettings)
+            CharacterSettings = CopySettings(source.CharacterSettings),
+            Door = source.Door,
+            SpawnPoint = source.SpawnPoint is null
+                ? null
+                : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())
         };
         return copy;
     }
