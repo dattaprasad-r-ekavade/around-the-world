@@ -707,3 +707,20 @@ At this update, 93 of 154 roadmap rows are complete (60.4%). Task 83 is next. Th
 | Door resolution fixture | PASS — resolved the selected interior spawn at its authored world position and preserved door facing |
 
 At this update, 94 of 154 roadmap rows are complete (61.0%). Task 84 is next. The Stage 9 integration gate remains Pending for transactional travel, seamless cross-cell traversal, and live interior transitions.
+
+## Task 84 — transactional cell travel — 24 September 2026
+
+- Added `WorldCellTravelTransaction<TPrepared,TActive>`. It starts destination CPU preparation while the source cell remains Active, pumps results on the owning thread, and exposes a DestinationReady boundary where callers may cancel.
+- Travel activates the destination, places the player at the resolved authored spawn with the door's facing, then unloads the source. Preparation or activation failure leaves the source Active. A placement failure unloads the destination and retains the source; canceled late preparation is drained and disposed on the owner thread.
+- The CPU travel fixture makes the exterior-to-House-A-to-exterior-to-House-B-to-exterior route from authored doors and spawn markers. Separate cases cover failed preparation, failed activation, failed placement, and cancellation while preparation is blocked.
+
+### Task 84 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 161 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — loaded the exterior fixture and moved 2.50 m |
+| `WorldCellTravelTransactionTests` | PASS — two authored interior round trips and source-preserving failure/cancel cases |
+
+At this update, 95 of 154 roadmap rows are complete (61.7%). Task 85 is next. The Stage 9 integration gate remains Pending because RpgSlice does not yet connect player door interaction to live cell activation, and the exterior collision fixture still has hard cell seams.
