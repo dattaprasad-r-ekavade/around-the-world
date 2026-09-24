@@ -80,6 +80,7 @@ public sealed class CharacterStudioGame : EngineHost
     private Quaternion _sequenceExportRestoreCameraRotation;
     private float _sequenceExportRestoreFieldOfView;
     private AttachmentBoxRenderer? _attachmentRenderer;
+    private readonly Dictionary<Guid, bool> _farLodByObjectId = new();
     private MouseState _lastMouse;
     private bool _hasMouse;
     private int _sceneDrawCalls;
@@ -507,11 +508,13 @@ public sealed class CharacterStudioGame : EngineHost
         var references = new Dictionary<Guid, (GltfAssetReference Reference, Guid ObjectId)>();
         foreach (var item in scene.Objects)
         {
-            if (item.GltfAsset is not { } reference) continue;
-            if (references.TryGetValue(reference.AssetId, out var existing)
-                && !string.Equals(existing.Reference.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to conflicting paths.");
-            references[reference.AssetId] = (reference, item.Id);
+            foreach (var reference in EnumerateAssetReferences(item))
+            {
+                if (references.TryGetValue(reference.AssetId, out var existing)
+                    && !string.Equals(existing.Reference.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to conflicting paths.");
+                references[reference.AssetId] = (reference, item.Id);
+            }
         }
 
         if (references.Count == 0 && _project is null)
@@ -531,6 +534,27 @@ public sealed class CharacterStudioGame : EngineHost
         return result;
     }
 
+    private static IEnumerable<GltfAssetReference> EnumerateAssetReferences(SceneObject item)
+    {
+        if (item.GltfAsset is { } asset) yield return asset;
+        if (item.StaticMeshLod is { } lod)
+        {
+            yield return lod.NearAsset;
+            yield return lod.FarAsset;
+        }
+    }
+
+    private GltfAssetReference? SelectMeshAsset(SceneObject item, Matrix instanceWorld)
+    {
+        if (item.StaticMeshLod is not { } lod) return item.GltfAsset;
+
+        var currentlyFar = _farLodByObjectId.TryGetValue(item.Id, out var wasFar) && wasFar;
+        var distance = Vector3.Distance(instanceWorld.Translation, _camera.Position);
+        var selectFar = lod.SelectFar(currentlyFar, distance);
+        _farLodByObjectId[item.Id] = selectFar;
+        return selectFar ? lod.FarAsset : lod.NearAsset;
+    }
+
     private static IReadOnlyDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> BuildSequenceClipCatalog(
         PreviewResources preview)
     {
@@ -547,7 +571,8 @@ public sealed class CharacterStudioGame : EngineHost
         foreach (var item in CurrentScene.Objects)
         {
             if (!item.Enabled) continue;
-            if (item.GltfAsset is not { } reference
+            var reference = item.StaticMeshLod?.NearAsset ?? item.GltfAsset;
+            if (reference is null
                 || !_preview.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
             var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
             if (asset.SkinnedCharacter is { } character)
@@ -586,9 +611,10 @@ public sealed class CharacterStudioGame : EngineHost
             GraphicsDevice.BlendState = BlendState.Opaque;
             foreach (var item in CurrentScene.Objects)
             {
-                if (!item.Enabled || item.GltfAsset is not { } reference
-                    || !_preview!.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
+                if (!item.Enabled) continue;
                 var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
+                var reference = SelectMeshAsset(item, instanceWorld);
+                if (reference is null || !_preview!.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
                 if (asset.SkinnedCharacter is { } character)
                 {
                     if (!_preview.Current.CharacterInstances.TryGetValue(item.Id, out var state)) continue;
@@ -655,11 +681,13 @@ public sealed class CharacterStudioGame : EngineHost
 
         foreach (var item in CurrentScene.Objects)
         {
-            if (!item.Enabled || item.GltfAsset is not { } reference) continue;
+            if (!item.Enabled) continue;
             var preview = _preview!.Current;
+            var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
+            var reference = SelectMeshAsset(item, instanceWorld);
+            if (reference is null) continue;
             if (!preview.Assets.TryGetValue(reference.AssetId, out var asset))
                 throw new InvalidOperationException($"No loaded GLB asset exists for scene object '{item.Name}'.");
-            var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
             if (asset.SkinnedCharacter is { } character)
             {
                 if (!preview.CharacterInstances.TryGetValue(item.Id, out var state))
@@ -1037,8 +1065,7 @@ public sealed class CharacterStudioGame : EngineHost
     {
         var scene = CurrentScene;
         var references = scene.Objects
-            .Where(item => item.GltfAsset is not null)
-            .Select(item => item.GltfAsset!)
+            .SelectMany(EnumerateAssetReferences)
             .GroupBy(reference => reference.AssetId)
             .ToDictionary(group => group.Key, group => group.First());
         var resolvedPaths = ResolveSceneAssets(scene);
@@ -1600,6 +1627,13 @@ public sealed class CharacterStudioGame : EngineHost
 
                     if (model.LogicalNodes.Any(node => node.Skin is not null))
                     {
+                        var lodObject = sceneData.Objects.FirstOrDefault(item =>
+                            item.StaticMeshLod is { } lod
+                            && (lod.NearAsset.AssetId == assetId || lod.FarAsset.AssetId == assetId));
+                        if (lodObject is not null)
+                            throw new NotSupportedException(
+                                $"Static mesh LODs require static GLBs; object '{lodObject.Name}' references skinned asset {assetId}.");
+
                         var character = GltfSkinnedCharacterData.Import(model);
                         Bounds3? animatedBounds = null;
                         foreach (var clip in character.Animations)

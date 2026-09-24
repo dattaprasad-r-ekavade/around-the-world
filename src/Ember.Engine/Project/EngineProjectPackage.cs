@@ -52,9 +52,8 @@ public static class EngineProjectPackage
         var assetsById = new Dictionary<Guid, PackageAsset>();
         var filesByPath = new Dictionary<string, PackageFile>(StringComparer.OrdinalIgnoreCase);
         foreach (var item in scene.Objects)
+        foreach (var reference in EnumerateAssetReferences(item))
         {
-            if (item.GltfAsset is not { } reference) continue;
-
             string fullPath;
             try
             {
@@ -106,6 +105,16 @@ public static class EngineProjectPackage
             .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new PackageContents(files, assetsById.Count);
+    }
+
+    private static IEnumerable<GltfAssetReference> EnumerateAssetReferences(SceneObject item)
+    {
+        if (item.GltfAsset is { } asset) yield return asset;
+        if (item.StaticMeshLod is { } lod)
+        {
+            yield return lod.NearAsset;
+            yield return lod.FarAsset;
+        }
     }
 
     private static IReadOnlyList<string> ReadExternalUris(string assetPath, GltfAssetReference asset, Guid objectId)

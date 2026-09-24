@@ -78,6 +78,63 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesAuthoredStaticMeshLodAssetsAndThresholds()
+    {
+        var objectId = Guid.NewGuid();
+        var near = new GltfAssetReference(Guid.NewGuid(), "Assets/house-near.glb");
+        var far = new GltfAssetReference(Guid.NewGuid(), "Assets/house-far.glb");
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(objectId, "House")
+        {
+            StaticMeshLod = new GltfStaticMeshLod(near, far, enterFarDistance: 80f, exitFarDistance: 64f)
+        });
+        var path = TemporaryPath();
+        try
+        {
+            SceneFile.SaveAtomic(scene, path);
+            var json = File.ReadAllText(path);
+            var loaded = SceneFile.Load(path);
+            var lod = loaded.Find(objectId)!.StaticMeshLod!;
+
+            Assert.Contains("\"Version\": 5", json, StringComparison.Ordinal);
+            Assert.Equal(near.AssetId, lod.NearAsset.AssetId);
+            Assert.Equal(near.SourcePath, lod.NearAsset.SourcePath);
+            Assert.Equal(far.AssetId, lod.FarAsset.AssetId);
+            Assert.Equal(far.SourcePath, lod.FarAsset.SourcePath);
+            Assert.Equal(80f, lod.EnterFarDistance);
+            Assert.Equal(64f, lod.ExitFarDistance);
+        }
+        finally
+        {
+            Delete(path);
+        }
+    }
+
+    [Fact]
+    public void StaticMeshLodRequiresVersionFiveAndCannotMixWithDirectAsset()
+    {
+        const string lodJson = "\"StaticMeshLod\":{\"NearAssetId\":\"11111111-1111-4111-8111-111111111111\",\"NearAssetPath\":\"Assets/near.glb\",\"FarAssetId\":\"22222222-2222-4222-8222-222222222222\",\"FarAssetPath\":\"Assets/far.glb\",\"EnterFarDistance\":50,\"ExitFarDistance\":40}";
+        var objectId = "33333333-3333-4333-8333-333333333333";
+        var v4Path = TemporaryPath();
+        var mixedPath = TemporaryPath();
+        try
+        {
+            File.WriteAllText(v4Path,
+                $"{{\"Version\":4,\"Objects\":[{{\"Id\":\"{objectId}\",\"Name\":\"LOD\",{lodJson},\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}}]}}");
+            Assert.Throws<InvalidDataException>(() => SceneFile.Load(v4Path));
+
+            File.WriteAllText(mixedPath,
+                $"{{\"Version\":5,\"Objects\":[{{\"Id\":\"{objectId}\",\"Name\":\"LOD\",\"GltfAssetId\":\"44444444-4444-4444-8444-444444444444\",\"GltfAssetPath\":\"Assets/direct.glb\",{lodJson},\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}}]}}");
+            Assert.Throws<InvalidDataException>(() => SceneFile.Load(mixedPath));
+        }
+        finally
+        {
+            Delete(v4Path);
+            Delete(mixedPath);
+        }
+    }
+
+    [Fact]
     public void SaveAndLoadPreservesDistinctEnvironmentAndSharedCharacterAssets()
     {
         var environment = new GltfAssetReference(
@@ -177,7 +234,7 @@ public sealed class SceneFileTests
             var first = loaded.Find(firstId)!.CharacterSettings!;
             var second = loaded.Find(secondId)!.CharacterSettings!;
 
-            Assert.Contains("\"Version\": 4", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 5", json, StringComparison.Ordinal);
             Assert.Equal("Walk", first.ClipName);
             Assert.Equal(0.35f, first.Time);
             Assert.Equal(1.5f, first.Speed);
@@ -214,7 +271,7 @@ public sealed class SceneFileTests
 
             Assert.Null(loaded.Find(Guid.Parse("30303030-3030-3030-3030-303030303030"))!.CharacterSettings);
             SceneFile.SaveAtomic(loaded, path);
-            Assert.Contains("\"Version\": 4", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 5", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {

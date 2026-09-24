@@ -11,7 +11,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 4;
+    public const int CurrentVersion = 5;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -80,8 +80,8 @@ public static class SceneFile
 
     private static SceneGraph FromDocument(SceneDocument document)
     {
-        if (document.Version != 1 && document.Version != 2 && document.Version != 3 && document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1, 2, 3, or {CurrentVersion}.");
+        if (document.Version < 1 || document.Version > CurrentVersion)
+            throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1 through {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
         foreach (var data in document.Objects) ValidateData(data, document.Version);
@@ -99,6 +99,7 @@ public static class SceneFile
                 Enabled = data.Enabled,
                 Transform = ToTransform(data),
                 GltfAsset = ToGltfAsset(data),
+                StaticMeshLod = ToStaticMeshLod(data.StaticMeshLod),
                 CharacterSettings = ToCharacterSettings(data.Character),
                 Door = ToDoorComponent(data.Door),
                 SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id),
@@ -141,6 +142,7 @@ public static class SceneFile
                     ParentId = value.ParentId,
                     GltfAssetId = value.GltfAsset?.AssetId,
                     GltfAssetPath = value.GltfAsset?.SourcePath,
+                    StaticMeshLod = ToStaticMeshLodData(value.StaticMeshLod),
                     Character = ToCharacterData(value.CharacterSettings),
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
@@ -224,20 +226,47 @@ public static class SceneFile
             ? new GltfAssetReference(assetId, data.GltfAssetPath!)
             : null;
 
+    private static GltfStaticMeshLod? ToStaticMeshLod(SceneMeshLodData? data) =>
+        data is null
+            ? null
+            : new GltfStaticMeshLod(
+                new GltfAssetReference(data.NearAssetId!.Value, data.NearAssetPath!),
+                new GltfAssetReference(data.FarAssetId!.Value, data.FarAssetPath!),
+                data.EnterFarDistance, data.ExitFarDistance);
+
+    private static SceneMeshLodData? ToStaticMeshLodData(GltfStaticMeshLod? lod) =>
+        lod is null
+            ? null
+            : new SceneMeshLodData
+            {
+                NearAssetId = lod.NearAsset.AssetId,
+                NearAssetPath = lod.NearAsset.SourcePath,
+                FarAssetId = lod.FarAsset.AssetId,
+                FarAssetPath = lod.FarAsset.SourcePath,
+                EnterFarDistance = lod.EnterFarDistance,
+                ExitFarDistance = lod.ExitFarDistance
+            };
+
     private static void ValidateAssetReferences(IEnumerable<SceneObjectData> objects)
     {
         var pathsById = new Dictionary<Guid, string>();
         foreach (var data in objects)
         {
-            if (data.GltfAssetId is not { } assetId) continue;
-            var reference = new GltfAssetReference(assetId, data.GltfAssetPath!);
-            if (pathsById.TryGetValue(assetId, out var existingPath)
-                && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+            if (data.GltfAssetId is { } assetId)
+                AddReference(new GltfAssetReference(assetId, data.GltfAssetPath!));
+            if (data.StaticMeshLod is { } lod)
             {
-                throw new InvalidDataException($"GLB asset ID {assetId} refers to more than one source path.");
+                AddReference(new GltfAssetReference(lod.NearAssetId!.Value, lod.NearAssetPath!));
+                AddReference(new GltfAssetReference(lod.FarAssetId!.Value, lod.FarAssetPath!));
             }
 
-            pathsById[assetId] = reference.SourcePath;
+            void AddReference(GltfAssetReference reference)
+            {
+                if (pathsById.TryGetValue(reference.AssetId, out var existingPath)
+                    && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException($"GLB asset ID {reference.AssetId} refers to more than one source path.");
+                pathsById[reference.AssetId] = reference.SourcePath;
+            }
         }
     }
 
@@ -270,6 +299,28 @@ public static class SceneFile
             catch (ArgumentException exception)
             {
                 throw new InvalidDataException($"Object {data.Id} has an invalid GLB asset reference: {exception.Message}", exception);
+            }
+        }
+
+        if (documentVersion < 5 && data.StaticMeshLod is not null)
+            throw new InvalidDataException($"Object {data.Id} static mesh LOD requires scene version 5.");
+        if (data.StaticMeshLod is { } lod)
+        {
+            if (data.GltfAssetId.HasValue || data.Character is not null)
+                throw new InvalidDataException($"Object {data.Id} static mesh LOD cannot be combined with a direct GLB or character settings.");
+            if (lod.NearAssetId is null || lod.NearAssetPath is null
+                || lod.FarAssetId is null || lod.FarAssetPath is null)
+                throw new InvalidDataException($"Object {data.Id} static mesh LOD must provide both near and far GLB asset IDs and paths.");
+            try
+            {
+                _ = new GltfStaticMeshLod(
+                    new GltfAssetReference(lod.NearAssetId.Value, lod.NearAssetPath),
+                    new GltfAssetReference(lod.FarAssetId.Value, lod.FarAssetPath),
+                    lod.EnterFarDistance, lod.ExitFarDistance);
+            }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException($"Object {data.Id} has invalid static mesh LOD settings: {exception.Message}", exception);
             }
         }
 
@@ -388,6 +439,7 @@ public static class SceneFile
         public Guid? ParentId { get; set; }
         public Guid? GltfAssetId { get; set; }
         public string? GltfAssetPath { get; set; }
+        public SceneMeshLodData? StaticMeshLod { get; set; }
         public SceneCharacterData? Character { get; set; }
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
@@ -395,6 +447,16 @@ public static class SceneFile
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }
+    }
+
+    private sealed class SceneMeshLodData
+    {
+        public Guid? NearAssetId { get; set; }
+        public string? NearAssetPath { get; set; }
+        public Guid? FarAssetId { get; set; }
+        public string? FarAssetPath { get; set; }
+        public float EnterFarDistance { get; set; }
+        public float ExitFarDistance { get; set; }
     }
 
     private sealed class SceneCharacterData

@@ -1095,7 +1095,7 @@ At this update, 132 of 154 roadmap rows are complete (85.7%). Task 122 is next. 
 | RpgSlice screenshots at 00:00 and 12:00 with paused clock | PASS — sky, terrain illumination, and scene lighting visibly change |
 | RpgSlice `--smoke-controls` | PASS — crossed cell (0, 0) to (0, -1) over 23.06 m and remained grounded |
 
-At this update, 135 of 154 roadmap rows are complete (87.7%). Task 125 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+At this update, 136 of 154 roadmap rows are complete (88.3%). Task 126 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
 
 ## Task 124 — outdoor water surface — 24 September 2026
 
@@ -1109,6 +1109,28 @@ At this update, 135 of 154 roadmap rows are complete (87.7%). Task 125 is next. 
 | `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
 | Water-plane geometry tests | PASS — dimensions, world-unit UV repeats, and invalid dimensions; 2 passed |
 | RpgSlice 1280×720 noon screenshot smoke | PASS — terrain shoreline remains visible around the water plane |
+
+## Task 125 — authored static-mesh distance LOD — 24 September 2026
+
+- Scene format version 5 adds paired near/far static GLB references and separate enter/exit distances. The distance band is explicit hysteresis; CharacterStudio selects one representation per object and shares that choice across the scene and shadow passes.
+- Project asset resolution, sequence asset snapshots, scene cloning, and project packaging include both references. LOD variants must be static meshes and use distinct asset IDs; the current authoring path is scene JSON, and both assets remain resident while the cheaper far representation is drawn at distance.
+- A temporary CharacterStudio scene selected and rendered its far GLB in both passes at 1280×720. The far fixture had 10 triangles versus 228 in the near fixture; the temporary scene file is not part of the repository.
+
+### Task 125 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| LOD, scene-file, travel-component, and package tests | PASS — threshold hysteresis, versioned round-trip, validation, and both packaged assets; 22 passed |
+| CharacterStudio 1280×720 LOD screenshot smoke | PASS — five static scene and shadow draws came from the selected far GLB |
+
+### Combined verification — code-review fix and tasks 124–125
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 212 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
+| RpgSlice `--smoke-controls` | PASS — crossed from cell (0, 0) to (0, -1), 23.06 m, grounded |
 
 ## Code-review fix — buffered jump input — 24 September 2026
 

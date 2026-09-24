@@ -206,6 +206,7 @@ internal static class SceneObjectCopy
             ParentId = source.ParentId,
             Transform = CopyTransform(source.Transform),
             GltfAsset = source.GltfAsset,
+            StaticMeshLod = source.StaticMeshLod,
             CharacterSettings = CopySettings(source.CharacterSettings),
             Door = source.Door,
             ResetPolicy = source.ResetPolicy,

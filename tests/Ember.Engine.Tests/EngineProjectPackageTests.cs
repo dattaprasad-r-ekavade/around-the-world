@@ -66,6 +66,45 @@ public sealed class EngineProjectPackageTests
     }
 
     [Fact]
+    public void PackageIncludesBothStaticMeshLodRepresentations()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var models = Path.Combine(sourceRoot, "Content", "Models");
+            Directory.CreateDirectory(models);
+            var fixture = Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
+            File.Copy(fixture, Path.Combine(models, "near.glb"));
+            File.Copy(fixture, Path.Combine(models, "far.glb"));
+
+            var scene = new SceneGraph();
+            scene.Add(new SceneObject(Guid.NewGuid(), "House")
+            {
+                StaticMeshLod = new GltfStaticMeshLod(
+                    new GltfAssetReference(Guid.NewGuid(), "Content/Models/near.glb"),
+                    new GltfAssetReference(Guid.NewGuid(), "Content/Models/far.glb"),
+                    enterFarDistance: 80f, exitFarDistance: 64f)
+            });
+            var scenePath = Path.Combine(sourceRoot, "Content", "Start.json");
+            SceneFile.SaveAtomic(scene, scenePath);
+            var projectPath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectPath, "Content/Start.json");
+            var packagePath = Path.Combine(root, "package");
+
+            var result = EngineProjectPackage.Create(projectPath, packagePath);
+
+            Assert.Equal(2, result.GlbAssetCount);
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "near.glb")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "far.glb")));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void PackageCopiesLocalBufferAndImageDependenciesReferencedInsideGlb()
     {
         var root = NewDirectory();

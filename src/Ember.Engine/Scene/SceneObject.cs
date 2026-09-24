@@ -40,6 +40,44 @@ public sealed class GltfAssetReference
     public string SourcePath { get; }
 }
 
+/// <summary>Two authored static GLB representations selected by camera distance.</summary>
+public sealed class GltfStaticMeshLod
+{
+    public GltfStaticMeshLod(GltfAssetReference nearAsset, GltfAssetReference farAsset,
+        float enterFarDistance, float exitFarDistance)
+    {
+        ArgumentNullException.ThrowIfNull(nearAsset);
+        ArgumentNullException.ThrowIfNull(farAsset);
+        if (nearAsset.AssetId == farAsset.AssetId)
+            throw new ArgumentException("Near and far LODs must reference different GLB assets.", nameof(farAsset));
+        if (!float.IsFinite(enterFarDistance) || enterFarDistance <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(enterFarDistance), "Far LOD entry distance must be finite and positive.");
+        if (!float.IsFinite(exitFarDistance) || exitFarDistance < 0f || exitFarDistance >= enterFarDistance)
+            throw new ArgumentOutOfRangeException(nameof(exitFarDistance), "Far LOD exit distance must be finite, nonnegative, and less than its entry distance.");
+
+        NearAsset = nearAsset;
+        FarAsset = farAsset;
+        EnterFarDistance = enterFarDistance;
+        ExitFarDistance = exitFarDistance;
+    }
+
+    public GltfAssetReference NearAsset { get; }
+    public GltfAssetReference FarAsset { get; }
+    public float EnterFarDistance { get; }
+    public float ExitFarDistance { get; }
+    public float HysteresisDistance => EnterFarDistance - ExitFarDistance;
+
+    /// <summary>Maintains the current representation inside the configured hysteresis band.</summary>
+    public bool SelectFar(bool currentlyFar, float cameraDistance)
+    {
+        if (!float.IsFinite(cameraDistance) || cameraDistance < 0f)
+            throw new ArgumentOutOfRangeException(nameof(cameraDistance), "Camera distance must be finite and nonnegative.");
+        return currentlyFar
+            ? cameraDistance > ExitFarDistance
+            : cameraDistance >= EnterFarDistance;
+    }
+}
+
 /// <summary>A stable scene object identity and its local authored state.</summary>
 public sealed class SceneObject
 {
@@ -58,6 +96,7 @@ public sealed class SceneObject
     public Transform Transform { get; set; } = new();
     public Guid? ParentId { get; internal set; }
     public GltfAssetReference? GltfAsset { get; set; }
+    public GltfStaticMeshLod? StaticMeshLod { get; set; }
     public GltfCharacterSettings? CharacterSettings { get; set; }
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }

@@ -364,6 +364,26 @@ keeps that asset's GPU buffers and textures together, then draws each object thr
 referenced asset and authored transform. `Scenes/ReleaseAShowcase.json` demonstrates one static
 environment plus two character instances sharing Fox.
 
+Scene format version 5 adds `StaticMeshLod` for an object that has separate near and far static
+GLBs. `EnterFarDistance` selects the far asset as the camera moves out; `ExitFarDistance` selects
+the near asset on the way back. Keep the exit distance smaller than the entry distance to create
+a hysteresis band and prevent repeated threshold crossings from flickering. CharacterStudio uses
+the same selected representation for its color and shadow passes, loads each referenced asset once,
+and includes both files when packaging a project. The scene JSON is currently the authoring path:
+choose a lower-polygon far mesh that preserves the object's silhouette and material intent. This
+component does not support skinned LODs, and both representations stay resident in GPU memory.
+
+```json
+"StaticMeshLod": {
+  "NearAssetId": "11111111-1111-4111-8111-111111111111",
+  "NearAssetPath": "Assets/Props/house-near.glb",
+  "FarAssetId": "22222222-2222-4222-8222-222222222222",
+  "FarAssetPath": "Assets/Props/house-far.glb",
+  "EnterFarDistance": 80,
+  "ExitFarDistance": 64
+}
+```
+
 `GltfAnimationBounds.SampleClip(character, clip)` deforms every source vertex through its four
 normalized skin influences at intervals no larger than 1/30 second, then adds a margin equal to
 the larger of 10% of the largest extent or 0.05 metres. CharacterStudio unions these per-clip
@@ -371,9 +391,9 @@ envelopes when it frames an animated character. The bounds cover the imported ST
 a procedural pose without a matching sampled envelope must not be culled using these bounds.
 The current renderer does not yet cull animated characters.
 
-Scene format version 2 optionally stores each character object's clip name, time, speed, loop and
-playing state, crossfade clip/blend, and stable bone-attachment IDs with joint-local matrices.
-Version-1 files still load and are upgraded on the next save. CharacterStudio's `--save <path>`
+Scene format version 2 introduced saved character clip, time, speed, loop and playing state,
+crossfade clip/blend, and stable bone-attachment IDs with joint-local matrices. Versions 1 through 5
+remain readable, and saving upgrades older files to the current version. CharacterStudio's `--save <path>`
 stores the initial selected state, **S** saves current playback times, and `--open <path>` restores
 the per-instance settings and attached preview props.
 
