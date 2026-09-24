@@ -577,3 +577,76 @@ Done well in the scene, physics, input, and rendering areas:
 2. **Resolved 24 September 2026:** world manifest v2 owns cell width, indexes cells by ID and exterior coordinate, migrates v1, and supports distance-ordered entered/left ring updates with hysteresis. Saving no longer requires scenes to exist; duplicate scene paths are rejected.
 3. **Resolved 24 September 2026:** task 79 uses a cost-based budget and was verified in `RpgSlice` on a 3×3 grid with one delayed cell.
 4. Re-audit the shared atomic-write and content-path recommendation against the now-implemented world-save and package paths; the original "before task 90" checkpoint is past, so any remaining duplication needs a current, scoped follow-up.
+
+## Code review 2 — commits `8a648b5..43f06a7` (tasks 79–132) — 24 September 2026
+
+Scope: 45 commits since the first review, about 16,800 added lines in 148 files, covering tasks 79–132 and the follow-up fixes. The handoff reports **143 of 155 rows checked; task 133 is next.** Findings cite file and line at `43f06a7`. Severity labels are the same as in the first review: **High** means fix before building the next task on top of it; **Medium** means fix within the current stage; **Low** means clean up opportunistically.
+
+**Verification run for this review (Linux, .NET SDK 9.0.318):**
+- `dotnet run --project tests/Ember.Rpg.Check -c Release`: **PASS** (`[OK] save then load equals original`, exit 0).
+- `dotnet build Ember.sln -c Release -p:EnableWindowsTargeting=true`:
+  - `Ember.Engine`, `Ember.Engine.Tests`, `Ember.Rpg`, `Ember.Scripting`, `FirstLight`, and `Campaign` compile.
+  - `CharacterStudio` and `RpgSlice` fail only in the MonoGame `mgcb` effect-content step, which needs Windows. This is an environment limit, not a code defect.
+- `dotnet test tests/Ember.Engine.Tests`: **not runnable** here (`Microsoft.WindowsDesktop.App` is missing on Linux). Engine test results remain the implementer's Windows results.
+
+### Overall
+
+The follow-up to the first review was excellent. Almost every finding got its own focused commit with tests. The owner-thread completion queue with generation stamping (`WorldCellLoadOperation.cs:84-188`) is now a correct design. The pace, however, went from about 12 rows per batch to about 53 rows in roughly a day, spread over four stages (persistence, RPG rules, NPC simulation, outdoor rendering, tools). Most of those stages' behaviour exists **only in unit tests and the RPG check program**. The checklist is at 92%, but the Stage 9 and 10 gates are Pending, and Stages 11 and 12 have no gate status at all. The main risk now is **integration debt**, not code quality.
+
+### Integration gap: what the running games actually use
+
+Count of references in the two sample games at `43f06a7`:
+
+| System (tasks) | RpgSlice | CharacterStudio |
+| --- | --- | --- |
+| Load operation, loading ring, collision gate (76–78, 82) | yes, in `RpgSliceCellStreamer` | — |
+| `CellActivationQueue` (79) | smoke harness only (`RpgSliceStreamingSmoke.cs:19`, probe types) | — |
+| `CellAssetReferencePool` (80) | smoke harness only (`RpgSliceRetentionSmoke.cs:13`) | — |
+| Doors and `WorldCellTravelTransaction` (83–84) | none | none |
+| Instance IDs, change store, tombstones, runtime objects, transfer, world save, save queue, reset (85–93) | none | none |
+| Equipment, combat, spells, factions, trade, theft, skills, quest events (94–108) | none (the RPG check program only) | dialogue/content editor only |
+| Path network, NPC travel, perception, combat AI, actor budgets, clock and schedules (109–118) | none | path editor with a flat-floor follower |
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| High | **The live streamer bypasses tasks 79 and 80.** `PumpOperations` calls `operation.Activate(...)` synchronously for every ready cell in the same frame, with no budget. Assets aren't shared through the reference pool. The earlier review note "task 79 verified in RpgSlice on a 3×3 grid" refers to `RpgSliceStreamingSmoke`, which drives probe cells, not the real terrain/scene activation. | `samples/RpgSlice/RpgSliceCellStreamer.cs:173-205` | Route real activation through `CellActivationQueue` with a stepper that uploads terrain, colliders, and meshes in cost units. Hold assets through `CellAssetReferencePool`. Re-run the benchmark in `OUTDOOR_BENCHMARK.md` afterwards, because the current numbers measure the unbudgeted path. |
+| High | **A failed cell is never retried, so the player can be walled in permanently.** On failure, the streamer logs once (`FailureReported`) and leaves the cell `Failed`. `MarkCollisionReady` is only called on success, so the collision gate from task 82 blocks movement into that cell for the rest of the session. That is the opposite of "failures remain recoverable" (task 140). | `RpgSliceCellStreamer.cs:187-203` | Add a retry policy with backoff (`Discard`, then `PrepareAsync` again) and a visible loading/failed state. Add a smoke test with a transient read failure that later succeeds. |
+| High | **The streaming and retirement logic lives in a sample.** `RpgSliceCellStreamer` (332 lines) holds the reusable orchestration: the request/retire/pump cycle, blocking waits on disposal, and gate updates. Every future game would copy it. | `samples/RpgSlice/RpgSliceCellStreamer.cs` | Move a generic `WorldCellStreamer<TPrepared, TActive>` into `Ember.Engine/World`, combining the ring, load operations, the activation queue, the reference pool, the collision gate, and retry. Keep only the cell-content factory in the sample. |
+| High | **Stage gates 9–12 are unproven, while the checklist moves on to tools.** Tasks 137–139 assume that doors, persistence, RPG systems, and NPCs already work together in a game. | Roadmap Stages 9–12 gates | Before task 133, add explicit integration rows: an `RpgSlice` door plus a live `WorldCellTravelTransaction`; wiring the change store, runtime objects, and world save into the streamer; one NPC on the path network with a schedule; one merchant and one enemy using `Ember.Rpg`. Mark each gate Pass or Blocked with evidence. Don't count task 137 as the first integration test. |
+| Medium | **Five stage gates are still "Pending" or have no status:** Release B, Release C, and Stages 9–12. The handoff says so honestly. However, the "92.3% complete" headline invites the wrong conclusion. | Handoff, `ENGINE_ROADMAP.md:338-339` | Report two numbers in the handoff: rows checked, and gates passed (currently 3 of 10: Releases A, D, and the Stage 13 benchmark). |
+
+### Status of the first review's findings
+
+| Finding (first review) | Status at `43f06a7` |
+| --- | --- |
+| Preparation completing on a pool thread | **Fixed.** The worker only enqueues; `PumpCompletions` commits on the owner thread (`WorldCellLoadOperation.cs:99-188`). |
+| No `Discard`/`Cancel`; stale completions | **Fixed.** Generation stamping; stale results are disposed on the owner thread. |
+| Ring: additions only, X/Z order, per-frame allocations | **Fixed.** Entered/left update with a retention radius and an unchanged-centre early return. |
+| Cell width not in the manifest; linear lookups; save needing scenes to exist | **Fixed.** Manifest v2 with migration, ID and coordinate dictionaries, `TryGetExterior`. |
+| Unknown JSON properties ignored | **Partly fixed.** `UnmappedMemberHandling.Disallow` is set only in `WorldManifest`, `CellPathGraphFile`, and `WorldPathNetworkFile`. `SceneFile`, `SequenceFile`, `EngineProjectFile`, `WorldSaveFile`, and `RpgContentSet` still accept typos. |
+| RpgSlice player drawn at the raw pose | **Fixed** (`_renderPlayerPosition`). |
+| Jump request dropped on an airborne substep | **Fixed** (`JumpBufferSeconds`). |
+| Shadow camera fitting whole-scene bounds, no snapping | **Fixed.** Frustum-fitted sphere with light-space texel snapping (`DirectionalShadowCamera.cs:57-78`). |
+| Silent unskinned-mesh drop; loop seek at `Duration`; pose/skin mismatch; stale attachments; joint limit at import; per-draw bone array | **Fixed**, each with its own commit and tests. |
+| Template draws static GLBs as cubes | **Open.** `templates/MinimalGame/Program.cs:187,227` is unchanged. |
+| Packaging ignores world manifests and cell scenes | **Open.** `EngineProjectPackage.cs` still has no reference to world content, and `RpgSlice` can't be packaged. This is a blocker for task 142. |
+| Atomic-write duplication | **Worse: eight copies now.** `SceneFile`, `SequenceFile`, `EngineProjectFile`, `WorldManifest`, `WorldSaveFile`, `CellPathGraphFile`, `WorldPathNetworkFile`, `RpgContentSet`, plus a variant in `SequenceFrameExport`. Only the four newest call `Flush(flushToDisk: true)`, so scene, sequence, project, and manifest saves still don't flush. Extract one `SafeFile.WriteAtomic` now. |
+| `GetWorldMatrix` allocating a `HashSet` per call | **Open** (`Scene/Scene.cs:70`). Cells and NPCs now multiply the call count. |
+| Static texture caches never cleared | **Open.** There are still no calls to `StoneTextures`/`PropTextures`/`ItemSprites`/`CharacterSprites.Clear()`. |
+| CPU-only code can't be tested off Windows; no CI | **Open.** Confirmed again: engine tests can't start on Linux. `Ember.Rpg` is already `net9.0` and its check runs anywhere, which shows the split works. There is still no `.github/workflows`. |
+| `CharacterStudioGame.cs` too large | **Worse:** 1,889 lines, plus `CharacterStudioEditorUi.cs` at 1,173 lines. |
+
+### Process feedback
+
+1. **Batch size.** Many commits again cover several rows ("tasks 94–96", "105–107", "113–115", "116–118", "119–120"). Each row is smaller than before, but it is still hard to tie a failure to a row. One row per commit made the first-review fixes easy to verify; keep doing that.
+2. **Unit-level evidence is being accepted for integration-level acceptance text.** For example, task 113 ("a following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload") and task 139 are proven only by CPU fixtures. Record which rows were checked on fixtures, and let the stage gate carry the integration claim.
+3. **The RPG checks are in a 1,155-line console `Main`.** It is a real harness (it collects problems and returns exit code 1), but an unexpected exception aborts every later check, and failures don't name a test. Move it to an `Ember.Rpg.Tests` xUnit project. It is already `net9.0`, so it can run in CI on Linux today.
+4. **Documentation size.** `ENGINE_PROGRESS.md` is 1,247 lines and this roadmap holds four review sections. Mark the first review closed, and consider moving reviews to `Docs/reviews/`.
+
+### Recommended order before task 133
+
+1. Route `RpgSliceCellStreamer` through `CellActivationQueue` and `CellAssetReferencePool`, add retry, then promote the streamer into `Ember.Engine/World`. Re-run the Stage 13 benchmark.
+2. Add the Stage 9–12 integration rows above, starting with a door plus live travel in `RpgSlice`, then persistence wiring. Pass or explicitly block each gate.
+3. Extract `SafeFile.WriteAtomic` (with flush) and turn on `UnmappedMemberHandling.Disallow` for every persisted format.
+4. Extend packaging to world manifests and cell scenes before task 142.
+5. Add CI: `Ember.Rpg` tests on Linux now; the engine on a Windows runner.
