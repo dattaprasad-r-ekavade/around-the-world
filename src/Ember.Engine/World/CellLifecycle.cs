@@ -21,7 +21,7 @@ public sealed class CellLifecycle
         new Dictionary<CellLifecycleState, CellLifecycleState[]>
         {
             [CellLifecycleState.Unloaded] = [CellLifecycleState.Preparing],
-            [CellLifecycleState.Preparing] = [CellLifecycleState.Ready],
+            [CellLifecycleState.Preparing] = [CellLifecycleState.Ready, CellLifecycleState.Unloading],
             [CellLifecycleState.Ready] = [CellLifecycleState.Active, CellLifecycleState.Unloading],
             [CellLifecycleState.Active] = [CellLifecycleState.Unloading],
             [CellLifecycleState.Unloading] = [CellLifecycleState.Unloaded],

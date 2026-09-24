@@ -568,7 +568,7 @@ Done well in the scene, physics, input, and rendering areas:
 
 ### Recommended order before continuing
 
-1. Fix the owner-thread completion path and add `Discard`/`Cancel` plus generation stamping. These are the three High findings, and they are small; they are prerequisites that make tasks 79–81 honest.
+1. **Resolved 24 September 2026:** the owner-thread completion path, `Discard`/`Cancel`, and generation stamping are implemented; see the follow-up in `ENGINE_PROGRESS.md`. These were prerequisites for tasks 79–81.
 2. Add cell width to the manifest and a coordinate index, and give the ring entered/left sets with distance ordering.
 3. Then implement task 79 with a cost-based budget, verified in `RpgSlice` on a 3×3 grid.
 4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a sixth copy.

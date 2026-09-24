@@ -592,3 +592,19 @@ At this update, 86 of 154 roadmap rows are complete (55.8%). Task 76 is next. Rp
 | `dotnet run --project tests/Ember.Rpg.Check --no-build` | PASS — `[OK] save then load equals original` |
 
 At this update, 89 of 154 roadmap rows are complete (57.8%). Task 79 is next. Thread-affinity tests use disposable CPU fixtures; graphics and physics activation on a live device remain to be exercised in a concrete loader integration.
+
+## Code-review follow-up — world-cell load ownership — 24 September 2026
+
+- Resolved the three High Stage 9 findings recorded in `ENGINE_ROADMAP.md`. Worker preparation now only enqueues a generation-stamped completion; `PumpCompletions()` performs lifecycle transitions and resource ownership changes on the captured owner thread. Callers poll `State` on that thread and pump completions from their game loop.
+- Added `Discard()` for ready or failed operations and `Cancel()` for preparation. Cancellation invalidates the active generation immediately; a late result is disposed on the owner thread and cannot replace a newer attempt. A failed attempt can be retried on the same operation after the prior completion has been pumped.
+- Added coverage that polls state while a worker is blocked, verifies ready-data disposal without activation, retries after a failed load, and cancels a slow generation before completing a newer one.
+
+### Code-review follow-up checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet restore Ember.sln --nologo` | PASS — restored the newly pulled RpgSlice project; remaining projects were current |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 146 tests, 0 failed, 0 skipped |
+
+The queue is not yet connected to a live world loader. Continue with task 79 after the remaining Stage 9 manifest/ring prerequisites in the code review are addressed.

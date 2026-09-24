@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Concurrent;
 using System.Runtime.ExceptionServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -6,8 +7,9 @@ using System.Threading.Tasks;
 namespace Ember.World;
 
 /// <summary>
-/// Runs CPU preparation on a worker and commits active resources on the owning thread.
-/// Prepared and active objects remain private until their lifecycle state is ready or active.
+/// Runs CPU preparation on a worker and commits lifecycle changes/resources on the owning thread.
+/// Await <see cref="PrepareAsync"/> for worker completion, then call <see cref="PumpCompletions"/>
+/// on the owner thread to publish Ready or Failed. A game loop should pump once per frame.
 /// </summary>
 public sealed class WorldCellLoadOperation<TPrepared, TActive>
     where TPrepared : IDisposable
@@ -15,7 +17,10 @@ public sealed class WorldCellLoadOperation<TPrepared, TActive>
 {
     private readonly int _owningThreadId;
     private readonly CellLifecycle _lifecycle = new();
+    private readonly ConcurrentQueue<PreparationCompletion> _completions = new();
     private TActive? _activeResources;
+    private CancellationTokenSource? _preparationCancellation;
+    private long _generation;
     private bool _activationInProgress;
 
     public WorldCellLoadOperation(int? owningThreadId = null)
@@ -25,11 +30,28 @@ public sealed class WorldCellLoadOperation<TPrepared, TActive>
             throw new ArgumentOutOfRangeException(nameof(owningThreadId), "Owning thread ID must be positive.");
     }
 
-    public CellLifecycleState State => _lifecycle.State;
-    public Exception? Failure => _lifecycle.Failure;
+    public CellLifecycleState State
+    {
+        get
+        {
+            EnsureOwningThread();
+            return _lifecycle.State;
+        }
+    }
+
+    public Exception? Failure
+    {
+        get
+        {
+            EnsureOwningThread();
+            return _lifecycle.Failure;
+        }
+    }
+
     public int OwningThreadId => _owningThreadId;
     public int? PreparationThreadId { get; private set; }
     public int? ActivationThreadId { get; private set; }
+
     public TActive? ActiveResources
     {
         get
@@ -39,39 +61,156 @@ public sealed class WorldCellLoadOperation<TPrepared, TActive>
         }
     }
 
-    /// <summary>Invokes the preparation delegate on a worker thread and stores its result as ready data.</summary>
-    public async Task PrepareAsync(Func<CancellationToken, Task<TPrepared>> prepare,
+    /// <summary>
+    /// Starts CPU-only preparation on a worker. This task completes after a result is queued;
+    /// it does not change <see cref="State"/>. The owner must call <see cref="PumpCompletions"/>.
+    /// Preparation must not create or mutate graphics-device resources.
+    /// </summary>
+    public Task PrepareAsync(Func<CancellationToken, Task<TPrepared>> prepare,
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(prepare);
         EnsureOwningThread();
+
+        if (_lifecycle.State == CellLifecycleState.Failed)
+            _lifecycle.TransitionTo(CellLifecycleState.Unloaded);
+        if (_lifecycle.State != CellLifecycleState.Unloaded)
+            throw new InvalidOperationException($"Only an unloaded or failed cell can prepare; current state is {_lifecycle.State}.");
+
+        var generation = checked(++_generation);
         _lifecycle.TransitionTo(CellLifecycleState.Preparing);
-        TPrepared? preparedValue = default;
-        var attachedToLifecycle = false;
+        var source = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        _preparationCancellation = source;
+        return Task.Run(async () =>
+        {
+            var threadId = Environment.CurrentManagedThreadId;
+            TPrepared? prepared = default;
+            Exception? failure = null;
+            try
+            {
+                prepared = await prepare(source.Token).ConfigureAwait(false);
+                if (prepared is null)
+                    throw new InvalidOperationException("Cell preparation returned no data.");
+                source.Token.ThrowIfCancellationRequested();
+            }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+
+            // This is the worker's only operation on the load operation. Lifecycle data and
+            // resource ownership are committed later by PumpCompletions on the owner thread.
+            _completions.Enqueue(new PreparationCompletion(generation, threadId, prepared, failure, source));
+        }, CancellationToken.None);
+    }
+
+    /// <summary>Commits queued worker results on the owner thread and returns the number drained.</summary>
+    public int PumpCompletions()
+    {
+        EnsureOwningThread();
+        var drained = 0;
+        while (_completions.TryDequeue(out var completion))
+        {
+            drained++;
+            if (completion.Generation != _generation || _lifecycle.State != CellLifecycleState.Preparing)
+            {
+                completion.Prepared?.Dispose();
+                completion.Cancellation.Dispose();
+                continue;
+            }
+
+            PreparationThreadId = completion.ThreadId;
+            if (ReferenceEquals(_preparationCancellation, completion.Cancellation))
+                _preparationCancellation = null;
+
+            if (completion.Failure is { } failure)
+            {
+                try
+                {
+                    completion.Prepared?.Dispose();
+                }
+                catch (Exception disposeException)
+                {
+                    failure = new AggregateException(failure, disposeException);
+                }
+
+                _lifecycle.MarkFailed(failure);
+                completion.Cancellation.Dispose();
+                continue;
+            }
+
+            var attachedToLifecycle = false;
+            try
+            {
+                var prepared = completion.Prepared
+                    ?? throw new InvalidOperationException("Cell preparation returned no data.");
+                _lifecycle.SetPreparationResource(prepared);
+                attachedToLifecycle = true;
+                _lifecycle.TransitionTo(CellLifecycleState.Ready);
+            }
+            catch (Exception exception)
+            {
+                if (!attachedToLifecycle)
+                {
+                    try { completion.Prepared?.Dispose(); }
+                    catch (Exception disposeException)
+                    {
+                        exception = new AggregateException(exception, disposeException);
+                    }
+                }
+                if (_lifecycle.State is CellLifecycleState.Preparing or CellLifecycleState.Ready)
+                    _lifecycle.MarkFailed(exception);
+                else
+                    throw;
+            }
+            finally
+            {
+                completion.Cancellation.Dispose();
+            }
+        }
+
+        return drained;
+    }
+
+    /// <summary>Discards ready data or clears a failed attempt; a later PrepareAsync retries the operation.</summary>
+    public void Discard()
+    {
+        EnsureOwningThread();
+        if (_lifecycle.State == CellLifecycleState.Ready)
+        {
+            _lifecycle.TransitionTo(CellLifecycleState.Unloading);
+            _lifecycle.TransitionTo(CellLifecycleState.Unloaded);
+            return;
+        }
+        if (_lifecycle.State == CellLifecycleState.Failed)
+        {
+            _lifecycle.TransitionTo(CellLifecycleState.Unloaded);
+            return;
+        }
+        throw new InvalidOperationException($"Only a ready or failed cell can be discarded; current state is {_lifecycle.State}.");
+    }
+
+    /// <summary>
+    /// Cancels preparation and immediately invalidates its generation. Any late worker result is
+    /// disposed by the owner thread when <see cref="PumpCompletions"/> drains it.
+    /// </summary>
+    public void Cancel()
+    {
+        EnsureOwningThread();
+        if (_lifecycle.State != CellLifecycleState.Preparing)
+            throw new InvalidOperationException($"Only a preparing cell can be canceled; current state is {_lifecycle.State}.");
+
+        var cancellation = _preparationCancellation;
+        _preparationCancellation = null;
+        _generation = checked(_generation + 1);
         try
         {
-            var result = await Task.Run(async () =>
-            {
-                var threadId = Environment.CurrentManagedThreadId;
-                var value = await prepare(cancellationToken).ConfigureAwait(false);
-                return (Value: value, ThreadId: threadId);
-            }, cancellationToken).ConfigureAwait(false);
-
-            preparedValue = result.Value;
-            if (preparedValue is null)
-                throw new InvalidOperationException("Cell preparation returned no data.");
-            PreparationThreadId = result.ThreadId;
-            _lifecycle.SetPreparationResource(preparedValue);
-            attachedToLifecycle = true;
-            _lifecycle.TransitionTo(CellLifecycleState.Ready);
-            preparedValue = default;
+            cancellation?.Cancel();
         }
-        catch (Exception exception)
+        finally
         {
-            if (!attachedToLifecycle) preparedValue?.Dispose();
-            if (State is CellLifecycleState.Preparing or CellLifecycleState.Ready)
-                _lifecycle.MarkFailed(exception);
-            throw;
+            _lifecycle.TransitionTo(CellLifecycleState.Unloading);
+            _lifecycle.TransitionTo(CellLifecycleState.Unloaded);
         }
     }
 
@@ -190,4 +329,7 @@ public sealed class WorldCellLoadOperation<TPrepared, TActive>
             failure = new AggregateException(failure, disposeException);
         }
     }
+
+    private sealed record PreparationCompletion(long Generation, int ThreadId,
+        TPrepared? Prepared, Exception? Failure, CancellationTokenSource Cancellation);
 }
