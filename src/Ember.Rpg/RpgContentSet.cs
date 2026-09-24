@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 
@@ -89,7 +90,18 @@ public sealed class RpgContentSet
         foreach (var id in Items.All.Keys) Register(registry, id, "item", errors);
         foreach (var id in Factions.All.Keys) Register(registry, id, "faction", errors);
         foreach (var id in Spells.All.Keys) Register(registry, id, "spell", errors);
-        foreach (var dialogue in Dialogues) Register(registry, dialogue.Id, "dialogue", errors);
+        foreach (var dialogue in Dialogues)
+        {
+            if (dialogue is null)
+            {
+                errors.Add(new ContentDiagnostic("dialogue catalogue", "null dialogue record"));
+                continue;
+            }
+            if (string.IsNullOrWhiteSpace(dialogue.Id.Value))
+                errors.Add(new ContentDiagnostic("dialogue", "dialogue ID cannot be empty"));
+            else
+                Register(registry, dialogue.Id, "dialogue", errors);
+        }
         foreach (var quest in Quests.All()) Register(registry, quest.Id, "quest", errors);
 
         foreach (var actor in Actors.All.Values)
@@ -98,36 +110,144 @@ public sealed class RpgContentSet
 
         foreach (var dialogue in Dialogues)
         {
+            if (dialogue is null) continue;
+            var dialogueSource = $"dialogue '{dialogue.Id.Value}'";
+            if (dialogue.Nodes is null || dialogue.Nodes.Count == 0)
+            {
+                errors.Add(new ContentDiagnostic(dialogueSource, "conversation needs at least one node"));
+                continue;
+            }
+
             var nodeIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var node in dialogue.Nodes)
-                if (!nodeIds.Add(node.Id))
-                    errors.Add(new ContentDiagnostic($"dialogue '{dialogue.Id.Value}'", $"duplicate node '{node.Id}'"));
+            {
+                if (node is null) continue;
+                if (string.IsNullOrWhiteSpace(node.Id))
+                    errors.Add(new ContentDiagnostic(dialogueSource, "node ID cannot be empty"));
+                else if (!nodeIds.Add(node.Id))
+                    errors.Add(new ContentDiagnostic(dialogueSource, $"duplicate node '{node.Id}'"));
+            }
 
             foreach (var node in dialogue.Nodes)
             {
+                if (node is null) continue;
+                var nodeSource = $"{dialogueSource} node '{node.Id}'";
+                if (string.IsNullOrWhiteSpace(node.Text))
+                    errors.Add(new ContentDiagnostic(nodeSource, "dialogue text cannot be empty"));
+                if (node.SpeakerActorId is null && string.IsNullOrWhiteSpace(node.Speaker))
+                    errors.Add(new ContentDiagnostic(nodeSource, "speaker name or registered speaker actor is required"));
                 if (node.SpeakerActorId is { } actorId)
                     AddReferenceError(registry.CheckReference(
                         $"dialogue '{dialogue.Id.Value}' node '{node.Id}'.SpeakerActorId", actorId), errors);
+                if (node.Options is null)
+                {
+                    errors.Add(new ContentDiagnostic(nodeSource, "choice list cannot be null"));
+                    continue;
+                }
+
+                var optionIds = new HashSet<string>(StringComparer.Ordinal);
                 for (var i = 0; i < node.Options.Count; i++)
                 {
                     var option = node.Options[i];
-                    foreach (var requirement in option.RequiresStats) requirement.Validate();
-                    foreach (var requirement in option.RequiresFactions)
-                        AddReferenceError(registry.CheckReference(
-                            $"dialogue '{dialogue.Id.Value}' node '{node.Id}' option {i}.RequiresFactions",
-                            requirement.FactionId), errors);
+                    var optionSource = $"{nodeSource} option {i}";
+                    if (option is null)
+                    {
+                        errors.Add(new ContentDiagnostic(optionSource, "choice record cannot be null"));
+                        continue;
+                    }
+                    if (string.IsNullOrWhiteSpace(option.Label))
+                        errors.Add(new ContentDiagnostic(optionSource, "choice text cannot be empty"));
+                    if (!string.IsNullOrWhiteSpace(option.Id) && !optionIds.Add(option.Id))
+                        errors.Add(new ContentDiagnostic(optionSource, $"duplicate choice ID '{option.Id}'"));
+
+                    if (option.Requires is null)
+                        errors.Add(new ContentDiagnostic(optionSource, "flag conditions cannot be null"));
+                    else
+                    {
+                        for (var requirementIndex = 0; requirementIndex < option.Requires.Count; requirementIndex++)
+                        {
+                            var requirement = option.Requires[requirementIndex];
+                            var requirementSource = $"{optionSource} flag condition {requirementIndex}";
+                            if (requirement is null)
+                            {
+                                errors.Add(new ContentDiagnostic(requirementSource, "condition cannot be null"));
+                                continue;
+                            }
+                            if (string.IsNullOrWhiteSpace(requirement.Flag))
+                                errors.Add(new ContentDiagnostic(requirementSource, "flag name cannot be empty"));
+                            var kinds = (requirement.Bool is null ? 0 : 1)
+                                + (requirement.AtLeast is null && requirement.AtMost is null ? 0 : 1)
+                                + (requirement.Text is null ? 0 : 1);
+                            if (kinds > 1)
+                                errors.Add(new ContentDiagnostic(requirementSource,
+                                    "boolean, numeric, and text constraints cannot be combined for one flag"));
+                            if (requirement.AtLeast is { } minimum && !double.IsFinite(minimum))
+                                errors.Add(new ContentDiagnostic(requirementSource, "minimum must be finite"));
+                            if (requirement.AtMost is { } maximum && !double.IsFinite(maximum))
+                                errors.Add(new ContentDiagnostic(requirementSource, "maximum must be finite"));
+                            if (requirement.AtLeast is { } lower && requirement.AtMost is { } upper
+                                && double.IsFinite(lower) && double.IsFinite(upper) && lower > upper)
+                                errors.Add(new ContentDiagnostic(requirementSource, "minimum cannot exceed maximum"));
+                        }
+                    }
+
+                    if (option.RequiresStats is null)
+                        errors.Add(new ContentDiagnostic(optionSource, "stat requirements cannot be null"));
+                    else
+                        for (var requirementIndex = 0; requirementIndex < option.RequiresStats.Count; requirementIndex++)
+                            try { option.RequiresStats[requirementIndex].Validate(); }
+                            catch (Exception exception)
+                            {
+                                errors.Add(new ContentDiagnostic($"{optionSource} stat requirement {requirementIndex}", exception.Message));
+                            }
+
+                    if (option.RequiresFactions is null)
+                        errors.Add(new ContentDiagnostic(optionSource, "faction requirements cannot be null"));
+                    else
+                        for (var requirementIndex = 0; requirementIndex < option.RequiresFactions.Count; requirementIndex++)
+                        {
+                            var requirement = option.RequiresFactions[requirementIndex];
+                            if (requirement is null)
+                            {
+                                errors.Add(new ContentDiagnostic($"{optionSource} faction requirement {requirementIndex}",
+                                    "requirement cannot be null"));
+                                continue;
+                            }
+                            AddReferenceError(registry.CheckReference(
+                                $"{optionSource}.RequiresFactions[{requirementIndex}]", requirement.FactionId), errors);
+                        }
+
+                    if (option.Sets is null)
+                        errors.Add(new ContentDiagnostic(optionSource, "choice effects cannot be null"));
+                    else
+                        foreach (var (name, value) in option.Sets)
+                        {
+                            if (string.IsNullOrWhiteSpace(name))
+                                errors.Add(new ContentDiagnostic(optionSource, "effect flag name cannot be empty"));
+                            if (value.Kind == FlagKind.Number && !double.IsFinite(value.AsNumber()))
+                                errors.Add(new ContentDiagnostic(optionSource, $"numeric effect '{name}' must be finite"));
+                        }
                 }
             }
 
             foreach (var node in dialogue.Nodes)
+            {
+                if (node is null || node.Options is null) continue;
                 for (var i = 0; i < node.Options.Count; i++)
                 {
-                    var next = node.Options[i].Next;
-                    if (next is not null && !nodeIds.Contains(next))
+                    var option = node.Options[i];
+                    if (option is null) continue;
+                    var next = option.Next;
+                    if (next is not null && string.IsNullOrWhiteSpace(next))
+                        errors.Add(new ContentDiagnostic(
+                            $"dialogue '{dialogue.Id.Value}' node '{node.Id}' option {i}.Next",
+                            "target node ID cannot be empty"));
+                    else if (next is not null && !nodeIds.Contains(next))
                         errors.Add(new ContentDiagnostic(
                             $"dialogue '{dialogue.Id.Value}' node '{node.Id}' option {i}.Next",
                             $"dialogue node '{next}'"));
                 }
+            }
         }
 
         foreach (var quest in Quests.All())
@@ -240,13 +360,19 @@ public sealed class RpgContentSet
 /// <summary>Loads a content pack and reports cross-reference failures with source and target IDs.</summary>
 public static class RpgContentJson
 {
+    private static JsonSerializerOptions CreateJsonOptions() => new()
+    {
+        PropertyNameCaseInsensitive = true,
+        PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        WriteIndented = true,
+        Converters = { FlagValueJson.Instance, new JsonStringEnumConverter() }
+    };
+
     public static RpgContentSet FromJson(string json)
     {
-        var document = JsonSerializer.Deserialize<ContentDocument>(json, new JsonSerializerOptions
-        {
-            PropertyNameCaseInsensitive = true,
-            Converters = { FlagValueJson.Instance, new JsonStringEnumConverter() }
-        }) ?? throw new JsonException("The RPG content document was empty.");
+        ArgumentNullException.ThrowIfNull(json);
+        var document = JsonSerializer.Deserialize<ContentDocument>(json, CreateJsonOptions())
+            ?? throw new JsonException("The RPG content document was empty.");
 
         var actors = new ActorCatalogue();
         foreach (var actor in document.Actors ?? new List<ActorDef>()) actors.Add(actor);
@@ -277,6 +403,52 @@ public static class RpgContentJson
     }
 
     public static RpgContentSet Load(string path) => FromJson(File.ReadAllText(path));
+
+    public static string ToJson(RpgContentSet content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        var errors = content.Validate();
+        if (errors.Count > 0)
+            throw new InvalidDataException("RPG content validation failed: " + string.Join(" ", errors));
+
+        return JsonSerializer.Serialize(new ContentDocument
+        {
+            Actors = content.Actors.All.Values.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),
+            Items = content.Items.All.Values.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),
+            Factions = content.Factions.All.Values.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),
+            Spells = content.Spells.All.Values.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),
+            SkillUseRules = content.SkillProgression.All.Values.OrderBy(value => value.ActionId, StringComparer.Ordinal).ToList(),
+            Dialogues = content.Dialogues.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),
+            Quests = content.Quests.All().OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList()
+        }, CreateJsonOptions());
+    }
+
+    public static void SaveAtomic(string path, RpgContentSet content)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var json = ToJson(content);
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath)
+            ?? throw new InvalidDataException("RPG content path has no parent directory.");
+        Directory.CreateDirectory(directory);
+        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            using (var writer = new StreamWriter(stream))
+            {
+                writer.Write(json);
+                writer.Flush();
+                stream.Flush(flushToDisk: true);
+            }
+            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
+            else File.Move(temporaryPath, fullPath);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
+    }
 
     private sealed class ContentDocument
     {

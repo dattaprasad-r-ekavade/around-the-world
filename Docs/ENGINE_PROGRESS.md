@@ -1226,3 +1226,22 @@ At this update, 139 of 155 roadmap rows are complete (89.7%). Task 129 is next. 
 | Direct mouse-driven editor actions | Not automated; placement, stable-ID persistence, validator rejection, and command undo/redo have regression coverage. The visible broken-link status still needs a direct editor interaction check. |
 
 At this update, 141 of 155 ordered rows are complete (91.0%). Task 131 is next. Task 144 remains a conditional performance-triage gate before increasing world density if the long-frame tail recurs.
+
+## Tasks 131–132 — cell path and dialogue authoring — 24 September 2026
+
+- Task 131: the CharacterStudio Paths tab edits stable path nodes and directed/bidirectional edges, saves each cell graph under `Navigation/<cell-guid>.paths.json`, computes shortest routes at a chosen NPC clearance, and draws a plan-view reachability map. In play mode, the selected scene object can follow the selected route through the physics character controller. `SceneGraphCloner` now also retains world placement, door, spawn, and reset-policy data in the play clone.
+- The route preview currently runs against a separate flat physics floor. It does not import scene collision geometry, traverse slopes/stairs, or find paths between cells; this proves local route authoring/following, not finished world navigation.
+- Task 132: the Dialogue tab creates conversations and nodes, edits node IDs/speaker/text/order, links choices to nodes, and edits flag, actor-stat, faction, and typed flag-effect data. Content validation collects malformed records and missing references before enabling save. The full content pack is written atomically; the sample content pack includes a small branching Town Guard conversation to edit.
+- `RpgContentSet.Validate` now reports several dialogue-record errors together, including empty node/choice data, invalid conditions, non-finite effects, and missing references. The content round-trip regression confirms a rejected invalid save leaves the previous file intact.
+
+### Tasks 131–132 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 229 passed, 0 failed, 0 skipped; includes saved-path follow, dialogue validation/save-load, and play-clone identity tests |
+| `dotnet run --project tests/Ember.Rpg.Check/Ember.Rpg.Check.csproj -c Release --no-build --no-restore` | PASS — save then load equals original |
+| CharacterStudio Release screenshot smoke | PASS — 1280×720; RPG Authoring panel and its tabs rendered with the showcase scene |
+| Direct mouse-driven path/dialogue authoring | Not exercised; runtime path following and persisted dialogue authoring/validation are covered by regression checks, and the editor launch/render path is smoke-checked |
+
+At this update, 143 of 155 ordered rows are complete (92.3%). Task 133 is next. Task 144 remains a conditional performance-triage gate before increasing world density if the long-frame tail recurs.

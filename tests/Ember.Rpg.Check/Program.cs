@@ -948,6 +948,7 @@ internal static class Program
               "Id": "greet",
               "Speaker": "Rowan",
               "SpeakerActorId": "actor.elder",
+              "Text": "Well met, wanderer.",
               "Options": [
                 {
                   "Label": "Continue",

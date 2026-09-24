@@ -285,8 +285,8 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 128 | Add a cell browser for creating/opening exterior and interior cells. | IDs remain stable after renaming; coordinates cannot collide. |
 | [x] | 129 | Add an actor/item placement palette backed by registered RPG definitions. | New placements get unique instance IDs and reopen correctly. |
 | [x] | 130 | Add a door destination/spawn picker. | Selecting a destination creates a valid travel link and exposes broken links visibly. |
-| [ ] | 131 | Add path-node/edge editing with reachability visualization. | A route authored in the tool can be followed by an NPC in play mode. |
-| [ ] | 132 | Add a dialogue record panel with condition/effect editing. | The branching conversation can be edited and validated without source changes. |
+| [x] | 131 | Add path-node/edge editing with reachability visualization. | A route authored in the tool can be followed by an NPC in play mode. |
+| [x] | 132 | Add a dialogue record panel with condition/effect editing. | The branching conversation can be edited and validated without source changes. |
 | [ ] | 133 | Add a quest objective/event-reference panel. | Missing target IDs are identified before play/package, and valid objectives run. |
 | [ ] | 134 | Add reusable placement templates with explicit instance overrides. | Updating a template preserves documented overrides and stable world-instance IDs. |
 | [ ] | 135 | Add project-wide reference validation for cells, doors, paths, actors, items, dialogue, and quests. | A deliberately broken fixture reports every known error with its owning file/record. |
@@ -333,14 +333,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 130 — CharacterStudio can place registered RPG actors/items with stable world-instance IDs and edit/check cell-to-spawn door links.
-- Current task: 131 — add path-node/edge editing with reachability visualization.
-- Current checklist: 141 of 155 ordered rows complete (91.0%); task 131 is the first unchecked baseline row.
+- Last completed task: 132 — CharacterStudio can author cell-local paths and branching RPG dialogue records with validated atomic content-pack saves.
+- Current task: 133 — add a quest objective/event-reference panel.
+- Current checklist: 143 of 155 ordered rows complete (92.3%); task 133 is the first unchecked baseline row.
 - Current gates: the Stage 13 reference benchmark gate passed on the recorded 3×3 blockout. The Stage 14 settlement-authoring gate and earlier Release B/C/D integration gates remain Pending. Task 144 remains required before increasing world density if the long-frame tail recurs.
-- Latest changes: registered RPG definitions feed a CharacterStudio placement palette; placements persist stable IDs in scene version 6. The World Travel panel adds spawn markers, validates door links, supports undo/redo, and displays broken-link diagnostics.
-- Verification: see the 24 September 2026 tasks 129–130 entry in `ENGINE_PROGRESS.md` for the Release build, full test suite, RPG save/load check, and CharacterStudio capture.
-- Limits: cell names are represented by their scene-file names; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: task 131, add path-node/edge authoring and reachability visualization.
+- Latest changes: CharacterStudio can edit and visualize cell-local navigation paths, run a collision-aware character follower in play mode, and author branching dialogue nodes, requirements, and effects. Valid RPG content packs save atomically and report structural/reference errors before save.
+- Verification: see the 24 September 2026 tasks 131–132 entry in `ENGINE_PROGRESS.md` for the Release build, full test suite, RPG save/load check, and CharacterStudio capture.
+- Limits: path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: task 133, add quest objective and event-reference authoring.
 
 Suggested request to an implementing AI:
 

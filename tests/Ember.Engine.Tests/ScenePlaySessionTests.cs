@@ -1,6 +1,7 @@
 using System;
 using Ember.Audio;
 using Ember.Scene;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Xunit;
 
@@ -108,6 +109,32 @@ public sealed class ScenePlaySessionTests
         Assert.NotNull(authored.Find(childId));
         Assert.Null(runtime.Find(childId));
         Assert.Equal("Walk", authored.Find(childId)!.CharacterSettings!.ClipName);
+    }
+
+    [Fact]
+    public void PlayCloneKeepsTravelAndRpgIdentityComponents()
+    {
+        var objectId = Guid.NewGuid();
+        var cellId = Guid.NewGuid();
+        var spawnId = Guid.NewGuid();
+        var instanceId = Guid.NewGuid();
+        var authored = new SceneGraph();
+        authored.Add(new SceneObject(objectId, "Guard")
+        {
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.guard", instanceId),
+            Door = new WorldDoorComponent(cellId, spawnId, Quaternion.Identity),
+            SpawnPoint = new WorldSpawnComponent(spawnId),
+            ResetPolicy = WorldInstanceResetPolicy.ResetOnCellReset
+        });
+
+        using var session = new ScenePlaySession(authored);
+        var clone = session.RuntimeScene.Find(objectId)!;
+
+        Assert.Equal(instanceId, clone.WorldEntity!.InstanceId);
+        Assert.Equal("actors.guard", clone.WorldEntity.DefinitionId);
+        Assert.Equal(cellId, clone.Door!.DestinationCellId);
+        Assert.Equal(spawnId, clone.SpawnPoint!.Id);
+        Assert.Equal(WorldInstanceResetPolicy.ResetOnCellReset, clone.ResetPolicy);
     }
 
     private sealed class ProbeBehaviour : SceneBehaviour

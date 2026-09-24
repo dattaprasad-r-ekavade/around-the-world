@@ -1,4 +1,5 @@
 using System;
+using System.IO;
 using Ember.Physics;
 using Ember.World;
 using Microsoft.Xna.Framework;
@@ -8,6 +9,39 @@ namespace Ember.Engine.Tests;
 
 public sealed class PhysicsCharacterPathFollowerTests
 {
+    [Fact]
+    public void SavedCellPathCanBeReloadedSearchedAndFollowedInPlayPhysics()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), $"ember-path-follow-{Guid.NewGuid():N}");
+        var path = Path.Combine(directory, "cell.paths.json");
+        try
+        {
+            var graph = StraightGraph(0, 3);
+            CellPathGraphFile.SaveAtomic(path, graph);
+            var loaded = CellPathGraphFile.Load(path);
+            var route = CellRouteSearch.FindShortestRoute(loaded,
+                loaded.Nodes[0].Id, loaded.Nodes[1].Id, requiredClearanceRadius: 0.5f)!;
+
+            using var world = new PhysicsWorld();
+            world.AddStaticBox(new Vector3(0, -0.5f, 0), new Vector3(20, 1, 20));
+            using var character = new PhysicsCharacterController(world, new Vector3(0, 1, 0));
+            var follower = new PhysicsCharacterPathFollower(character, loaded, route);
+            for (var step = 0; step < 180 && follower.State == CharacterPathFollowState.Following; step++)
+            {
+                follower.Advance(1f / 60f);
+                world.Step(1f / 60f);
+            }
+
+            Assert.Equal(CharacterPathFollowState.Arrived, follower.State);
+            Assert.InRange(character.Pose.Position.X, 2.75f, 3.25f);
+            Assert.True(character.IsGrounded);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     [Fact]
     public void CharacterFollowsAuthoredRouteAndStopsNearDestination()
     {

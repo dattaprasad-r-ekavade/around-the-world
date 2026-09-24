@@ -27,7 +27,7 @@ internal sealed record SequenceExportEditorRequest(
 internal sealed record RpgPlacementOption(WorldEntityKind Kind, string Id, string Name);
 
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
-internal sealed class CharacterStudioEditorUi : IDisposable
+internal sealed partial class CharacterStudioEditorUi : IDisposable
 {
     private readonly IntPtr _context;
     private readonly ImGuiIOPtr _io;
@@ -57,6 +57,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
     private readonly Func<string, string, string?> _openWorldCell;
     private readonly Action<string, string, Guid> _worldCellRenamed;
     private readonly Func<string?> _getCurrentScenePath;
+    private readonly Func<Guid, CellPathGraph, CellPathRoute, string> _startPathFollow;
+    private readonly Func<Guid, string?> _getPathFollowStatus;
+    private readonly Action<Guid> _stopPathFollow;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -128,7 +131,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         Func<SequenceExportEditorInfo> getSequenceExportInfo,
         Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
         Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
-        Action<string, string, Guid> worldCellRenamed, Func<string?> getCurrentScenePath)
+        Action<string, string, Guid> worldCellRenamed, Func<string?> getCurrentScenePath,
+        Func<Guid, CellPathGraph, CellPathRoute, string> startPathFollow,
+        Func<Guid, string?> getPathFollowStatus, Action<Guid> stopPathFollow)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -157,6 +162,9 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         _openWorldCell = openWorldCell ?? throw new ArgumentNullException(nameof(openWorldCell));
         _worldCellRenamed = worldCellRenamed ?? throw new ArgumentNullException(nameof(worldCellRenamed));
         _getCurrentScenePath = getCurrentScenePath ?? throw new ArgumentNullException(nameof(getCurrentScenePath));
+        _startPathFollow = startPathFollow ?? throw new ArgumentNullException(nameof(startPathFollow));
+        _getPathFollowStatus = getPathFollowStatus ?? throw new ArgumentNullException(nameof(getPathFollowStatus));
+        _stopPathFollow = stopPathFollow ?? throw new ArgumentNullException(nameof(stopPathFollow));
         LoadRpgPlacementContent();
         _context = ImGui.CreateContext();
         try
@@ -225,23 +233,51 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         DrawPanel(scene);
         DrawSequencePanel();
         DrawWorldCellPanel();
-        DrawRpgPlacementPanel(scene);
-        DrawWorldTravelPanel(scene);
+        DrawRpgAuthoringPanel(scene);
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
     }
 
-    private void DrawRpgPlacementPanel(SceneGraph scene)
+    private void DrawRpgAuthoringPanel(SceneGraph scene)
     {
         ImGui.SetNextWindowPos(new NumericsVector2(800f, 16f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(450f, 286f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("RPG Placement", ImGuiWindowFlags.NoCollapse))
+        ImGui.SetNextWindowSize(new NumericsVector2(450f, 688f), ImGuiCond.FirstUseEver);
+        if (!ImGui.Begin("RPG Authoring", ImGuiWindowFlags.NoCollapse))
         {
             ImGui.End();
             return;
         }
 
+        if (ImGui.BeginTabBar("RPG authoring tabs"))
+        {
+            if (ImGui.BeginTabItem("Placement"))
+            {
+                DrawRpgPlacementTab(scene);
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Travel"))
+            {
+                DrawWorldTravelTab(scene);
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Paths"))
+            {
+                DrawPathAuthoringTab(scene);
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Dialogue"))
+            {
+                DrawDialogueAuthoringTab();
+                ImGui.EndTabItem();
+            }
+            ImGui.EndTabBar();
+        }
+        ImGui.End();
+    }
+
+    private void DrawRpgPlacementTab(SceneGraph scene)
+    {
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("##rpgContentPath", "Path to registered RPG definitions", ref _rpgContentPath, 1024);
         if (ImGui.Button("Load definitions")) LoadRpgPlacementContent();
@@ -273,7 +309,6 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         }
 
         ImGui.TextWrapped(_rpgPlacementStatus);
-        ImGui.End();
     }
 
     private IReadOnlyList<RpgPlacementOption> GetRpgPlacementOptions()
@@ -324,22 +359,13 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         }
     }
 
-    private void DrawWorldTravelPanel(SceneGraph scene)
+    private void DrawWorldTravelTab(SceneGraph scene)
     {
-        ImGui.SetNextWindowPos(new NumericsVector2(800f, 310f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(450f, 400f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("World Travel", ImGuiWindowFlags.NoCollapse))
-        {
-            ImGui.End();
-            return;
-        }
-
         var activeCell = FindCurrentWorldCell();
         if (_worldManifest is null)
         {
             ImGui.TextWrapped("Open a world manifest in World Cells before adding spawn markers or door links.");
             ImGui.TextWrapped(_travelStatus);
-            ImGui.End();
             return;
         }
 
@@ -420,7 +446,6 @@ internal sealed class CharacterStudioEditorUi : IDisposable
         ImGui.EndChild();
 
         ImGui.TextWrapped(_travelStatus);
-        ImGui.End();
     }
 
     private void AddSpawnMarker(SceneGraph scene)

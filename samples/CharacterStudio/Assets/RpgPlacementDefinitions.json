@@ -21,5 +21,37 @@
       "name": "Health Potion",
       "stackable": true
     }
+  ],
+  "dialogues": [
+    {
+      "id": "dialogue.town-guard",
+      "nodes": [
+        {
+          "id": "greeting",
+          "speaker": "Town Guard",
+          "speakerActorId": "actors.town-guard",
+          "text": "The gate is under watch. What do you need?",
+          "options": [
+            {
+              "id": "enter",
+              "label": "The gate is open.",
+              "next": "admitted",
+              "requires": [{ "flag": "gate_open", "bool": true }],
+              "sets": { "guard_spoken": true, "last_guard_topic": "entry" }
+            },
+            {
+              "id": "wait",
+              "label": "I will wait for it to open.",
+              "next": "waiting",
+              "requires": [{ "flag": "gate_open", "bool": false }],
+              "sets": { "guard_spoken": true }
+            },
+            { "id": "leave", "label": "Goodbye." }
+          ]
+        },
+        { "id": "admitted", "speaker": "Town Guard", "text": "You may pass." },
+        { "id": "waiting", "speaker": "Town Guard", "text": "Stay clear of the gate." }
+      ]
+    }
   ]
 }

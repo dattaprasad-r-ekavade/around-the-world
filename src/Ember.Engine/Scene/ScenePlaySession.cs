@@ -56,7 +56,11 @@ public static class SceneGraphCloner
                     Scale = item.Transform.Scale
                 },
                 GltfAsset = item.GltfAsset,
-                CharacterSettings = CopyCharacterSettings(item.CharacterSettings)
+                CharacterSettings = CopyCharacterSettings(item.CharacterSettings),
+                Door = item.Door,
+                SpawnPoint = item.SpawnPoint,
+                WorldEntity = item.WorldEntity,
+                ResetPolicy = item.ResetPolicy
             };
             clone.Add(copy);
         }

@@ -9,9 +9,11 @@ using Ember.Audio;
 using Ember;
 using Ember.Input;
 using Ember.Project;
+using Ember.Physics;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -81,6 +83,9 @@ public sealed class CharacterStudioGame : EngineHost
     private float _sequenceExportRestoreFieldOfView;
     private AttachmentBoxRenderer? _attachmentRenderer;
     private readonly Dictionary<Guid, bool> _farLodByObjectId = new();
+    private readonly Dictionary<Guid, PathPreviewAgent> _pathPreviewAgents = new();
+    private PhysicsWorld? _pathPreviewWorld;
+    private PhysicsFixedStepper? _pathPreviewStepper;
     private MouseState _lastMouse;
     private bool _hasMouse;
     private int _sceneDrawCalls;
@@ -211,7 +216,8 @@ public sealed class CharacterStudioGame : EngineHost
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
-                SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath);
+                SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
+                StartPathFollow, GetPathFollowStatus, StopPathFollow);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -337,6 +343,7 @@ public sealed class CharacterStudioGame : EngineHost
         {
             if (!sequenceExportRunning)
             {
+                UpdatePathFollowers(RealSeconds(gameTime));
                 _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 foreach (var state in preview.CharacterInstances.Values)
                     state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
@@ -397,6 +404,7 @@ public sealed class CharacterStudioGame : EngineHost
         _sequenceExportJob?.Cancel();
         _sequenceExportTarget?.Dispose();
         _sequenceExportTarget = null;
+        DisposePathPhysics();
         _playSession?.Dispose();
         _playSession = null;
         _editorUi?.Dispose();
@@ -957,6 +965,7 @@ public sealed class CharacterStudioGame : EngineHost
     private void StopPlaySession()
     {
         if (_playSession is not { } session || _preview is null) return;
+        DisposePathPhysics();
         _editorUi?.CompletePendingEdit(session.RuntimeScene);
         try
         {
@@ -995,6 +1004,83 @@ public sealed class CharacterStudioGame : EngineHost
         if (!float.IsFinite(volume) || volume < 0f || volume > 1f) return;
         _interactionVolume = volume;
         if (_playAudioClip is { IsDisposed: false } clip) clip.Volume = volume;
+    }
+
+    private string StartPathFollow(Guid objectId, CellPathGraph graph, CellPathRoute route)
+    {
+        if (_playSession is null) return "Start play mode before following an authored route.";
+        var actor = CurrentScene.Find(objectId);
+        if (actor is null) return "The selected actor is not in the play scene.";
+
+        StopPathFollow(objectId);
+        try
+        {
+            if (_pathPreviewWorld is null)
+            {
+                _pathPreviewWorld = new PhysicsWorld();
+                _pathPreviewWorld.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(2000f, 1f, 2000f));
+                _pathPreviewStepper = new PhysicsFixedStepper();
+            }
+
+            var worldPosition = CurrentScene.GetWorldMatrix(objectId).Translation;
+            var controller = new PhysicsCharacterController(_pathPreviewWorld,
+                worldPosition + new Vector3(0f, 0.9f, 0f), new PhysicsCharacterSettings { MoveSpeed = 3.5f });
+            try
+            {
+                var follower = new PhysicsCharacterPathFollower(controller, graph, route);
+                _pathPreviewAgents.Add(objectId, new PathPreviewAgent(controller, follower));
+            }
+            catch
+            {
+                controller.Dispose();
+                throw;
+            }
+            return $"Following route with collision-aware physics ({route.NodeIds.Count} nodes).";
+        }
+        catch (Exception exception)
+        {
+            if (_pathPreviewAgents.Count == 0) DisposePathPhysics();
+            return $"Could not start route following: {exception.Message}";
+        }
+    }
+
+    private string? GetPathFollowStatus(Guid objectId) =>
+        _pathPreviewAgents.TryGetValue(objectId, out var agent) ? agent.Follower.State.ToString() : null;
+
+    private void StopPathFollow(Guid objectId)
+    {
+        if (_pathPreviewAgents.Remove(objectId, out var agent)) agent.Controller.Dispose();
+        if (_pathPreviewAgents.Count == 0) DisposePathPhysics();
+    }
+
+    private void UpdatePathFollowers(float elapsedSeconds)
+    {
+        if (_pathPreviewWorld is null || _pathPreviewStepper is null || _pathPreviewAgents.Count == 0) return;
+        var step = _pathPreviewStepper.Advance(elapsedSeconds, delta =>
+        {
+            foreach (var agent in _pathPreviewAgents.Values) agent.Follower.Advance(delta);
+            _pathPreviewWorld.Step(delta);
+        });
+        foreach (var (objectId, agent) in _pathPreviewAgents.ToArray())
+        {
+            if (CurrentScene.Find(objectId) is not { } actor)
+            {
+                StopPathFollow(objectId);
+                continue;
+            }
+            var physicsPose = _pathPreviewWorld.GetInterpolatedPose(agent.Controller.PhysicsBodyId,
+                step.InterpolationAlpha);
+            actor.Transform.Position = physicsPose.Position - new Vector3(0f, 0.9f, 0f);
+        }
+    }
+
+    private void DisposePathPhysics()
+    {
+        foreach (var agent in _pathPreviewAgents.Values) agent.Controller.Dispose();
+        _pathPreviewAgents.Clear();
+        _pathPreviewWorld?.Dispose();
+        _pathPreviewWorld = null;
+        _pathPreviewStepper = null;
     }
 
     private SequenceEditorInfo? GetSequenceEditorInfo()
@@ -1441,6 +1527,9 @@ public sealed class CharacterStudioGame : EngineHost
             Console.WriteLine($"GLB reimport failed; the previous asset remains active: {exception.Message}");
         }
     }
+
+    private sealed record PathPreviewAgent(
+        PhysicsCharacterController Controller, PhysicsCharacterPathFollower Follower);
 
     private readonly record struct PlaybackOptions(
         string? AnimationName,
