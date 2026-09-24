@@ -757,3 +757,19 @@ At this update, 96 of 154 roadmap rows are complete (62.3%). Task 86 is next. Th
 | `WorldCellChangeStoreTests` | PASS — transform/enabled overrides survived reload and remained cell-scoped |
 
 At this update, 97 of 154 roadmap rows are complete (63.0%). Task 87 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
+
+## Task 87 — authored-object deletion tombstones — 24 September 2026
+
+- Extended `WorldCellChangeStore` with per-cell deletion tombstones keyed by `WorldInstanceId`. Tombstones take precedence over transform/enabled overrides and remove the authored object when changes are applied to a reloaded scene.
+- Deleting one placement does not delete another placement that shares the same GLB. Tombstoned instances reject later transform/enabled writes; reset/undelete policy remains for task 93.
+- The fixture reloads the source scene twice and confirms the deleted placement stays absent while its same-asset sibling remains.
+
+### Task 87 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 167 tests, 0 failed, 0 skipped |
+| `WorldCellDeletionTombstoneTests` | PASS — deleted authored instance remained absent after repeated cell reloads |
+
+At this update, 98 of 154 roadmap rows are complete (63.6%). Task 88 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.

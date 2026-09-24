@@ -25,13 +25,32 @@ public sealed class WorldCellChangeStore
         ArgumentNullException.ThrowIfNull(transform);
         EnsureValidKey(cellId, instanceId);
         var snapshot = TransformSnapshot.Create(transform);
-        GetOrCreate(cellId, instanceId).Transform = snapshot;
+        var change = GetOrCreate(cellId, instanceId);
+        EnsureNotDeleted(cellId, instanceId, change);
+        change.Transform = snapshot;
     }
 
     public void SetEnabled(Guid cellId, WorldInstanceId instanceId, bool enabled)
     {
         EnsureValidKey(cellId, instanceId);
-        GetOrCreate(cellId, instanceId).Enabled = enabled;
+        var change = GetOrCreate(cellId, instanceId);
+        EnsureNotDeleted(cellId, instanceId, change);
+        change.Enabled = enabled;
+    }
+
+    /// <summary>Records a persistent removal that takes precedence over transform and enabled overrides.</summary>
+    public void MarkDeleted(Guid cellId, WorldInstanceId instanceId)
+    {
+        EnsureValidKey(cellId, instanceId);
+        GetOrCreate(cellId, instanceId).Deleted = true;
+    }
+
+    public bool IsDeleted(Guid cellId, WorldInstanceId instanceId)
+    {
+        EnsureValidKey(cellId, instanceId);
+        return _cells.TryGetValue(cellId, out var changes)
+            && changes.TryGetValue(instanceId, out var change)
+            && change.Deleted;
     }
 
     /// <summary>Applies stored overrides to a newly loaded scene using its current identity snapshot.</summary>
@@ -46,10 +65,18 @@ public sealed class WorldCellChangeStore
         if (!_cells.TryGetValue(cellId, out var changes)) return 0;
 
         var applied = 0;
+        List<Guid>? deletedObjects = null;
         foreach (var sceneObject in scene.Objects)
         {
             if (!identities.TryGetValue(sceneObject.Id, out var instanceId)) continue;
             if (!changes.TryGetValue(instanceId, out var change)) continue;
+
+            if (change.Deleted)
+            {
+                (deletedObjects ??= new List<Guid>()).Add(sceneObject.Id);
+                applied++;
+                continue;
+            }
 
             if (change.Transform is { } transform)
                 sceneObject.Transform = transform.ToTransform();
@@ -57,6 +84,10 @@ public sealed class WorldCellChangeStore
                 sceneObject.Enabled = enabled;
             applied++;
         }
+
+        if (deletedObjects is not null)
+            foreach (var objectId in deletedObjects)
+                scene.Remove(objectId);
 
         return applied;
     }
@@ -80,6 +111,13 @@ public sealed class WorldCellChangeStore
             throw new ArgumentException("World instance ID cannot be empty.", nameof(instanceId));
     }
 
+    private static void EnsureNotDeleted(Guid cellId, WorldInstanceId instanceId, InstanceChange change)
+    {
+        if (change.Deleted)
+            throw new InvalidOperationException(
+                $"World instance {instanceId.Value} in cell {cellId} has a deletion tombstone.");
+    }
+
     private void EnsureOwnerThread()
     {
         var currentThreadId = Environment.CurrentManagedThreadId;
@@ -92,6 +130,7 @@ public sealed class WorldCellChangeStore
     {
         public TransformSnapshot? Transform { get; set; }
         public bool? Enabled { get; set; }
+        public bool Deleted { get; set; }
     }
 
     private readonly record struct TransformSnapshot(Vector3 Position, Quaternion Rotation, Vector3 Scale)
