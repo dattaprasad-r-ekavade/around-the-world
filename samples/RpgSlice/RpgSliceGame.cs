@@ -25,9 +25,12 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _smokeControls;
     private readonly bool _streamingSmokeRequested;
     private readonly bool _travelSmokeRequested;
+    private readonly bool _persistenceSmokeRequested;
     private int _travelSmokeApproachFrames;
     private readonly bool _benchmarkRequested;
     private readonly bool _timePaused;
+    private readonly string _worldSavePath;
+    private readonly bool _deleteSmokeSaveOnExit;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
     private readonly List<PointLight> _lights = new();
@@ -36,6 +39,7 @@ public sealed class RpgSliceGame : EngineHost
     private SceneRenderer _renderer = null!;
     private InstancedStaticMeshRenderer? _foliageInstancer;
     private WorldManifest _world = null!;
+    private WorldPersistenceSession _worldPersistence = null!;
     private HeightmapTerrainRenderer _terrain = null!;
     private WaterSurfaceRenderer _water = null!;
     private RpgSliceTerrainSource _terrainSource = null!;
@@ -51,9 +55,12 @@ public sealed class RpgSliceGame : EngineHost
     private RpgSliceOutdoorBenchmark? _benchmark;
     private bool _benchmarkReportWritten;
     private bool _smokeRan;
+    private string? _saveFeedback;
+    private float _saveFeedbackSeconds;
     private TravelSmokePhase _travelSmokePhase;
     private bool _insideInterior;
     private Guid _currentCellId;
+    private Quaternion _playerFacing = Quaternion.Identity;
     private WorldCellLoadOperation<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _interiorOperation;
     private WorldCellLoadOperation<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _travelDestination;
     private WorldCellTravelTransaction<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _travel;
@@ -68,11 +75,20 @@ public sealed class RpgSliceGame : EngineHost
         _smokeControls = HasArgument(args, "--smoke-controls");
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
         _travelSmokeRequested = HasArgument(args, "--travel-smoke");
+        _persistenceSmokeRequested = HasArgument(args, "--persistence-smoke");
         _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
-            + (_travelSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0) > 1)
+            + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
+            + (_benchmarkRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
+        var configuredSavePath = ParseOption(args, "--save");
+        _deleteSmokeSaveOnExit = _persistenceSmokeRequested && configuredSavePath is null;
+        _worldSavePath = configuredSavePath
+            ?? (_persistenceSmokeRequested
+                ? Path.Combine(Path.GetTempPath(), $"ember-rpgslice-persistence-{Guid.NewGuid():N}.json")
+                : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "Ember", "RpgSlice", "world-save.json"));
         if (_benchmarkRequested) _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
@@ -84,6 +100,7 @@ public sealed class RpgSliceGame : EngineHost
         _actions.Bind("TimeEarlier", Keys.PageDown);
         _actions.Bind("TimeLater", Keys.PageUp);
         _actions.Bind("Interact", Keys.E);
+        _actions.Bind("Save", Keys.F5);
     }
 
     protected override void LoadContent()
@@ -92,7 +109,16 @@ public sealed class RpgSliceGame : EngineHost
         var originCell = _world.GetExteriorCoordinate(Vector3.Zero);
         if (!_world.TryGetExterior(originCell, out var originDefinition) || originDefinition is null)
             throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
-        _currentCellId = originDefinition.Id;
+        var loadedSave = File.Exists(_worldSavePath)
+            ? WorldSaveFile.Load(_worldSavePath, _world)
+            : null;
+        _worldPersistence = new WorldPersistenceSession(_world, loadedSave);
+        var initialLocation = _worldPersistence.RestoredPlayerLocation
+            ?? new WorldPlayerLocation(originDefinition.Id, new Vector3(16f, 1.1f, 23f), Quaternion.Identity);
+        var initialCell = _world.FindCell(initialLocation.CellId)
+            ?? throw new InvalidDataException($"Player save points to unknown cell {initialLocation.CellId}.");
+        _currentCellId = initialLocation.CellId;
+        _playerFacing = initialLocation.Facing;
 
         _renderer = new SceneRenderer(GraphicsDevice);
         if (GraphicsDevice.GraphicsProfile == GraphicsProfile.HiDef)
@@ -128,15 +154,27 @@ public sealed class RpgSliceGame : EngineHost
         _collisionGate.CollisionRequired += coordinate => Console.WriteLine(
             $"RpgSlice: waiting for collision at cell ({coordinate.X}, {coordinate.Z}); movement is held at the boundary.");
         _cellStreamer = new RpgSliceCellStreamer(
-            _world, _physics, _collisionGate, _terrainSource, _terrainSettings);
+            _world, _physics, _collisionGate, _terrainSource, _terrainSettings, _worldPersistence);
         _collisionGate.CollisionRequired += _cellStreamer.Request;
-        _cellStreamer.Start(Vector3.Zero);
-        _player = new PhysicsCharacterController(_physics, new Vector3(16f, 1.1f, 23f));
+        if (initialCell.Kind == WorldCellKind.Exterior)
+        {
+            if (initialCell.ExteriorCoordinate != _world.GetExteriorCoordinate(initialLocation.Position))
+                throw new InvalidDataException("Saved player position does not belong to its saved exterior cell.");
+            _cellStreamer.Start(initialLocation.Position);
+        }
+        else
+        {
+            _cellStreamer.Start(Vector3.Zero);
+            _interiorOperation = _cellStreamer.LoadCell(initialCell.Id);
+            _insideInterior = true;
+        }
+        _player = new PhysicsCharacterController(_physics, initialLocation.Position);
         _renderPlayerPosition = _player.Pose.Position;
-        _player.SetHorizontalMovementGate((current, proposed, clearance) =>
-            _collisionGate.Evaluate(current, proposed, clearance).CanMove);
+        _player.SetHorizontalMovementGate(initialCell.Kind == WorldCellKind.Exterior
+            ? (current, proposed, clearance) => _collisionGate.Evaluate(current, proposed, clearance).CanMove
+            : null);
         _camera = new ThirdPersonFollowCamera { TargetOffset = new Vector3(0f, 0.2f, 0f) };
-        _camera.Reset(_player.Pose.Position, distance: 9f, yaw: 0f, pitch: -0.18f);
+        _camera.Reset(_player.Pose.Position, distance: 9f, CameraYaw(_playerFacing), pitch: -0.18f);
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio);
         _camera.Follow(_physics, _player.Pose.Position);
         _lights.Add(new PointLight(new Vector3(12f, 12f, 19f), new Vector3(0.9f, 0.82f, 0.65f) * 1.7f, 28f));
@@ -165,6 +203,14 @@ public sealed class RpgSliceGame : EngineHost
         {
             _travelSmokePhase = TravelSmokePhase.ApproachExteriorDoor;
             Console.WriteLine("RpgSlice: door travel smoke started; walking to House A and using E at both doors.");
+        }
+        else if (_persistenceSmokeRequested)
+        {
+            if (loadedSave is not null)
+                throw new InvalidOperationException("Persistence smoke requires a fresh save path.");
+            RunPersistenceSmoke();
+            _smokeRan = true;
+            Exit();
         }
     }
 
@@ -208,6 +254,12 @@ public sealed class RpgSliceGame : EngineHost
         if (_actions.ConsumePressed("Interact") && _travel is null
             && FindNearbyDoor() is { } nearbyDoor)
             BeginDoorTravel(nearbyDoor);
+        if (_actions.ConsumePressed("Save"))
+        {
+            _worldPersistence.RequestSave(_worldSavePath, CapturePlayerLocation);
+            _saveFeedback = "Save queued";
+            _saveFeedbackSeconds = 2f;
+        }
         if (_actions.ConsumePressed(GameplayActionNames.Jump) && _travel is null)
             _player.RequestJump();
 
@@ -239,6 +291,17 @@ public sealed class RpgSliceGame : EngineHost
             var coordinate = _world.GetExteriorCoordinate(position);
             if (_world.TryGetExterior(coordinate, out var currentDefinition) && currentDefinition is not null)
                 _currentCellId = currentDefinition.Id;
+        }
+        _saveFeedbackSeconds = MathF.Max(0f, _saveFeedbackSeconds - elapsedSeconds);
+        if (_saveFeedbackSeconds <= 0f) _saveFeedback = null;
+        _worldPersistence.ProcessStableBoundary(_travel is not null);
+        while (_worldPersistence.TryDequeueSaveResult(out var saveResult))
+        {
+            _saveFeedback = saveResult.Failure is null ? "World saved" : $"Save failed: {saveResult.Failure.Message}";
+            _saveFeedbackSeconds = 3f;
+            Console.WriteLine(saveResult.Failure is null
+                ? $"RpgSlice: world saved to {saveResult.Path}"
+                : $"RpgSlice: world save failed: {saveResult.Failure}");
         }
         if (_benchmark is { IsMeasuring: true } benchmark && !benchmark.IsComplete)
         {
@@ -277,6 +340,10 @@ public sealed class RpgSliceGame : EngineHost
             Window.Title = travel.State == WorldCellTravelState.DestinationReady
                 ? "RPG Slice — destination ready; committing travel"
                 : "RPG Slice — preparing destination";
+        }
+        else if (_saveFeedback is { } saveFeedback)
+        {
+            Window.Title = $"RPG Slice — {saveFeedback}";
         }
         else if (FindNearbyDoor() is { } promptDoor)
         {
@@ -429,6 +496,7 @@ public sealed class RpgSliceGame : EngineHost
         var nextPlayer = new PhysicsCharacterController(_physics, spawn.Position);
         _player.Dispose();
         _player = nextPlayer;
+        _playerFacing = spawn.Facing;
         var targetIsExterior = _world.FindCell(spawn.CellId)?.Kind == WorldCellKind.Exterior;
         _player.SetHorizontalMovementGate(targetIsExterior
             ? (current, proposed, clearance) => _collisionGate.Evaluate(current, proposed, clearance).CanMove
@@ -485,6 +553,105 @@ public sealed class RpgSliceGame : EngineHost
     private RpgSliceCellStreamer.ActiveCell GetCurrentActiveCell() =>
         TryGetCurrentActiveCell()
         ?? throw new InvalidOperationException($"Current world cell {_currentCellId} is not active.");
+
+    private void RunPersistenceSmoke()
+    {
+        if (File.Exists(_worldSavePath))
+            throw new InvalidOperationException("Persistence smoke requires a fresh save path.");
+
+        try
+        {
+            var exterior = GetCurrentActiveCell();
+            var marker = exterior.Scene.Objects.FirstOrDefault(item => item.Name == "Exterior Return Spawn")
+                ?? throw new InvalidDataException("Persistence smoke needs the authored exterior return spawn.");
+            _worldPersistence.SetTransform(_currentCellId, marker, new Transform
+            {
+                Position = new Vector3(18f, 1.1f, 23f),
+                Rotation = marker.Transform.Rotation,
+                Scale = marker.Transform.Scale
+            });
+            _worldPersistence.SetEnabled(_currentCellId, marker, true);
+            var runtime = _worldPersistence.Spawn(_currentCellId, exterior.Scene,
+                new SceneObject(Guid.NewGuid(), "Persistence Smoke Gem")
+                {
+                    Transform = new Transform { Position = new Vector3(19f, 1f, 20f) }
+                });
+
+            var entryDoor = exterior.Scene.Objects.FirstOrDefault(item => item.Name == "Door to House A")
+                ?? throw new InvalidDataException("Persistence smoke needs the authored House A door.");
+            var interiorScene = SceneFile.Load(_world.ResolveScenePath(entryDoor.Door!.DestinationCellId));
+            var destinationSpawn = WorldTravelValidator.ResolveDestination(_world,
+                new Dictionary<Guid, SceneGraph> { [entryDoor.Door.DestinationCellId] = interiorScene }, entryDoor.Door);
+            _worldPersistence.RequestSave(_worldSavePath,
+                () => new WorldPlayerLocation(destinationSpawn.CellId, destinationSpawn.Position, destinationSpawn.Facing));
+            if (!_worldPersistence.ProcessStableBoundary(travelInProgress: false))
+                throw new InvalidOperationException("Persistence smoke save was not processed at the stable boundary.");
+            if (!_worldPersistence.TryDequeueSaveResult(out var writeResult))
+                throw new InvalidOperationException("Persistence smoke did not receive a save result.");
+            if (writeResult.Failure is not null)
+                throw new InvalidOperationException($"Persistence smoke could not save: {writeResult.Failure}");
+
+            var snapshot = WorldSaveFile.Load(_worldSavePath, _world);
+            if (snapshot.PlayerLocation.CellId != destinationSpawn.CellId)
+                throw new InvalidOperationException("Queued persistence smoke save did not capture the committed interior location.");
+            var restarted = new WorldPersistenceSession(_world, snapshot);
+            using var verificationPhysics = new PhysicsWorld();
+            var verificationGate = new ExteriorCellCollisionGate(_world);
+            using var verificationStreamer = new RpgSliceCellStreamer(_world, verificationPhysics,
+                verificationGate, _terrainSource, _terrainSettings, restarted);
+            verificationGate.CollisionRequired += verificationStreamer.Request;
+            verificationStreamer.Start(Vector3.Zero);
+
+            var exteriorCell = _world.FindCell(_currentCellId)!;
+            if (!verificationStreamer.TryGetActiveCell(exteriorCell.Id, out _, out var restoredExterior)
+                || restoredExterior is null)
+                throw new InvalidOperationException("Persistence smoke did not reload the exterior cell.");
+            var restoredMarker = restoredExterior.Scene.Find(marker.Id)
+                ?? throw new InvalidOperationException("Saved authored marker disappeared after restart.");
+            if (!restoredMarker.Enabled || restoredMarker.Transform.Position != marker.Transform.Position)
+                throw new InvalidOperationException("Authored transform/enabled changes did not survive restart.");
+            var restoredRuntime = restoredExterior.Scene.Objects
+                .Where(item => item.Name == "Persistence Smoke Gem").ToArray();
+            if (restoredRuntime.Length != 1
+                || !restarted.Identities.TryGet(exteriorCell.Id, runtime.SceneObjectId, out var restoredRuntimeId)
+                || restoredRuntimeId != runtime.InstanceId
+                || restoredRuntimeId == restarted.Identities.GetOrCreate(exteriorCell.Id, restoredMarker))
+                throw new InvalidOperationException("Runtime object identity did not survive restart exactly once.");
+
+            var restoredInterior = verificationStreamer.LoadCell(destinationSpawn.CellId);
+            try
+            {
+                var restoredInteriorScene = restoredInterior.ActiveResources?.Scene;
+                if (restarted.RestoredPlayerLocation != snapshot.PlayerLocation
+                    || restoredInteriorScene is null
+                    || !restoredInteriorScene.Objects.Any(item => item.SpawnPoint?.Id == destinationSpawn.SpawnId))
+                    throw new InvalidOperationException("Saved interior location or scene did not restore after restart.");
+                using var restoredPlayer = new PhysicsCharacterController(verificationPhysics, snapshot.PlayerLocation.Position);
+                if (restoredPlayer.Pose.Position != snapshot.PlayerLocation.Position)
+                    throw new InvalidOperationException("Saved player position did not initialize in the restored interior.");
+            }
+            finally
+            {
+                restoredInterior.Unload();
+            }
+
+            Console.WriteLine("RpgSlice: world persistence smoke passed (authored changes, runtime identity, interior player location, restart reload).");
+        }
+        finally
+        {
+            if (_deleteSmokeSaveOnExit && File.Exists(_worldSavePath))
+                File.Delete(_worldSavePath);
+        }
+    }
+
+    private WorldPlayerLocation CapturePlayerLocation() =>
+        new(_currentCellId, _player.Pose.Position, _playerFacing);
+
+    private static float CameraYaw(Quaternion facing)
+    {
+        var forward = Vector3.Transform(Vector3.Forward, facing);
+        return MathF.Atan2(-forward.X, -forward.Z);
+    }
 
     private void RunMovementSmoke()
     {

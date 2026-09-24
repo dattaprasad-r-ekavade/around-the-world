@@ -1282,3 +1282,29 @@ Stage 9–12 gameplay integration evidence is still pending. RpgSlice now has a 
 | RpgSlice `--travel-smoke` | PASS — walked to House A, used E for both transitions, and returned to the authored exterior spawn |
 
 No ordered roadmap rows were added or marked complete. The checklist remains 143/155 (92.3%), task 133 is first unchecked, and task 144 remains a conditional performance-triage gate. Stage 9–12 integration work still needs persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`.
+
+## Stage 10 integration follow-up — persistent RpgSlice world — 25 September 2026
+
+- Added `WorldPersistenceSession` to own the engine's world identity map, per-cell change store, runtime-object store, and stable-boundary save queue. Cell activation restores runtime objects and saved edits before building colliders.
+- RpgSlice loads an existing world save on startup, restores player location and facing in an exterior or interior, and queues F5 saves so a request during door travel captures the post-travel stable location. `--save <path>` selects a save file; the default is `%LOCALAPPDATA%\Ember\RpgSlice\world-save.json`.
+- Added a restart-style `--persistence-smoke`: it writes an authored transform/enabled override and runtime object, saves an interior player location, starts a fresh persistence session and physics streamer from the file, then checks the restored exterior edit, unique runtime identity, and interior spawn/player location.
+- Added an engine regression covering an edit and runtime spawn, a save deferred through travel, stable player capture, save reload, and idempotent cell preparation.
+- The ordered checklist remains 143/155 (92.3%); task 133 is still the first unchecked baseline task. Integration evidence is tracked separately:
+
+| Integration proof | Status | Evidence and remaining scope |
+| --- | --- | --- |
+| Live RpgSlice door travel through `WorldCellTravelTransaction` | PASS | `--travel-smoke` walks to House A and returns through both authored doors. The complete Stage 9 gate remains Pending. |
+| Persistence stores, cell activation, stable-boundary save, and restart restore in RpgSlice | PASS for this integration proof | Engine persistence regression and `--persistence-smoke` pass. F5 is wired to the same request path, though the smoke calls that API directly instead of synthesizing a keypress. The complete Stage 10 gate remains Pending until its full cross-cell move/create/delete and exactly-once acceptance checks are covered. |
+| Scheduled NPC following the world path network | Pending | Not yet wired in live RpgSlice. |
+| Merchant and enemy using `Ember.Rpg` in live RpgSlice | Pending | Not yet wired in live RpgSlice. |
+
+### Persistence integration checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-restore --nologo` | PASS — 235 passed, 0 failed, 0 skipped |
+| RpgSlice `--persistence-smoke` | PASS — authored changes, runtime identity, interior player location, and restart reload |
+| RpgSlice `--travel-smoke` after persistence integration | PASS — walked to House A, traveled through both doors, and returned to the authored exterior spawn |
+
+No ordered roadmap rows were added or marked complete. Stage 9–12 gameplay work remains in progress; the next integration step is a scheduled NPC using the world path network.

@@ -20,19 +20,21 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     private readonly ExteriorCellCollisionGate _collisionGate;
     private readonly ITerrainHeightMaterialSource _terrainSource;
     private readonly TerrainChunkSettings _terrainSettings;
+    private readonly WorldPersistenceSession _persistence;
     private readonly CellAssetReferencePool<TerrainPatchSize, TerrainPatchTopology> _terrainTopologyPool = new();
     private readonly WorldCellStreamer<PreparedCell, ActiveCell> _streamer;
     private bool _disposed;
 
     public RpgSliceCellStreamer(WorldManifest world, PhysicsWorld physics,
         ExteriorCellCollisionGate collisionGate, ITerrainHeightMaterialSource terrainSource,
-        TerrainChunkSettings terrainSettings)
+        TerrainChunkSettings terrainSettings, WorldPersistenceSession persistence)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _physics = physics ?? throw new ArgumentNullException(nameof(physics));
         _collisionGate = collisionGate ?? throw new ArgumentNullException(nameof(collisionGate));
         _terrainSource = terrainSource ?? throw new ArgumentNullException(nameof(terrainSource));
         _terrainSettings = terrainSettings ?? throw new ArgumentNullException(nameof(terrainSettings));
+        _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         if (MathF.Abs(terrainSettings.ChunkSize - world.ExteriorCellWidth) > 1e-4f)
             throw new ArgumentException("Terrain chunks and exterior cells must have the same dimensions.", nameof(terrainSettings));
 
@@ -88,6 +90,16 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     public Task<PreparedCell> PrepareCellAsync(Guid cellId, CancellationToken cancellationToken) =>
         PrepareCellCoreAsync(cellId, cancellationToken);
 
+    public WorldCellLoadOperation<PreparedCell, ActiveCell> LoadCell(Guid cellId)
+    {
+        var operation = new WorldCellLoadOperation<PreparedCell, ActiveCell>();
+        var preparation = operation.PrepareAsync(token => PrepareCellAsync(cellId, token));
+        preparation.GetAwaiter().GetResult();
+        operation.PumpCompletions();
+        operation.Activate(ActivatePreparedCell);
+        return operation;
+    }
+
     public ActiveCell ActivatePreparedCell(PreparedCell prepared)
     {
         ArgumentNullException.ThrowIfNull(prepared);
@@ -137,13 +149,17 @@ internal sealed class RpgSliceCellStreamer : IDisposable
             ? CreateWorldTransform(coordinate, _world.ExteriorCellWidth)
             : Matrix.Identity;
         cancellationToken.ThrowIfCancellationRequested();
-        return Task.FromResult(new PreparedCell(coordinate, scene,
+        return Task.FromResult(new PreparedCell(cellId, coordinate, scene,
             worldTransform, terrainStride,
             terrainVertices, TerrainPatchIntervals));
     }
 
     private ActivationStepper CreateActivationStepper() =>
-        new(_physics, _terrainTopologyPool);
+        new(_physics, _terrainTopologyPool, prepared =>
+        {
+            _persistence.PrepareCell(prepared.CellId, prepared.Scene);
+            prepared.RefreshColliderObjects();
+        });
 
     internal readonly record struct TerrainPatchSize(int XIntervals, int ZIntervals);
 
@@ -180,12 +196,15 @@ internal sealed class RpgSliceCellStreamer : IDisposable
 
     internal sealed class PreparedCell : IDisposable, ICellActivationCost
     {
-        private readonly SceneObject[] _colliderObjects;
+        private SceneObject[] _colliderObjects;
         private readonly int _patchIntervals;
 
-        public PreparedCell(ExteriorCellCoordinate coordinate, SceneGraph scene,
+        public PreparedCell(Guid cellId, ExteriorCellCoordinate coordinate, SceneGraph scene,
             Matrix worldTransform, int terrainStride, TerrainChunkVertex[] terrainVertices, int patchIntervals)
         {
+            CellId = cellId != Guid.Empty
+                ? cellId
+                : throw new ArgumentException("Prepared cell ID cannot be empty.", nameof(cellId));
             Coordinate = coordinate;
             Scene = scene ?? throw new ArgumentNullException(nameof(scene));
             WorldTransform = worldTransform;
@@ -207,6 +226,7 @@ internal sealed class RpgSliceCellStreamer : IDisposable
         }
 
         public ExteriorCellCoordinate Coordinate { get; }
+        public Guid CellId { get; }
         public SceneGraph Scene { get; }
         public Matrix WorldTransform { get; }
         public int TerrainStride { get; }
@@ -216,7 +236,11 @@ internal sealed class RpgSliceCellStreamer : IDisposable
         public int TerrainPatchesAcross => TerrainStride == 0 ? 0 : (TerrainStride - 2 + _patchIntervals) / _patchIntervals;
         public int TerrainPatchCount => checked(TerrainPatchesAcross * TerrainPatchesAcross);
         public int ColliderCount => _colliderObjects.Length;
+        public int WorkItemCount => checked(TerrainPatchCount + ColliderCount);
         public SceneObject GetColliderObject(int index) => _colliderObjects[index];
+        public void RefreshColliderObjects() => _colliderObjects = Scene.Objects
+            .Where(item => item.Enabled && (TerrainStride == 0 || item.Name != "Ground") && item.Door is null)
+            .ToArray();
         public void Dispose() { }
     }
 
@@ -224,18 +248,22 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     {
         private readonly PhysicsWorld _physics;
         private readonly CellAssetReferencePool<TerrainPatchSize, TerrainPatchTopology> _topologyPool;
+        private readonly Action<PreparedCell> _prepareCell;
         private List<PhysicsObjectId> _colliders = new();
         private Dictionary<TerrainPatchSize,
             CellAssetReference<TerrainPatchSize, TerrainPatchTopology>> _topologyLeases = new();
         private int _nextWorkItem;
         private bool _transferred;
         private bool _disposed;
+        private bool _prepared;
 
         public ActivationStepper(PhysicsWorld physics,
-            CellAssetReferencePool<TerrainPatchSize, TerrainPatchTopology> topologyPool)
+            CellAssetReferencePool<TerrainPatchSize, TerrainPatchTopology> topologyPool,
+            Action<PreparedCell> prepareCell)
         {
             _physics = physics;
             _topologyPool = topologyPool;
+            _prepareCell = prepareCell;
         }
 
         public CellActivationStepResult<ActiveCell> Step(PreparedCell prepared, long maximumCost)
@@ -244,13 +272,19 @@ internal sealed class RpgSliceCellStreamer : IDisposable
             if (maximumCost < 1)
                 throw new ArgumentOutOfRangeException(nameof(maximumCost));
 
+            if (!_prepared)
+            {
+                _prepareCell(prepared);
+                _prepared = true;
+            }
+
             if (_nextWorkItem < prepared.TerrainPatchCount)
                 ActivateTerrainPatch(prepared, _nextWorkItem);
-            else if (_nextWorkItem < prepared.TerrainPatchCount + prepared.ColliderCount)
+            else if (_nextWorkItem < prepared.WorkItemCount)
                 ActivateSceneCollider(prepared, _nextWorkItem - prepared.TerrainPatchCount);
             _nextWorkItem++;
 
-            var isComplete = _nextWorkItem >= prepared.EstimatedActivationCost;
+            var isComplete = _nextWorkItem >= prepared.WorkItemCount;
             if (!isComplete)
                 return new CellActivationStepResult<ActiveCell>(1, false, null);
 

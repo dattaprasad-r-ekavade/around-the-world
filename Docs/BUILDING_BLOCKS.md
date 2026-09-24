@@ -800,6 +800,34 @@ failed funds, stock, definition, or overflow check leaves both inputs unchanged.
 applies its negative reputation adjustment once, while an unwitnessed theft does not change standing.
 All balances, ownership, faction standing, inventory, and replay IDs round-trip in `SaveState`.
 
+## World persistence
+
+`WorldPersistenceSession` owns the world-instance identity map, per-instance cell changes,
+runtime-created objects, and save requests for one `WorldManifest`. Construct it with an optional
+validated `WorldSaveSnapshot` loaded by `WorldSaveFile.Load`. Call `PrepareCell` on the owner thread
+before activating a loaded scene; it assigns stable identities, restores runtime objects, and applies
+saved transforms, enabled states, and deletion tombstones. RpgSlice does this from the activation
+stepper so restored collider state is applied before physics colliders are created.
+
+Use `SetTransform`, `SetEnabled`, and `Spawn` to update both the active scene and its persistent
+stores. `Capture` creates an immutable snapshot. For interactive saves, `RequestSave` queues a
+player-location callback and `ProcessStableBoundary` captures it after any travel transaction has
+finished. Drain completion or failure through `TryDequeueSaveResult`. All session operations belong
+on the thread that constructed the session; stable-boundary processing currently writes the file
+synchronously on that thread.
+
+```csharp
+var save = File.Exists(savePath) ? WorldSaveFile.Load(savePath, world) : null;
+var persistence = new WorldPersistenceSession(world, save);
+
+// Once a cell scene is prepared and before its colliders are activated:
+persistence.PrepareCell(cellId, scene);
+
+// On the save action, then once per frame at the stable simulation boundary:
+persistence.RequestSave(savePath, CapturePlayerLocation);
+persistence.ProcessStableBoundary(travelInProgress);
+```
+
 ## Cell navigation
 
 `CellPathGraph` stores authored `CellPathNode` IDs and positions plus directed or bidirectional

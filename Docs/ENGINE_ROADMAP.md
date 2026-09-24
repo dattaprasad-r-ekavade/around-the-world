@@ -337,10 +337,10 @@ For each chosen feature, append tasks with the same four columns. Each task need
 - First unchecked baseline task: 133 — add a quest objective/event-reference panel. Integration follow-up from the code review comes first.
 - Current checklist: 143 of 155 ordered rows complete (92.3%); task 133 is the first unchecked baseline row.
 - Current gates: Release A and D passed; Release B and C remain Pending. Stages 9–12 remain Pending or unproven, the Stage 14 settlement-authoring gate is Pending, and Release E has no recorded status. Stage 13 passed again on the 3×3 blockout: the canonical ten-lap route and all provisional frame-time, activation, memory, and resource targets passed on the additional i7-13650HX validation host. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: `Ember.Engine.WorldCellStreamer<TPrepared, TActive>` now owns reusable cell preparation, bounded activation, retry, collision notifications, and retirement. RpgSlice supplies the terrain and physics stepper, shares terrain patch topology through cell leases, and shows retry status. The engine queue also cleans up a canceled stepper before its first activation step.
-- Verification: see the 24 September 2026 code-review follow-up in `ENGINE_PROGRESS.md` and `OUTDOOR_BENCHMARK.md` for the Release build, 233-test suite, RPG save/load check, cell-seam smoke, and passing Stage 13 rerun.
-- Limits: Stage 9–12 gameplay integration is still pending (live door travel, persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`). Path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: add evidence-backed Stage 9–12 integration rows before starting task 133, beginning with live door travel and persistence wiring in RpgSlice.
+- Latest changes: `Ember.Engine.WorldCellStreamer<TPrepared, TActive>` owns reusable cell preparation, bounded activation, retry, collision notifications, and retirement. RpgSlice now restores persistent edits and runtime objects as cells activate, loads a saved exterior or interior player location at startup, and supports stable-boundary saves with F5. The persistence smoke covers save/restart restoration of an authored edit, runtime identity, and interior player location.
+- Verification: see the 24–25 September 2026 follow-ups in `ENGINE_PROGRESS.md` for the 235-test Release suite, full Release build, live door-travel smoke, and persistence restart smoke. Stage 13 benchmark evidence remains in `OUTDOOR_BENCHMARK.md`.
+- Limits: The live door route and persistence restart smoke pass, but the broader Stage 9 and Stage 10 acceptance gates remain Pending. Scheduled NPC movement and merchant/enemy use of `Ember.Rpg` are still unintegrated. Path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: integrate one scheduled NPC on the world path network, then a merchant and enemy using `Ember.Rpg`; record evidence for the Stage 9–12 gates before starting task 133.
 
 Suggested request to an implementing AI:
 
@@ -691,8 +691,8 @@ Credit where due: `WorldCellWorkspace.RenameCell` keeps IDs and coordinates stab
 
 ### Recommended order before task 133
 
-1. Route `RpgSliceCellStreamer` through `CellActivationQueue` and `CellAssetReferencePool`, add retry, then promote the streamer into `Ember.Engine/World`. Re-run the Stage 13 benchmark.
-2. Add the Stage 9–12 integration rows above. RpgSlice now proves a live door round trip; next wire persistence, then scheduled NPC movement and merchant/enemy use of `Ember.Rpg`. Pass or explicitly block each gate.
+1. Resolved 24 September 2026: `RpgSliceCellStreamer` uses the engine `WorldCellStreamer`, `CellActivationQueue`, and `CellAssetReferencePool`, with retry and a passing Stage 13 benchmark rerun.
+2. Add the remaining Stage 9–12 integration evidence. Live door travel and persistence save/restart wiring are implemented in RpgSlice; next integrate a scheduled NPC on the world path network, then a merchant and enemy using `Ember.Rpg`. Keep the broader gates Pending until their full acceptance checks pass.
 3. Fix the data-safety items: extract `SafeFile.WriteAtomic` (with flush) and use it for `SaveState.Write`; persist the clock and schedules; make the travel commit and save restore atomic. Turn on `UnmappedMemberHandling.Disallow` for every persisted format.
 4. Extend packaging to world manifests and cell scenes before task 142.
 5. Add CI: `Ember.Rpg` tests on Linux now; the engine on a Windows runner.
