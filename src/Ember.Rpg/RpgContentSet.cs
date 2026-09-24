@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Ember.Rpg;
 
@@ -67,6 +68,7 @@ public sealed class RpgContentSet
     public ActorCatalogue Actors { get; init; } = new();
     public ItemCatalogue Items { get; init; } = new();
     public FactionCatalogue Factions { get; init; } = new();
+    public SpellCatalogue Spells { get; init; } = new();
     public IReadOnlyList<DialogueTree> Dialogues { get; init; } = Array.Empty<DialogueTree>();
     public QuestCatalogue Quests { get; init; } = new();
 
@@ -75,6 +77,7 @@ public sealed class RpgContentSet
         ArgumentNullException.ThrowIfNull(Actors);
         ArgumentNullException.ThrowIfNull(Items);
         ArgumentNullException.ThrowIfNull(Factions);
+        ArgumentNullException.ThrowIfNull(Spells);
         ArgumentNullException.ThrowIfNull(Dialogues);
         ArgumentNullException.ThrowIfNull(Quests);
 
@@ -83,6 +86,7 @@ public sealed class RpgContentSet
         foreach (var id in Actors.All.Keys) Register(registry, id, "actor", errors);
         foreach (var id in Items.All.Keys) Register(registry, id, "item", errors);
         foreach (var id in Factions.All.Keys) Register(registry, id, "faction", errors);
+        foreach (var id in Spells.All.Keys) Register(registry, id, "spell", errors);
         foreach (var dialogue in Dialogues) Register(registry, dialogue.Id, "dialogue", errors);
         foreach (var quest in Quests.All()) Register(registry, quest.Id, "quest", errors);
 
@@ -102,6 +106,15 @@ public sealed class RpgContentSet
                 if (node.SpeakerActorId is { } actorId)
                     AddReferenceError(registry.CheckReference(
                         $"dialogue '{dialogue.Id.Value}' node '{node.Id}'.SpeakerActorId", actorId), errors);
+                for (var i = 0; i < node.Options.Count; i++)
+                {
+                    var option = node.Options[i];
+                    foreach (var requirement in option.RequiresStats) requirement.Validate();
+                    foreach (var requirement in option.RequiresFactions)
+                        AddReferenceError(registry.CheckReference(
+                            $"dialogue '{dialogue.Id.Value}' node '{node.Id}' option {i}.RequiresFactions",
+                            requirement.FactionId), errors);
+                }
             }
 
             foreach (var node in dialogue.Nodes)
@@ -141,12 +154,16 @@ public sealed class RpgContentSet
         foreach (var id in Actors.All.Keys) registry.Register(id);
         foreach (var dialogue in Dialogues) registry.Register(dialogue.Id);
         foreach (var quest in Quests.All()) registry.Register(quest.Id);
+        foreach (var id in Factions.All.Keys) registry.Register(id);
         foreach (var (id, _) in save.ItemDefs.All) registry.Register(id);
 
         var errors = new List<ContentDiagnostic>();
         foreach (var actor in save.ActorStates.Entries)
         {
             AddReferenceError(registry.CheckReference($"actor instance '{actor.WorldInstanceId}'.ActorId", actor.ActorId), errors);
+            foreach (var standing in actor.Factions)
+                AddReferenceError(registry.CheckReference(
+                    $"actor instance '{actor.WorldInstanceId}' faction", standing.FactionId), errors);
             foreach (var item in actor.Inventory.Entries)
                 AddReferenceError(registry.CheckReference(
                     $"actor instance '{actor.WorldInstanceId}' inventory", item.ItemId), errors);
@@ -198,7 +215,7 @@ public static class RpgContentJson
         var document = JsonSerializer.Deserialize<ContentDocument>(json, new JsonSerializerOptions
         {
             PropertyNameCaseInsensitive = true,
-            Converters = { FlagValueJson.Instance }
+            Converters = { FlagValueJson.Instance, new JsonStringEnumConverter() }
         }) ?? throw new JsonException("The RPG content document was empty.");
 
         var actors = new ActorCatalogue();
@@ -207,6 +224,8 @@ public static class RpgContentJson
         foreach (var item in document.Items ?? new List<ItemDef>()) items.Add(item);
         var factions = new FactionCatalogue();
         foreach (var faction in document.Factions ?? new List<FactionDef>()) factions.Add(faction);
+        var spells = new SpellCatalogue();
+        foreach (var spell in document.Spells ?? new List<TargetedSpellDef>()) spells.Add(spell);
         var quests = new QuestCatalogue();
         foreach (var quest in document.Quests ?? new List<QuestDef>()) quests.Add(quest);
         var content = new RpgContentSet
@@ -214,6 +233,7 @@ public static class RpgContentJson
             Actors = actors,
             Items = items,
             Factions = factions,
+            Spells = spells,
             Dialogues = document.Dialogues is null ? Array.Empty<DialogueTree>() : document.Dialogues,
             Quests = quests
         };
@@ -231,6 +251,7 @@ public static class RpgContentJson
         public List<ActorDef>? Actors { get; init; }
         public List<ItemDef>? Items { get; init; }
         public List<FactionDef>? Factions { get; init; }
+        public List<TargetedSpellDef>? Spells { get; init; }
         public List<DialogueTree>? Dialogues { get; init; }
         public List<QuestDef>? Quests { get; init; }
     }

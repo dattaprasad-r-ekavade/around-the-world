@@ -1,3 +1,5 @@
+using System.Collections.Generic;
+
 namespace Ember.Rpg;
 
 /// <summary>
@@ -12,4 +14,7 @@ public sealed class DialogueProgress
     public ContentId<DialogueContentKind>? Tree { get; set; }
 
     public string? Node { get; set; }
+
+    /// <summary>Choice keys already executed in this save; protects self-looping options from replay.</summary>
+    public List<string> TakenChoiceIds { get; set; } = new();
 }

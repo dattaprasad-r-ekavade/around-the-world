@@ -28,6 +28,7 @@ internal static class Program
             InventoryTransferChecks(problems);
             EquipmentChecks(problems);
             MeleeAndActorPersistenceChecks(problems);
+            SpellAndFactionChecks(problems);
 
             original.Write(path);
             var loaded = SaveState.Read(path);
@@ -58,6 +59,8 @@ internal static class Program
             // to, and the flag the pick wrote is still set.
             if (loaded.Dialogue.Tree?.Value != "elder")
                 problems.Add($"dialogue should still be in the 'elder' tree after a load, is '{loaded.Dialogue.Tree}'");
+            if (!loaded.Dialogue.TakenChoiceIds.Contains("elder:greet:1"))
+                problems.Add("the executed dialogue choice should remain recorded after a load");
             if (loaded.Dialogue.Node != "gate")
                 problems.Add($"dialogue should still be at 'gate' after a load, is '{loaded.Dialogue.Node}'");
             if (!loaded.Flags.GetBool("gate_topic"))
@@ -95,6 +98,7 @@ internal static class Program
             || loaded.Items.Get(new ContentId<ItemContentKind>("item.potion")) is null
             || loaded.Factions.Get(new ContentId<FactionContentKind>("faction.mages")) is null
             || !loaded.Quests.TryGet(new ContentId<QuestContentKind>("quest.relic"), out _)
+            || !loaded.Spells.TryGet(new ContentId<SpellContentKind>("spell.focus"), out _)
             || loaded.Dialogues.Count != 1)
             problems.Add("the content pack should register typed actor, item, faction, dialogue, and quest IDs");
 
@@ -148,6 +152,7 @@ internal static class Program
                 "actor 'actor.elder'.FactionId", "faction.missing",
                 "dialogue 'dialogue.elder' node 'greet'.SpeakerActorId", "actor.missing",
                 "node 'node.missing'", "quest 'quest.relic'.StartDialogueId", "dialogue.missing",
+                "RequiresFactions", "faction.missing",
                 "stage 'fetch'.TargetActorId", "stage 'fetch'.RequiredItemId", "item.missing"
             })
                 if (!exception.Message.Contains(expected, StringComparison.Ordinal))
@@ -355,6 +360,74 @@ internal static class Program
             problems.Add("actor death, carried inventory, world identity, and cooldown should survive save/load");
     }
 
+    private static void SpellAndFactionChecks(List<string> problems)
+    {
+        var factionId = new ContentId<FactionContentKind>("faction.mages");
+        var actorId = new ContentId<ActorContentKind>("actor.mage");
+        var actorDef = new ActorDef(actorId, "Mage", stats: ExampleStats());
+        var caster = ActorRuntimeState.Create(Guid.NewGuid(), actorDef);
+        var target = ActorRuntimeState.Create(Guid.NewGuid(), actorDef);
+        var spell = new TargetedSpellDef
+        {
+            Id = new ContentId<SpellContentKind>("spell.focus"),
+            Range = 5,
+            MagickaCost = 12,
+            CooldownSeconds = 2,
+            Attribute = ActorAttribute.Strength,
+            Magnitude = 4,
+            DurationSeconds = 4,
+            StackingRule = ModifierStackingRule.ReplaceSameSource
+        };
+        var castId = Guid.NewGuid();
+        if (TargetedSpellSystem.TryCast(castId, caster, target, 6, spell, out var farCaster, out var farTarget)
+            || farCaster.CurrentMagicka != caster.CurrentMagicka || farTarget.Modifiers.Active.Count != 0)
+            problems.Add("an out-of-range spell should consume no magicka and apply no effect");
+        if (TargetedSpellSystem.TryCast(castId, caster with { CurrentMagicka = 2 }, target, 2, spell,
+            out var poorCaster, out var poorTarget)
+            || poorCaster.CurrentMagicka != 2 || poorTarget.Modifiers.Active.Count != 0)
+            problems.Add("a spell without enough magicka should change neither actor");
+        if (!TargetedSpellSystem.TryCast(castId, caster, target, 2, spell, out var castCaster, out var castTarget)
+            || castCaster.CurrentMagicka != 33 || castCaster.SpellCooldownRemaining != 2
+            || castTarget.Modifiers.TotalFor(ActorAttribute.Strength) != 4
+            || castTarget.EffectiveStats(actorDef.Stats).MaximumHealth != 30)
+            problems.Add("a valid spell should spend its cost once and apply a timed stat effect to the target");
+        if (TargetedSpellSystem.TryCast(castId, castCaster.AdvanceTime(2), castTarget, 2, spell,
+            out var replayCaster, out var replayTarget)
+            || replayCaster.CurrentMagicka != castCaster.CurrentMagicka
+            || replayTarget.Modifiers.TotalFor(ActorAttribute.Strength) != 4)
+            problems.Add("replaying a saved cast ID should not spend resources or apply its effect twice");
+        if (castTarget.AdvanceTime(4).Modifiers.Active.Count != 0)
+            problems.Add("a targeted spell modifier should expire on the simulation clock");
+
+        var spellSave = SaveState.FromJson(new SaveState
+        {
+            ActorStates = new ActorRuntimeStore().Set(castCaster).Set(castTarget)
+        }.ToJson());
+        if (!spellSave.ActorStates.TryGet(castCaster.WorldInstanceId, out var savedCaster)
+            || !spellSave.ActorStates.TryGet(castTarget.WorldInstanceId, out var savedTarget)
+            || savedTarget.Modifiers.Active.Count != 1
+            || TargetedSpellSystem.TryCast(castId, savedCaster.AdvanceTime(2), savedTarget, 2, spell,
+                out var replayedCaster, out _)
+            || replayedCaster.CurrentMagicka != savedCaster.CurrentMagicka)
+            problems.Add("spell cost, cooldown, timed effect, and one-time cast ID should survive actor save/load");
+
+        var joined = FactionSystem.SetMembership(caster, factionId, true);
+        joined = FactionSystem.AdjustReputation(joined, factionId, 18);
+        var independent = FactionSystem.SetMembership(target, factionId, false);
+        if (!FactionSystem.IsMember(joined, factionId) || FactionSystem.Reputation(joined, factionId) != 18
+            || FactionSystem.IsMember(independent, factionId) || FactionSystem.Reputation(independent, factionId) != 0
+            || caster.Factions.Count != 0)
+            problems.Add("membership and reputation changes should be per-actor immutable state");
+
+        var factionSave = SaveState.FromJson(new SaveState
+        {
+            ActorStates = new ActorRuntimeStore().Set(joined).Set(independent)
+        }.ToJson());
+        if (!factionSave.ActorStates.TryGet(joined.WorldInstanceId, out var restored)
+            || !FactionSystem.IsMember(restored, factionId) || FactionSystem.Reputation(restored, factionId) != 18)
+            problems.Add("actor faction membership and reputation should survive save/load");
+    }
+
     /// <summary>
     /// The dialogue test: load a conversation from JSON, then — given the flags the state
     /// already carries — take the gated option and let it advance the node and write its
@@ -363,26 +436,35 @@ internal static class Program
     private static void PlayDialogue(SaveState state, List<string> problems)
     {
         var tree = DialogueTree.FromJson(ElderDialogue);
+        var member = new FactionStanding(new ContentId<FactionContentKind>("faction.mages"), true, 18);
+        var context = new DialogueContext(state.Flags, ExampleStats(), new[] { member });
         state.Dialogue.Tree = tree.Id;
         state.Dialogue.Node = "greet";
 
-        if (tree.Available("greet", new FlagStore()).Count != 1)
+        if (tree.Available("greet", new DialogueContext(new FlagStore(), ExampleStats())).Count != 1)
             problems.Add("with no flags set, only the ungated option should be offered");
 
-        var open = tree.Available("greet", state.Flags);
+        var open = tree.Available("greet", context);
         if (open.Count != 2)
         {
-            problems.Add($"with met_elder set, both options should be offered (got {open.Count})");
+            problems.Add($"with the required stats, flags, and faction standing, both options should be offered (got {open.Count})");
             return;
         }
+        var nonMember = new DialogueContext(state.Flags, ExampleStats(),
+            new[] { member with { IsMember = false } });
+        if (tree.Available("greet", nonMember).Count != 1)
+            problems.Add("the faction-gated choice should be hidden from a non-member");
 
         // open[1] is the gated option: Next = "gate", Sets = { gate_topic: true }.
-        tree.Pick(state.Dialogue, state.Flags, open[1]);
+        tree.Pick(state.Dialogue, context, open[1]);
+        tree.Pick(state.Dialogue, context, open[1]);
 
         if (state.Dialogue.Node != "gate")
             problems.Add($"picking the gated option should advance to 'gate', not '{state.Dialogue.Node}'");
         if (!state.Flags.GetBool("gate_topic"))
             problems.Add("picking the gated option should write the gate_topic flag");
+        if (state.Dialogue.TakenChoiceIds.Count != 1)
+            problems.Add("picking the same dialogue choice twice should execute it only once");
     }
 
     /// <summary>
@@ -506,6 +588,18 @@ internal static class Program
       ],
       "Items": [ { "Id": "item.potion", "Name": "Healing Potion", "Stackable": true } ],
       "Factions": [ { "Id": "faction.mages", "Name": "Mages" } ],
+      "Spells": [
+        {
+          "Id": "spell.focus",
+          "Range": 5,
+          "MagickaCost": 12,
+          "CooldownSeconds": 2,
+          "Attribute": "Strength",
+          "Magnitude": 4,
+          "DurationSeconds": 4,
+          "StackingRule": "ReplaceSameSource"
+        }
+      ],
       "Dialogues": [
         {
           "Id": "dialogue.elder",
@@ -514,7 +608,14 @@ internal static class Program
               "Id": "greet",
               "Speaker": "Rowan",
               "SpeakerActorId": "actor.elder",
-              "Options": [ { "Label": "Continue", "Next": "greet" } ]
+              "Options": [
+                {
+                  "Label": "Continue",
+                  "Next": "greet",
+                  "RequiresStats": [ { "Attribute": "Strength", "MinimumValue": 10 } ],
+                  "RequiresFactions": [ { "FactionId": "faction.mages", "MinimumReputation": 10, "RequiresMembership": true } ]
+                }
+              ]
             }
           ]
         }
@@ -573,6 +674,8 @@ internal static class Program
               "Label": "Ask about the gate.",
               "Next": "gate",
               "Requires": [ { "Flag": "met_elder", "Bool": true } ],
+              "RequiresStats": [ { "Attribute": "Strength", "MinimumValue": 10 } ],
+              "RequiresFactions": [ { "FactionId": "faction.mages", "MinimumReputation": 10, "RequiresMembership": true } ],
               "Sets": { "gate_topic": true }
             }
           ]

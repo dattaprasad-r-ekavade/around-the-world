@@ -11,21 +11,29 @@ public sealed record ActorRuntimeState
     public Guid WorldInstanceId { get; init; }
     public ContentId<ActorContentKind> ActorId { get; init; }
     public double CurrentHealth { get; init; }
+    public double CurrentMagicka { get; init; }
     public bool IsDead { get; init; }
     public double MeleeCooldownRemaining { get; init; }
+    public double SpellCooldownRemaining { get; init; }
     public Bag Inventory { get; init; } = new();
+    public ActorStatModifiers Modifiers { get; init; } = new();
+    public IReadOnlyList<FactionStanding> Factions { get; init; } = Array.Empty<FactionStanding>();
+    public IReadOnlyList<Guid> AppliedSpellCastIds { get; init; } = Array.Empty<Guid>();
 
     public ActorRuntimeState() { }
 
     public ActorRuntimeState(Guid worldInstanceId, ContentId<ActorContentKind> actorId,
-        double currentHealth, Bag? inventory = null, double meleeCooldownRemaining = 0)
+        double currentHealth, Bag? inventory = null, double meleeCooldownRemaining = 0,
+        double currentMagicka = 0, double spellCooldownRemaining = 0)
     {
         WorldInstanceId = worldInstanceId;
         ActorId = actorId;
         CurrentHealth = currentHealth;
+        CurrentMagicka = currentMagicka;
         IsDead = currentHealth <= 0;
         Inventory = inventory?.Copy() ?? new Bag();
         MeleeCooldownRemaining = meleeCooldownRemaining;
+        SpellCooldownRemaining = spellCooldownRemaining;
         Validate();
     }
 
@@ -33,7 +41,8 @@ public sealed record ActorRuntimeState
     {
         ArgumentNullException.ThrowIfNull(actor);
         actor.Stats.Validate();
-        return new ActorRuntimeState(worldInstanceId, actor.Id, actor.Stats.MaximumHealth, inventory);
+        return new ActorRuntimeState(worldInstanceId, actor.Id, actor.Stats.MaximumHealth,
+            inventory, currentMagicka: actor.Stats.MaximumMagicka);
     }
 
     public void Validate()
@@ -42,15 +51,55 @@ public sealed record ActorRuntimeState
         if (string.IsNullOrWhiteSpace(ActorId.Value)) throw new InvalidDataException("Actor content ID cannot be empty.");
         if (!double.IsFinite(CurrentHealth) || CurrentHealth < 0 || IsDead != (CurrentHealth == 0))
             throw new InvalidDataException($"Actor {WorldInstanceId} has inconsistent health/death state.");
+        if (!double.IsFinite(CurrentMagicka) || CurrentMagicka < 0)
+            throw new InvalidDataException($"Actor {WorldInstanceId} has invalid magicka.");
         if (!double.IsFinite(MeleeCooldownRemaining) || MeleeCooldownRemaining < 0)
             throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid melee cooldown.");
+        if (!double.IsFinite(SpellCooldownRemaining) || SpellCooldownRemaining < 0)
+            throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid spell cooldown.");
         if (Inventory is null) throw new InvalidDataException($"Actor {WorldInstanceId} has no inventory.");
+        if (Modifiers is null) throw new InvalidDataException($"Actor {WorldInstanceId} has no stat modifier set.");
+        foreach (var modifier in Modifiers.Active) modifier.Validate();
+        var factionIds = new HashSet<ContentId<FactionContentKind>>();
+        foreach (var standing in Factions)
+            if (standing is null || string.IsNullOrWhiteSpace(standing.FactionId.Value)
+                || !factionIds.Add(standing.FactionId))
+                throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid or duplicate faction record.");
+        var castIds = new HashSet<Guid>();
+        foreach (var castId in AppliedSpellCastIds)
+            if (castId == Guid.Empty || !castIds.Add(castId))
+                throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid or duplicate spell cast ID.");
         foreach (var item in Inventory.Entries)
             if (string.IsNullOrWhiteSpace(item.ItemId.Value) || item.Count < 1)
                 throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid inventory entry.");
     }
 
-    internal ActorRuntimeState Copy() => this with { Inventory = Inventory.Copy() };
+    internal ActorRuntimeState Copy() => this with
+    {
+        Inventory = Inventory.Copy(),
+        Modifiers = new ActorStatModifiers { Active = new List<ActorStatModifier>(Modifiers.Active) },
+        Factions = new List<FactionStanding>(Factions),
+        AppliedSpellCastIds = new List<Guid>(AppliedSpellCastIds)
+    };
+
+    public ActorStats EffectiveStats(ActorStats baseStats)
+    {
+        ArgumentNullException.ThrowIfNull(baseStats);
+        return baseStats.WithModifiers(Modifiers);
+    }
+
+    public ActorRuntimeState AdvanceTime(double elapsedSeconds)
+    {
+        Validate();
+        if (!double.IsFinite(elapsedSeconds) || elapsedSeconds < 0)
+            throw new ArgumentOutOfRangeException(nameof(elapsedSeconds));
+        return this with
+        {
+            MeleeCooldownRemaining = Math.Max(0, MeleeCooldownRemaining - elapsedSeconds),
+            SpellCooldownRemaining = Math.Max(0, SpellCooldownRemaining - elapsedSeconds),
+            Modifiers = Modifiers.Advance(elapsedSeconds)
+        };
+    }
 }
 
 /// <summary>Save-friendly actor states keyed by stable world-instance identity.</summary>

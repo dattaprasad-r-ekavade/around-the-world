@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Ember.Rpg;
 
@@ -15,7 +16,7 @@ public sealed class DialogueTree
 {
     private static readonly JsonSerializerOptions Json = new()
     {
-        Converters = { FlagValueJson.Instance }
+        Converters = { FlagValueJson.Instance, new JsonStringEnumConverter() }
     };
 
     public ContentId<DialogueContentKind> Id { get; set; }
@@ -37,21 +38,19 @@ public sealed class DialogueTree
     /// </summary>
     public IReadOnlyList<DialogueOption> Available(string nodeId, FlagStore flags)
     {
+        ArgumentNullException.ThrowIfNull(flags);
+        return Available(nodeId, new DialogueContext(flags, new ActorStats()));
+    }
+
+    public IReadOnlyList<DialogueOption> Available(string nodeId, DialogueContext context)
+    {
+        ArgumentNullException.ThrowIfNull(context);
         var node = Node(nodeId);
         if (node is null) return Array.Empty<DialogueOption>();
 
         var open = new List<DialogueOption>();
         foreach (var option in node.Options)
-        {
-            var allowed = true;
-            foreach (var condition in option.Requires)
-                if (!condition.Matches(flags))
-                {
-                    allowed = false;
-                    break;
-                }
-            if (allowed) open.Add(option);
-        }
+            if (context.Meets(option)) open.Add(option);
         return open;
     }
 
@@ -61,10 +60,39 @@ public sealed class DialogueTree
     /// </summary>
     public string? Pick(DialogueProgress progress, FlagStore flags, DialogueOption option)
     {
-        foreach (var (name, value) in option.Sets) flags.Set(name, value);
+        ArgumentNullException.ThrowIfNull(flags);
+        return Pick(progress, new DialogueContext(flags, new ActorStats()), option);
+    }
 
-        progress.Node = option.Next;
-        if (option.Next is null) progress.Tree = null;
+    public string? Pick(DialogueProgress progress, DialogueContext context, DialogueOption option)
+    {
+        ArgumentNullException.ThrowIfNull(progress);
+        ArgumentNullException.ThrowIfNull(context);
+        ArgumentNullException.ThrowIfNull(option);
+        if (progress.Tree != Id || progress.Node is null || Node(progress.Node) is not { } node)
+            return progress.Node;
+
+        var optionIndex = -1;
+        for (var i = 0; i < node.Options.Count; i++)
+            if (ReferenceEquals(node.Options[i], option) || (!string.IsNullOrEmpty(option.Id)
+                && node.Options[i].Id == option.Id))
+            {
+                optionIndex = i;
+                break;
+            }
+        if (optionIndex < 0 || !context.Meets(node.Options[optionIndex])) return progress.Node;
+
+        var selected = node.Options[optionIndex];
+        var choiceId = string.IsNullOrEmpty(selected.Id)
+            ? $"{Id.Value}:{node.Id}:{optionIndex}"
+            : $"{Id.Value}:{node.Id}:{selected.Id}";
+        if (progress.TakenChoiceIds.Contains(choiceId)) return progress.Node;
+
+        progress.TakenChoiceIds.Add(choiceId);
+        foreach (var (name, value) in selected.Sets) context.Flags.Set(name, value);
+
+        progress.Node = selected.Next;
+        if (selected.Next is null) progress.Tree = null;
         return progress.Node;
     }
 }

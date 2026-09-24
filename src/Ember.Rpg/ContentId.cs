@@ -9,6 +9,7 @@ public sealed class ItemContentKind { }
 public sealed class FactionContentKind { }
 public sealed class DialogueContentKind { }
 public sealed class QuestContentKind { }
+public sealed class SpellContentKind { }
 
 /// <summary>A content key whose kind is part of its compile-time type.</summary>
 [JsonConverter(typeof(ContentIdJsonConverterFactory))]

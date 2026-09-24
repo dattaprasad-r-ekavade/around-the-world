@@ -26,12 +26,19 @@ public sealed record DialogueNode
 /// </summary>
 public sealed record DialogueOption
 {
+    /// <summary>Stable optional choice key; if omitted, the tree/node/option position is used.</summary>
+    public string Id { get; init; } = "";
+
     /// <summary>What the player picks. Presentation is the game's business; this is the words.</summary>
     public string Label { get; init; } = "";
 
     public string? Next { get; init; }
 
     public IReadOnlyList<FlagCondition> Requires { get; init; } = Array.Empty<FlagCondition>();
+
+    public IReadOnlyList<DialogueStatRequirement> RequiresStats { get; init; } = Array.Empty<DialogueStatRequirement>();
+
+    public IReadOnlyList<DialogueFactionRequirement> RequiresFactions { get; init; } = Array.Empty<DialogueFactionRequirement>();
 
     /// <summary>Flags written when this option is taken, as plain values: true, 120, "text".</summary>
     public IReadOnlyDictionary<string, FlagValue> Sets { get; init; } = new Dictionary<string, FlagValue>();

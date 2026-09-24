@@ -934,3 +934,19 @@ At this update, 109 of 154 roadmap rows are complete (70.8%). Task 99 is next. T
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — equip/swap/unequip, attachment rebuild, melee range/cooldown/death, actor loot/death save/load |
 
 At this update, 112 of 154 roadmap rows are complete (72.7%). Task 102 is next. The Stage 10 live loader/restart and Stage 11 branching-quest integration gates remain Pending.
+
+## Tasks 102–104 — targeted spells, factions, and contextual dialogue — 24 September 2026
+
+- Added typed targeted-spell definitions with range, magicka cost, cooldown, modifier target/value/duration, and stacking policy. Invalid casts leave both actors unchanged; successful casts record a unique cast ID, and the save preserves cost, cooldown, effect timer, and replay protection.
+- Added immutable per-actor faction membership and reputation records. Updating one actor no longer changes another actor's membership or standing; both survive save/load.
+- Dialogue options can now check flags, effective attributes, and faction membership/reputation. `Pick` reevaluates requirements, applies flag effects once, and stores a choice key in dialogue progress so reloads and self-loops cannot replay an accepted choice.
+
+### Task 102–104 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — cast validation/cost/cooldown/replay/expiry, isolated faction persistence, stat/faction-gated dialogue and one-time choice persistence |
+
+At this update, 115 of 154 roadmap rows are complete (74.7%). Task 105 is next. The Stage 10 live world-loader/save/restart and Stage 11 complete branching-quest integration gates remain Pending.

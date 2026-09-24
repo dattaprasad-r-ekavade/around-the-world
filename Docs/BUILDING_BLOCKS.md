@@ -747,6 +747,19 @@ attacker and target records only on a valid hit. Apply both records to commit; a
 cooldown-blocked swing leaves them unchanged. Dead actors remain dead after save/load, with loot
 still attached to that same world identity.
 
+`SpellCatalogue` registers typed spell definitions. `TargetedSpellSystem.TryCast` checks range,
+living targets, magicka, cooldown, and a unique cast ID before returning replacement actor records;
+only a successful cast spends magicka and applies a timed modifier. `ActorRuntimeState.AdvanceTime`
+ticks cooldowns and expires those effects. Cast IDs are saved, so replaying an accepted command after
+reload cannot charge or apply it twice.
+
+`FactionSystem` returns actor records with independent membership and reputation entries. Pass
+those standings into `DialogueContext` with the player's effective `ActorStats` and `FlagStore`.
+Dialogue options can require all three. `DialogueTree.Pick` rechecks the requirements and records a
+stable choice key on `DialogueProgress` before applying its flag effects; that key survives save/load
+and prevents a self-looping choice from executing twice. Give choices explicit IDs when content may
+be reordered; otherwise the option's position within its node is used as the fallback key.
+
 ## The sample
 
 `samples/FirstLight` is 178 lines and uses: `EngineHost`, `AttachCanvas`, `AttachScene`,

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Ember.Rpg;
 
@@ -28,7 +29,8 @@ public sealed record SaveState
             new FlagStoreJson(),
             new ItemCatalogueJson(),
             new BagJson(),
-            new EquipSlotsJson()
+            new EquipSlotsJson(),
+            new JsonStringEnumConverter()
         }
     };
 
