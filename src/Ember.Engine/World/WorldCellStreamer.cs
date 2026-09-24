@@ -96,6 +96,96 @@ public sealed class WorldCellStreamer<TPrepared, TActive> : IDisposable
     /// <summary>Raised after a failed attempt when the retry delay has been selected.</summary>
     public event Action<ExteriorCellCoordinate, Exception, TimeSpan>? RetryScheduled;
 
+    /// <summary>Returns the active operation for a streamed exterior cell, for a travel transaction.</summary>
+    public bool TryGetActiveOperation(Guid cellId,
+        out WorldCellLoadOperation<TPrepared, TActive>? operation)
+    {
+        ThrowIfDisposed();
+        operation = null;
+        var definition = _world.FindCell(cellId);
+        if (definition?.Kind != WorldCellKind.Exterior || definition.ExteriorCoordinate is not { } coordinate
+            || !_cells.TryGetValue(coordinate, out var entry)
+            || entry.Operation.State != CellLifecycleState.Active)
+            return false;
+        operation = entry.Operation;
+        return true;
+    }
+
+    /// <summary>Removes an operation already unloaded by a travel transaction.</summary>
+    public bool ForgetUnloadedCell(Guid cellId)
+    {
+        ThrowIfDisposed();
+        var definition = _world.FindCell(cellId);
+        if (definition?.Kind != WorldCellKind.Exterior || definition.ExteriorCoordinate is not { } coordinate
+            || !_cells.TryGetValue(coordinate, out var entry))
+            return false;
+
+        if (entry.Operation.State == CellLifecycleState.Failed)
+            entry.Operation.Discard();
+        else if (entry.Operation.State != CellLifecycleState.Unloaded)
+            throw new InvalidOperationException(
+                $"Cell {cellId} must be unloaded before it can be forgotten; current state is {entry.Operation.State}.");
+
+        _cells.Remove(coordinate);
+        _loadingRing.Forget(coordinate);
+        NotifyCollisionAvailability(coordinate, false);
+        if (_statusCell == coordinate)
+        {
+            _statusCell = null;
+            LoadingStatus = null;
+        }
+        return true;
+    }
+
+    /// <summary>Stops and removes a tracked exterior cell before travel prepares a fresh destination operation.</summary>
+    public bool UnloadAndForgetCell(Guid cellId)
+    {
+        ThrowIfDisposed();
+        var definition = _world.FindCell(cellId);
+        if (definition?.Kind != WorldCellKind.Exterior || definition.ExteriorCoordinate is not { } coordinate
+            || !_cells.Remove(coordinate, out var entry))
+            return false;
+
+        NotifyCollisionAvailability(coordinate, false);
+        _loadingRing.Forget(coordinate);
+        if (_statusCell == coordinate)
+        {
+            _statusCell = null;
+            LoadingStatus = null;
+        }
+
+        if (entry.Operation.State == CellLifecycleState.Preparing)
+        {
+            entry.Operation.Cancel();
+            _retired.Add(new RetiredOperation(entry.Operation, entry.Preparation));
+        }
+        else
+        {
+            StopOperation(entry);
+        }
+        return true;
+    }
+
+    /// <summary>Adopts a destination operation committed by a travel transaction into exterior streaming.</summary>
+    public void AdoptActiveCell(Guid cellId, WorldCellLoadOperation<TPrepared, TActive> operation)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(operation);
+        var definition = _world.FindCell(cellId)
+            ?? throw new InvalidOperationException($"World manifest has no cell with ID {cellId}.");
+        if (definition.Kind != WorldCellKind.Exterior || definition.ExteriorCoordinate is not { } coordinate)
+            throw new ArgumentException("Only an authored exterior cell can be adopted by the exterior streamer.", nameof(cellId));
+        if (operation.OwningThreadId != Environment.CurrentManagedThreadId
+            || operation.State != CellLifecycleState.Active)
+            throw new InvalidOperationException("The adopted operation must be active on the current owning thread.");
+        if (!_cells.TryAdd(coordinate, new CellOperation(operation)
+            {
+                CollisionReady = true
+            }))
+            throw new InvalidOperationException($"Exterior cell ({coordinate.X}, {coordinate.Z}) is already tracked.");
+        NotifyCollisionAvailability(coordinate, true);
+    }
+
     /// <summary>Requests nearby cells and waits for the containing cell to become active.</summary>
     public void Start(Vector3 playerPosition)
     {

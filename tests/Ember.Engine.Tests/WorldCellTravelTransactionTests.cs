@@ -191,6 +191,35 @@ public sealed class WorldCellTravelTransactionTests
         Assert.Same(sourceResource, source.ActiveResources);
     }
 
+    [Fact]
+    public void SourceCleanupFailureKeepsTravelCommittedToActiveDestination()
+    {
+        var sourceId = Guid.NewGuid();
+        var source = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var sourcePreparation = source.PrepareAsync(_ => Task.FromResult(new PreparedProbe(sourceId)));
+        WaitForPreparation(sourcePreparation);
+        source.PumpCompletions();
+        source.Activate(prepared => new ActiveProbe(prepared.CellId, throwOnDispose: true));
+
+        var destinationId = Guid.NewGuid();
+        var destination = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var spawn = new WorldSpawnLocation(destinationId, Guid.NewGuid(), Vector3.One, Quaternion.Identity);
+        WorldSpawnLocation? playerLocation = null;
+        var travel = new WorldCellTravelTransaction<PreparedProbe, ActiveProbe>(sourceId, source, destination,
+            spawn, (_, _) => Task.FromResult(new PreparedProbe(destinationId)),
+            prepared => new ActiveProbe(prepared.CellId), location => playerLocation = location);
+
+        WaitForPreparation(travel.PreparationTask);
+        Assert.False(travel.Tick());
+        Assert.True(travel.Tick());
+
+        Assert.Equal(WorldCellTravelState.Completed, travel.State);
+        Assert.Contains("cleanup failed", travel.Failure!.Message, StringComparison.Ordinal);
+        Assert.Equal(CellLifecycleState.Failed, source.State);
+        Assert.Equal(CellLifecycleState.Active, destination.State);
+        Assert.Equal(spawn, playerLocation);
+    }
+
     private static WorldCellTravelTransaction<PreparedProbe, ActiveProbe> BeginTravel(Guid sourceId,
         WorldCellLoadOperation<PreparedProbe, ActiveProbe> source,
         WorldCellLoadOperation<PreparedProbe, ActiveProbe> destination,
@@ -307,10 +336,14 @@ public sealed class WorldCellTravelTransactionTests
         public void Dispose() => IsDisposed = true;
     }
 
-    private sealed class ActiveProbe(Guid cellId) : IDisposable
+    private sealed class ActiveProbe(Guid cellId, bool throwOnDispose = false) : IDisposable
     {
         public Guid CellId { get; } = cellId;
         public bool IsDisposed { get; private set; }
-        public void Dispose() => IsDisposed = true;
+        public void Dispose()
+        {
+            IsDisposed = true;
+            if (throwOnDispose) throw new IOException("source cleanup failed");
+        }
     }
 }

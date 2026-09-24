@@ -619,7 +619,7 @@ Count of references in the two sample games at `43f06a7`:
 
 | Sev | Finding | Where | Suggested fix |
 | --- | --- | --- | --- |
-| High | **A travel can half-commit.** If `_source.Unload()` throws after `_placePlayer(destinationSpawn)`, the transaction reports `Failed`. At that point the destination is active and the player has already moved, while the source is partly disposed. A caller that treats `Failed` as "the source is still playable" (task 84's contract) is now wrong. | `World/WorldCellTravelTransaction.cs:131-152` | Treat an unload failure after placement as `Completed` with a cleanup error, because the player is in the destination. Or restore the player and unload the destination. Add a fixture where the source unload throws. |
+| Fixed | **Travel could half-commit.** If `_source.Unload()` threw after `_placePlayer(destinationSpawn)`, the transaction reported `Failed` even though the player and active destination had committed. | `World/WorldCellTravelTransaction.cs` | Resolved 24 September 2026: the transaction now reports `Completed` and retains the cleanup error; a regression covers source unload failure. RpgSlice also exercises live exterior/interior travel with the authored doors and spawns. |
 | Medium | **Save restore is not atomic, and the stores can't be cleared.** `Restore` imports identities, then changes, then runtime objects, each in place. A throw partway leaves the stores partly filled, and `Restore` refuses non-empty stores, so an in-process retry is impossible. | `World/WorldSaveFile.cs:80-92`; `WorldInstanceIdentityMap.cs:121-128` | Build all three stores into temporaries and swap them only after all three succeed. Add `Clear()`. |
 | Medium | **`Cancel` doesn't drain completions, and the transaction isn't `IDisposable`.** A late prepared result stays queued until someone calls `Tick`. A caller that cancels and drops the transaction leaks the result. | `WorldCellTravelTransaction.cs:160-170` | Pump completions in `Cancel`, and implement `Dispose` as cancel, pump, then discard. |
 | Medium | **Saving blocks the frame.** `WorldSaveRequestQueue.ProcessStableBoundary` writes the file synchronously on the owner thread, and `_completed` grows forever. | `World/WorldSaveRequestQueue.cs:13,43-52` | Snapshot at the stable boundary, write on a worker, and complete on the owner thread. Bound or coalesce the results. |
@@ -692,7 +692,7 @@ Credit where due: `WorldCellWorkspace.RenameCell` keeps IDs and coordinates stab
 ### Recommended order before task 133
 
 1. Route `RpgSliceCellStreamer` through `CellActivationQueue` and `CellAssetReferencePool`, add retry, then promote the streamer into `Ember.Engine/World`. Re-run the Stage 13 benchmark.
-2. Add the Stage 9–12 integration rows above, starting with a door plus live travel in `RpgSlice`, then persistence wiring. Pass or explicitly block each gate.
+2. Add the Stage 9–12 integration rows above. RpgSlice now proves a live door round trip; next wire persistence, then scheduled NPC movement and merchant/enemy use of `Ember.Rpg`. Pass or explicitly block each gate.
 3. Fix the data-safety items: extract `SafeFile.WriteAtomic` (with flush) and use it for `SaveState.Write`; persist the clock and schedules; make the travel commit and save restore atomic. Turn on `UnmappedMemberHandling.Disallow` for every persisted format.
 4. Extend packaging to world manifests and cell scenes before task 142.
 5. Add CI: `Ember.Rpg` tests on Linux now; the engine on a Windows runner.

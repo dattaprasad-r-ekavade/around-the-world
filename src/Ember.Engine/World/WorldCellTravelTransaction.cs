@@ -147,9 +147,9 @@ public sealed class WorldCellTravelTransaction<TPrepared, TActive>
         }
         catch (Exception exception)
         {
+            // Destination activation and player placement already committed. Keep travel committed
+            // so callers can adopt the destination, while exposing the source cleanup failure.
             Failure = exception;
-            State = WorldCellTravelState.Failed;
-            return false;
         }
 
         State = WorldCellTravelState.Completed;

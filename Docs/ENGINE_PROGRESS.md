@@ -1264,4 +1264,21 @@ At this update, 143 of 155 ordered rows are complete (92.3%). Task 133 is next. 
 | RpgSlice `--streaming-smoke` | PASS — 3×3 queued activation completed in 22 frames; 20-boundary retention smoke released shared resources at the last reference |
 | RpgSlice `--benchmark --windowed --time-paused --time-hours 12` | PASS — 10 laps, 40 cell crossings, instancing enabled; 0.79 ms average, 1.86 ms p95, 14.00 ms max, 19.31 ms longest activation, 163.0 MiB peak working set; all provisional targets met. See `OUTDOOR_BENCHMARK.md` |
 
-Stage 9–12 gameplay integration evidence is still pending, including live door travel, persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`.
+Stage 9–12 gameplay integration evidence is still pending. RpgSlice now has a live door travel round-trip; persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg` remain open.
+
+## Stage 9 integration follow-up — live RpgSlice door travel — 24 September 2026
+
+- RpgSlice now finds nearby authored doors and shows an E-key prompt. Pressing E prepares and activates the target cell, places the player at the authored spawn and facing, then unloads the source through `WorldCellTravelTransaction`.
+- Interior travel activates scene colliders including the ground, excludes door panels from blocking movement, pauses exterior streaming, and renders the active interior scene. Returning to an exterior adopts the destination into the reusable streamer and refreshes the loading ring.
+- The transaction now reports source cleanup errors while keeping the travel committed after destination activation and player placement. The source-cleanup failure regression verifies the destination remains active.
+- The RpgSlice `--travel-smoke` route walks to House A, uses E at the exterior door and return door, and checks both authored spawn placements in the live physics runtime.
+
+### Live door travel checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 234 passed, 0 failed, 0 skipped; includes travel commit behavior when source cleanup throws |
+| RpgSlice `--travel-smoke` | PASS — walked to House A, used E for both transitions, and returned to the authored exterior spawn |
+
+No ordered roadmap rows were added or marked complete. The checklist remains 143/155 (92.3%), task 133 is first unchecked, and task 144 remains a conditional performance-triage gate. Stage 9–12 integration work still needs persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`.
