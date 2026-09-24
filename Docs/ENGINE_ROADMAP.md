@@ -203,7 +203,7 @@ Authored definitions are immutable. Save changes by stable world-instance ID, no
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 85 | Add stable world-instance IDs distinct from asset and cell IDs. | Two instances of one asset have different IDs that survive cell reload. |
+| [x] | 85 | Add stable world-instance IDs distinct from asset and cell IDs. | Two instances of one asset have different IDs that survive cell reload. |
 | [ ] | 86 | Add a per-cell change store for object transforms and enabled state. | Move/disable an object, unload its cell, and reload; its changes remain. |
 | [ ] | 87 | Add deletion tombstones for authored objects. | A removed authored object does not return after reload. |
 | [ ] | 88 | Add runtime-created object records with persistent IDs. | A spawned test item survives reload without acquiring a duplicate ID. |

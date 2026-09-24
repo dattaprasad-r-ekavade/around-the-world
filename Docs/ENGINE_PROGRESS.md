@@ -724,3 +724,19 @@ At this update, 94 of 154 roadmap rows are complete (61.0%). Task 84 is next. Th
 | `WorldCellTravelTransactionTests` | PASS — two authored interior round trips and source-preserving failure/cancel cases |
 
 At this update, 95 of 154 roadmap rows are complete (61.7%). Task 85 is next. The Stage 9 integration gate remains Pending because RpgSlice does not yet connect player door interaction to live cell activation, and the exterior collision fixture still has hard cell seams.
+
+## Task 85 — stable world-instance identities — 24 September 2026
+
+- Added the strongly typed `WorldInstanceId` and an owner-thread `WorldInstanceIdentityMap`, keyed by stable world cell ID plus authored scene object ID. The map is retained across cell unload/reload and returns an identity snapshot for a loaded scene.
+- Scene and asset IDs remain content references; distinct placements of the same GLB receive separate runtime world-instance identities. The retained map is the source for upcoming per-instance change records.
+- Persistent serialization across a full application restart remains part of the later world-save tasks.
+
+### Task 85 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 163 tests, 0 failed, 0 skipped |
+| `WorldInstanceIdentityMapTests` | PASS — two shared-asset placements keep distinct IDs and reuse them after cell scene reload |
+
+At this update, 96 of 154 roadmap rows are complete (62.3%). Task 86 is next. The Stage 9 integration gate remains Pending for live RpgSlice door interaction and seamless exterior collision across cell seams.
