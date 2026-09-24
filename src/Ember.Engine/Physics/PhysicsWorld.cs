@@ -23,6 +23,8 @@ public sealed class PhysicsWorld : IDisposable
     private readonly CollidableProperty<PhysicsCollisionFilter> _filters;
     private readonly Dictionary<PhysicsObjectId, BodyHandle> _dynamicBodies = new();
     private readonly Dictionary<PhysicsObjectId, TypedIndex> _dynamicShapes = new();
+    private readonly Dictionary<PhysicsObjectId, StaticHandle> _staticBodies = new();
+    private readonly Dictionary<PhysicsObjectId, TypedIndex> _staticShapes = new();
     private readonly Dictionary<PhysicsObjectId, PhysicsPoseHistory> _poseHistory = new();
     private readonly Dictionary<CollidableReference, PhysicsObjectId> _objectIds = new();
     private readonly List<PhysicsCharacterController> _characters = new();
@@ -73,7 +75,101 @@ public sealed class PhysicsWorld : IDisposable
         var id = NextId();
         _filters.Allocate(handle) = filter ?? PhysicsCollisionFilter.DefaultWorld;
         _objectIds.Add(new CollidableReference(handle), id);
+        _staticBodies.Add(id, handle);
+        _staticShapes.Add(id, shapeIndex);
         return id;
+    }
+
+    /// <summary>Adds a removable static triangle mesh, for example a streamed terrain cell.</summary>
+    public PhysicsObjectId AddStaticTriangleMesh(IReadOnlyList<XnaVector3> vertices,
+        IReadOnlyList<int> triangleIndices, PhysicsCollisionFilter? filter = null)
+    {
+        ThrowIfDisposed();
+        ArgumentNullException.ThrowIfNull(vertices);
+        ArgumentNullException.ThrowIfNull(triangleIndices);
+        if (vertices.Count < 3)
+            throw new ArgumentException("A static triangle mesh needs at least three vertices.", nameof(vertices));
+        if (triangleIndices.Count < 3 || triangleIndices.Count % 3 != 0)
+            throw new ArgumentException("Triangle indices must contain one or more complete triangles.", nameof(triangleIndices));
+        foreach (var vertex in vertices) ValidateFinite(vertex, nameof(vertices));
+
+        var triangleCount = triangleIndices.Count / 3;
+        _bufferPool.Take(triangleCount, out Buffer<Triangle> triangles);
+        var bufferOwned = true;
+        Mesh mesh = default;
+        var meshCreated = false;
+        TypedIndex shapeIndex = default;
+        var shapeAdded = false;
+        StaticHandle staticHandle = default;
+        var staticAdded = false;
+        PhysicsObjectId id = default;
+        var idAllocated = false;
+        try
+        {
+            for (var triangle = 0; triangle < triangleCount; triangle++)
+            {
+                var offset = triangle * 3;
+                var a = triangleIndices[offset];
+                var b = triangleIndices[offset + 1];
+                var c = triangleIndices[offset + 2];
+                ValidateVertexIndex(a, vertices.Count, nameof(triangleIndices));
+                ValidateVertexIndex(b, vertices.Count, nameof(triangleIndices));
+                ValidateVertexIndex(c, vertices.Count, nameof(triangleIndices));
+                triangles[triangle] = new Triangle(
+                    PhysicsConversions.ToNumerics(vertices[a]),
+                    PhysicsConversions.ToNumerics(vertices[b]),
+                    PhysicsConversions.ToNumerics(vertices[c]));
+            }
+
+            mesh = new Mesh(triangles, NumericsVector3.One, _bufferPool, null);
+            meshCreated = true;
+            bufferOwned = false;
+            shapeIndex = Simulation.Shapes.Add(mesh);
+            shapeAdded = true;
+            staticHandle = Simulation.Statics.Add(new StaticDescription(
+                NumericsVector3.Zero, NumericsQuaternion.Identity, shapeIndex));
+            staticAdded = true;
+            id = NextId();
+            idAllocated = true;
+            _filters.Allocate(staticHandle) = filter ?? PhysicsCollisionFilter.DefaultWorld;
+            _objectIds.Add(new CollidableReference(staticHandle), id);
+            _staticBodies.Add(id, staticHandle);
+            _staticShapes.Add(id, shapeIndex);
+            return id;
+        }
+        catch
+        {
+            if (idAllocated)
+            {
+                _staticBodies.Remove(id);
+                _staticShapes.Remove(id);
+            }
+            if (staticAdded)
+            {
+                _objectIds.Remove(new CollidableReference(staticHandle));
+                Simulation.Statics.Remove(staticHandle);
+            }
+            if (shapeAdded)
+                Simulation.Shapes.RemoveAndDispose(shapeIndex, _bufferPool);
+            else if (meshCreated)
+                mesh.Dispose(_bufferPool);
+            else if (bufferOwned)
+                _bufferPool.Return(ref triangles);
+            throw;
+        }
+    }
+
+    /// <summary>Removes a static box or triangle mesh and releases its uniquely owned shape.</summary>
+    public void RemoveStatic(PhysicsObjectId id)
+    {
+        ThrowIfDisposed();
+        if (!_staticBodies.Remove(id, out var handle))
+            throw new KeyNotFoundException($"Physics object {id.Value} is not a removable static body.");
+
+        _objectIds.Remove(new CollidableReference(handle));
+        Simulation.Statics.Remove(handle);
+        if (_staticShapes.Remove(id, out var shapeIndex))
+            Simulation.Shapes.RemoveAndDispose(shapeIndex, _bufferPool);
     }
 
     public PhysicsObjectId AddDynamicBox(XnaVector3 position, XnaVector3 size, float mass,
@@ -270,6 +366,8 @@ public sealed class PhysicsWorld : IDisposable
                 {
                     _dynamicBodies.Clear();
                     _dynamicShapes.Clear();
+                    _staticBodies.Clear();
+                    _staticShapes.Clear();
                     _poseHistory.Clear();
                     _objectIds.Clear();
                 }
@@ -298,6 +396,12 @@ public sealed class PhysicsWorld : IDisposable
     {
         if (!float.IsFinite(value.X) || !float.IsFinite(value.Y) || !float.IsFinite(value.Z))
             throw new ArgumentOutOfRangeException(parameterName, "Vector components must be finite.");
+    }
+
+    private static void ValidateVertexIndex(int index, int vertexCount, string parameterName)
+    {
+        if ((uint)index >= (uint)vertexCount)
+            throw new ArgumentOutOfRangeException(parameterName, $"Triangle vertex index {index} is outside the mesh.");
     }
 
     private static void ValidateFinite(XnaQuaternion value, string parameterName)

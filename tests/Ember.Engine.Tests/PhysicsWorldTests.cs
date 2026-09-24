@@ -189,6 +189,40 @@ public sealed class PhysicsWorldTests
     }
 
     [Fact]
+    public void CharacterRemainsGroundedAcrossAdjacentTerrainMeshesAndUnloadedMeshStopsColliding()
+    {
+        using var world = new PhysicsWorld();
+        var left = CreateFlatTerrainChunk(0f, 4f);
+        var right = CreateFlatTerrainChunk(4f, 4f);
+        var leftCollider = world.AddStaticTriangleMesh(left.Vertices, left.Indices);
+        world.AddStaticTriangleMesh(right.Vertices, right.Indices);
+        Assert.NotNull(world.Raycast(new Vector3(1f, 2f, 1f), -Vector3.UnitY, 4f,
+            PhysicsCollisionLayer.World));
+        using var character = new PhysicsCharacterController(world, new Vector3(3f, 1.1f, 2f));
+        character.SetMoveInput(Vector3.UnitX);
+
+        for (var step = 0; step < 42; step++) world.Step(1f / 60f);
+        character.SetMoveInput(Vector3.Zero);
+        for (var step = 0; step < 3; step++) world.Step(1f / 60f);
+
+        Assert.True(character.Pose.Position.X > 4.5f,
+            $"Character stopped before the shared cell seam at x={character.Pose.Position.X}.");
+        Assert.True(character.IsGrounded, $"Character lost terrain contact at {character.Pose.Position}.");
+        Assert.InRange(character.Pose.Position.Y, 0.85f, 1.05f);
+        Assert.NotNull(world.Raycast(new Vector3(1f, 2f, 1f), -Vector3.UnitY, 4f,
+            PhysicsCollisionLayer.World));
+
+        world.RemoveStatic(leftCollider);
+
+        Assert.Null(world.Raycast(new Vector3(1f, 2f, 1f), -Vector3.UnitY, 4f,
+            PhysicsCollisionLayer.World));
+        var replacementCollider = world.AddStaticTriangleMesh(left.Vertices, left.Indices);
+        Assert.NotNull(world.Raycast(new Vector3(1f, 2f, 1f), -Vector3.UnitY, 4f,
+            PhysicsCollisionLayer.World));
+        world.RemoveStatic(replacementCollider);
+    }
+
+    [Fact]
     public void DisposingCharacterRemovesItsBodyAndWorldDisposalInvalidatesController()
     {
         var world = new PhysicsWorld();
@@ -231,4 +265,11 @@ public sealed class PhysicsWorldTests
 
         return character.Pose;
     }
+
+    private static (Vector3[] Vertices, int[] Indices) CreateFlatTerrainChunk(float left, float width) =>
+    (
+        [new Vector3(left, 0f, 0f), new Vector3(left + width, 0f, 0f),
+            new Vector3(left, 0f, width), new Vector3(left + width, 0f, width)],
+        [0, 1, 2, 1, 3, 2]
+    );
 }

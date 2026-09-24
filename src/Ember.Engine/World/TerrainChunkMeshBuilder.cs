@@ -105,11 +105,11 @@ public static class TerrainChunkMeshBuilder
         {
             var corner = z * vertexStride + x;
             indices[index++] = corner;
-            indices[index++] = corner + vertexStride;
-            indices[index++] = corner + 1;
             indices[index++] = corner + 1;
             indices[index++] = corner + vertexStride;
+            indices[index++] = corner + 1;
             indices[index++] = corner + vertexStride + 1;
+            indices[index++] = corner + vertexStride;
         }
 
         return indices;

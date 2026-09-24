@@ -1061,3 +1061,20 @@ At this update, 129 of 154 roadmap rows are complete (83.8%). Task 119 is next. 
 | RpgSlice screenshot smoke via managed DLL | PASS — rendered a 1280×720 frame showing the terrain and cell blockout |
 
 At this update, 131 of 154 roadmap rows are complete (85.1%). Task 121 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+
+## Task 121 — terrain collision follows exterior-cell lifecycle — 24 September 2026
+
+- `PhysicsWorld` now adds and removes static triangle meshes with owned shape cleanup. Terrain mesh indices face the walkable surface for BEPU's one-sided triangle contacts.
+- RpgSlice prepares each nearby exterior scene and terrain chunk on a worker, activates them through `WorldCellLoadOperation`, and makes a destination collision-ready only after its terrain and static scene colliders are active. Unloading a retained cell removes its colliders; movement remains gated while a requested cell is preparing.
+- Terrain rendering and collision both consume `TerrainChunkMeshBuilder` output from the same height/material source. The player movement smoke crosses from cell (0, 0) into cell (0, -1) and checks that the character remains grounded.
+
+### Task 121 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 199 tests, 0 failed, 0 skipped |
+| `dotnet samples/RpgSlice/bin/Debug/net9.0-windows/win-x64/RpgSlice.dll --smoke-controls` | PASS — crossed (0, 0) to (0, -1) over 23.06 m and remained grounded |
+| RpgSlice 1280×720 screenshot smoke | PASS — terrain and cell blockout rendered |
+
+At this update, 132 of 154 roadmap rows are complete (85.7%). Task 122 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.

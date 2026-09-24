@@ -27,12 +27,13 @@ public sealed class RpgSliceGame : EngineHost
     private readonly List<string> _faults = new();
     private SceneRenderer _renderer = null!;
     private WorldManifest _world = null!;
-    private WorldCellDefinition _cell = null!;
-    private SceneGraph _scene = null!;
     private HeightmapTerrainRenderer _terrain = null!;
+    private RpgSliceTerrainSource _terrainSource = null!;
+    private TerrainChunkSettings _terrainSettings = null!;
     private PhysicsWorld _physics = null!;
     private PhysicsCharacterController _player = null!;
     private ExteriorCellCollisionGate _collisionGate = null!;
+    private RpgSliceCellStreamer _cellStreamer = null!;
     private ThirdPersonFollowCamera _camera = null!;
     private RpgSliceStreamingSmoke? _streamingSmoke;
     private bool _smokeRan;
@@ -53,25 +54,27 @@ public sealed class RpgSliceGame : EngineHost
     {
         _world = WorldManifest.Load(_worldManifestPath);
         var originCell = _world.GetExteriorCoordinate(Vector3.Zero);
-        if (!_world.TryGetExterior(originCell, out var cell) || cell is null)
+        if (!_world.TryGetExterior(originCell, out _))
             throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
-        _cell = cell;
-        _scene = SceneFile.Load(_world.ResolveScenePath(_cell.Id));
 
         _renderer = new SceneRenderer(GraphicsDevice);
-        _terrain = new HeightmapTerrainRenderer(GraphicsDevice, new RpgSliceTerrainSource(),
-            new TerrainChunkSettings(_world.ExteriorCellWidth, VertexSpacing: 4f, TextureRepeatMetres: 6f),
+        _terrainSource = new RpgSliceTerrainSource();
+        _terrainSettings = new TerrainChunkSettings(_world.ExteriorCellWidth,
+            VertexSpacing: 4f, TextureRepeatMetres: 6f);
+        _terrain = new HeightmapTerrainRenderer(GraphicsDevice, _terrainSource, _terrainSettings,
             chunksAroundCamera: 1);
         AttachScene(_faults);
         foreach (var fault in _faults) Console.WriteLine($"RpgSlice: {fault}");
         _ui.Resize(GraphicsDevice.Viewport, _uiScalePreference);
 
         _physics = new PhysicsWorld();
-        LoadCellGeometry();
         _collisionGate = new ExteriorCellCollisionGate(_world);
-        _collisionGate.MarkCollisionReady(originCell);
         _collisionGate.CollisionRequired += coordinate => Console.WriteLine(
             $"RpgSlice: waiting for collision at cell ({coordinate.X}, {coordinate.Z}); movement is held at the boundary.");
+        _cellStreamer = new RpgSliceCellStreamer(
+            _world, _physics, _collisionGate, _terrainSource, _terrainSettings);
+        _collisionGate.CollisionRequired += _cellStreamer.Request;
+        _cellStreamer.Start(Vector3.Zero);
         _player = new PhysicsCharacterController(_physics, new Vector3(16f, 1.1f, 23f));
         _player.SetHorizontalMovementGate((current, proposed, clearance) =>
             _collisionGate.Evaluate(current, proposed, clearance).CanMove);
@@ -81,7 +84,7 @@ public sealed class RpgSliceGame : EngineHost
         _camera.Follow(_physics, _player.Pose.Position);
         _lights.Add(new PointLight(new Vector3(12f, 12f, 19f), new Vector3(0.9f, 0.82f, 0.65f) * 1.7f, 28f));
 
-        Console.WriteLine($"RpgSlice: loaded exterior cell {_cell.Id} at ({originCell.X}, {originCell.Z}) from {_cell.ScenePath}");
+        Console.WriteLine($"RpgSlice: loaded exterior cell at ({originCell.X}, {originCell.Z}) from {_world.FilePath}");
         if (_smokeControls)
         {
             RunMovementSmoke();
@@ -94,32 +97,16 @@ public sealed class RpgSliceGame : EngineHost
         }
     }
 
-    private void LoadCellGeometry()
-    {
-        foreach (var sceneObject in _scene.Objects.Where(item => item.Enabled))
-        {
-            if (sceneObject.GltfAsset is not null || sceneObject.CharacterSettings is not null)
-                throw new InvalidDataException(
-                    $"RpgSlice blockout cell does not render GLB scene object '{sceneObject.Name}'.");
-
-            var world = _scene.GetWorldMatrix(sceneObject.Id);
-            if (!world.Decompose(out var scale, out var rotation, out var position))
-                throw new InvalidDataException($"Cell object '{sceneObject.Name}' has a transform that cannot be decomposed.");
-            scale = new Vector3(MathF.Abs(scale.X), MathF.Abs(scale.Y), MathF.Abs(scale.Z));
-            if (scale.X <= 0f || scale.Y <= 0f || scale.Z <= 0f)
-                throw new InvalidDataException($"Cell object '{sceneObject.Name}' must have positive dimensions.");
-
-            _physics.AddStaticBox(position, scale, rotation);
-        }
-    }
-
     protected override void Update(GameTime gameTime)
     {
         BeginHostFrame();
         if (!_smokeRan)
         {
             if (_streamingSmoke is null)
+            {
+                _cellStreamer.Update(_player.Pose.Position);
                 UpdateMovement(Keyboard.GetState(), RealSeconds(gameTime), IsActive);
+            }
             else if (_streamingSmoke.Tick())
             {
                 _streamingSmoke.Dispose();
@@ -152,14 +139,27 @@ public sealed class RpgSliceGame : EngineHost
     private void RunMovementSmoke()
     {
         var start = _player.Pose.Position;
-        for (var index = 0; index < 30; index++)
+        var startCell = _world.GetExteriorCoordinate(start);
+        var endCell = startCell;
+        for (var index = 0; index < 360; index++)
+        {
+            _cellStreamer.Update(_player.Pose.Position);
             UpdateMovement(new KeyboardState(Keys.W), 1f / 60f, focused: true);
+            endCell = _world.GetExteriorCoordinate(_player.Pose.Position);
+            if (endCell != startCell) break;
+        }
+        _cellStreamer.Update(_player.Pose.Position);
         UpdateMovement(new KeyboardState(), 1f / 60f, focused: true);
         var end = _player.Pose.Position;
         var distance = Vector3.Distance(start, end);
         if (distance < 0.5f)
             throw new InvalidOperationException($"WASD movement smoke failed: player moved only {distance:0.00}m.");
-        Console.WriteLine($"RpgSlice: WASD movement smoke passed ({distance:0.00}m). ");
+        if (endCell == startCell)
+            throw new InvalidOperationException("Terrain streaming smoke did not cross an exterior cell boundary.");
+        if (!_player.IsGrounded)
+            throw new InvalidOperationException($"Terrain streaming smoke lost ground contact at {end}.");
+        Console.WriteLine($"RpgSlice: terrain cell-seam smoke passed ({distance:0.00}m, "
+            + $"({startCell.X}, {startCell.Z}) to ({endCell.X}, {endCell.Z}), grounded).");
     }
 
     protected override void Draw(GameTime gameTime)
@@ -171,17 +171,17 @@ public sealed class RpgSliceGame : EngineHost
         _renderer.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
             _camera.Yaw, StoneTextures.StonePalette.Sandstone, _lights);
         _terrain.Draw(_camera.View, _camera.Projection, _camera.Position);
-        foreach (var sceneObject in _scene.Objects.Where(item => item.Enabled))
+        foreach (var activeCell in _cellStreamer.ActiveCells)
+        foreach (var sceneObject in activeCell.Scene.Objects.Where(item => item.Enabled))
         {
             if (sceneObject.Name == "Ground") continue;
             var colour = sceneObject.Name switch
             {
-                "Ground" => new Color(132, 133, 106),
                 "Foliage" => new Color(60, 111, 71),
                 "Trunk" => new Color(117, 82, 54),
                 _ => new Color(137, 125, 108)
             };
-            _renderer.DrawCube(_scene.GetWorldMatrix(sceneObject.Id), colour);
+            _renderer.DrawCube(activeCell.Scene.GetWorldMatrix(sceneObject.Id), colour);
         }
 
         var playerPosition = _player.Pose.Position;
@@ -197,6 +197,7 @@ public sealed class RpgSliceGame : EngineHost
     {
         _streamingSmoke?.Dispose();
         _streamingSmoke = null;
+        _cellStreamer?.Dispose();
         _terrain?.Dispose();
         _player?.Dispose();
         _physics?.Dispose();
