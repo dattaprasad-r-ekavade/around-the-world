@@ -657,4 +657,18 @@ At this point 90 of 154 roadmap rows are complete (58.4%). Task 80 is next. The 
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 152 tests, 0 failed, 0 skipped |
 | RpgSlice managed-DLL `--streaming-smoke --windowed` | PASS — 20 crossings kept shared references bounded and released the asset after its final user left |
 
-Task 80 is complete. Task 81 follows; its cancellation and stale-generation handling was implemented with the owner-thread review fix and will be checked as a roadmap row next.
+Task 80 is complete. At that point task 81 remained unchecked; it is checked off in the follow-up below using the already-tested cancellation and stale-generation handling.
+
+## Task 81 — cancel obsolete cell loads — 24 September 2026
+
+- Checked task 81 against the earlier world-cell ownership fix: `Cancel()` invalidates the active generation immediately, late results are drained and disposed on the owner thread, and a newer attempt remains the only one that can become Ready or Active.
+- The cancellation fixture deliberately ignores cancellation while blocked, starts a newer load, activates the new result, then releases the stale result and verifies it is disposed without replacing the active cell.
+
+### Task 81 checks
+
+| Check | Result |
+| --- | --- |
+| `WorldCellLoadOperationTests.CancelDiscardsLateGenerationAndLeavesNewAttemptReady` | PASS — stale result disposed once; newer active generation preserved |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 152 tests, 0 failed, 0 skipped |
+
+At this update, 92 of 154 roadmap rows are complete (59.7%). Tasks 79–81 are complete; task 82 is next. The Stage 9 integration gate remains Pending for collision readiness, door travel, and actual interior transitions.
