@@ -1028,3 +1028,19 @@ At this update, 123 of 154 roadmap rows are complete (79.9%). Task 113 is next. 
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — save/load plus enemy pursuit, attack, cooldown, target-loss, and death checks |
 
 At this update, 126 of 154 roadmap rows are complete (81.8%). Task 116 is next. The Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel gate remain Pending.
+
+## Tasks 116–118 — actor budgets, world clock, and dormant schedule catch-up — 24 September 2026
+
+- Task 116 adds deterministic near/far/dormant classification and independent near/far callback limits in `ActorUpdateBudget`. Near actors are ordered by distance; far updates rotate across frames; dormant actors receive no update. The scheduler only returns actor IDs and work decisions, leaving runtime state owned by the game so it survives dormancy unchanged.
+- Task 117 adds monotonic `WorldClock`, a repeating two-cell `NpcDailySchedule`, and per-actor schedule bookkeeping. A schedule evaluation creates one pending travel request; repeat evaluations do not duplicate it. Completion clears the pending destination for a later schedule change.
+- Task 118 adds `CatchUpDormant`. It resolves the current cell directly, clears stale pending travel, advances cooldowns and timed effects once by the full elapsed duration, and counts crossed daily boundaries with arithmetic rather than replaying every missed day/frame.
+
+### Tasks 116–118 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 196 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — schedule boundary selection, duplicate-request suppression, 201-boundary catch-up, timer expiry, and one-work-item result |
+
+At this update, 129 of 154 roadmap rows are complete (83.8%). Task 119 is next. The Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel gate remain Pending.

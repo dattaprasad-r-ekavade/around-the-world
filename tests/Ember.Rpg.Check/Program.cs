@@ -32,6 +32,7 @@ internal static class Program
             EquipmentChecks(problems);
             MeleeAndActorPersistenceChecks(problems);
             EnemyCombatAiChecks(problems);
+            WorldClockAndScheduleChecks(problems);
             SpellAndFactionChecks(problems);
             QuestEventChecks(problems);
             MerchantTradeChecks(problems);
@@ -442,6 +443,49 @@ internal static class Program
         if (dead.Memory.State != EnemyCombatAiState.Dead || dead.DesiredMoveDirection != Vector3.Zero
             || dead.AttackLanded || dead.Enemy != deadEnemy)
             problems.Add("a dead enemy should stop moving and attacking");
+    }
+
+    private static void WorldClockAndScheduleChecks(List<string> problems)
+    {
+        var homeCellId = Guid.NewGuid();
+        var workCellId = Guid.NewGuid();
+        var schedule = new NpcDailySchedule(homeCellId, workCellId,
+            WorkStartSeconds: 6 * 60 * 60, WorkEndSeconds: 18 * 60 * 60);
+        var clock = new WorldClock(5 * 60 * 60);
+        var state = new NpcScheduleRuntimeState
+        {
+            CurrentCellId = homeCellId,
+            LastEvaluatedSeconds = clock.TotalSeconds
+        };
+        var actor = new ActorRuntimeState(Guid.NewGuid(), new ContentId<ActorContentKind>("actor.worker"), 20,
+            meleeCooldownRemaining: 1000, currentMagicka: 15, spellCooldownRemaining: 500);
+
+        var beforeWork = NpcScheduleSystem.Evaluate(schedule, clock, state);
+        var sunrise = clock.Advance(60 * 60);
+        var startWork = NpcScheduleSystem.Evaluate(schedule, sunrise, beforeWork.State);
+        var duplicate = NpcScheduleSystem.Evaluate(schedule, sunrise, startWork.State);
+        if (beforeWork.NewTravelRequestCellId.HasValue
+            || startWork.DesiredCellId != workCellId || startWork.NewTravelRequestCellId != workCellId
+            || duplicate.NewTravelRequestCellId.HasValue
+            || duplicate.State.PendingDestinationCellId != workCellId)
+            problems.Add("daily schedule boundaries should select the right cell and issue one pending travel request");
+
+        state = NpcScheduleSystem.CompleteTravel(duplicate.State, workCellId);
+        clock = sunrise.Advance(12 * 60 * 60);
+        var returnHome = NpcScheduleSystem.Evaluate(schedule, clock, state);
+        var duplicateReturn = NpcScheduleSystem.Evaluate(schedule, clock, returnHome.State);
+        if (returnHome.DesiredCellId != homeCellId || returnHome.NewTravelRequestCellId != homeCellId
+            || duplicateReturn.NewTravelRequestCellId.HasValue)
+            problems.Add("the evening schedule boundary should request one return-home trip");
+
+        state = NpcScheduleSystem.CompleteTravel(duplicateReturn.State, homeCellId);
+        var afterLongDormancy = clock.Advance(100 * WorldClock.SecondsPerDay + 13 * 60 * 60);
+        var caughtUp = NpcScheduleSystem.CatchUpDormant(schedule, afterLongDormancy, state, actor);
+        if (caughtUp.DesiredCellId != workCellId || caughtUp.State.CurrentCellId != workCellId
+            || caughtUp.State.PendingDestinationCellId.HasValue
+            || caughtUp.Actor.MeleeCooldownRemaining != 0 || caughtUp.Actor.SpellCooldownRemaining != 0
+            || caughtUp.BoundariesCollapsed != 201 || caughtUp.WorkItemsProcessed != 1)
+            problems.Add("dormant schedule catch-up should materialize the current work cell and advance timers in bounded work");
     }
 
     private static void SpellAndFactionChecks(List<string> problems)

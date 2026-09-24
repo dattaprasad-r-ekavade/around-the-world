@@ -252,9 +252,9 @@ Begin with authored path nodes rather than a navmesh generator. Implement the na
 | [x] | 113 | Add NPC travel execution using cell loading and persistent ownership transfer. | A following NPC crosses an exterior boundary, enters an interior, and remains unique after save/reload. |
 | [x] | 114 | Add sight/range perception with physics line-of-sight queries. | An obstacle blocks detection; removing it allows detection within range. |
 | [x] | 115 | Add a small idle/chase/attack state machine using existing combat actions. | One enemy notices, pursues, attacks, and stops after losing its target or dying. |
-| [ ] | 116 | Add near/far/dormant actor update tiers with per-frame work budgets. | Distant actors stop expensive animation/perception updates; reactivation preserves their state. |
-| [ ] | 117 | Add a world clock and a two-destination daily NPC schedule. | Time changes select the correct destination without creating duplicate travel requests. |
-| [ ] | 118 | Define dormant schedule catch-up without replaying every missed frame. | Returning after a time skip produces the expected NPC location/state with bounded work. |
+| [x] | 116 | Add near/far/dormant actor update tiers with per-frame work budgets. | Distant actors stop expensive animation/perception updates; reactivation preserves their state. |
+| [x] | 117 | Add a world clock and a two-destination daily NPC schedule. | Time changes select the correct destination without creating duplicate travel requests. |
+| [x] | 118 | Define dormant schedule catch-up without replaying every missed frame. | Returning after a time skip produces the expected NPC location/state with bounded work. |
 
 **Gate:** several NPCs follow schedules while one enemy uses combat AI. A follower travels through a door and survives restart; dormant actors do not require their full scenes to remain active.
 
@@ -327,14 +327,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed tasks: 113–115 — NPC cell transitions, physics sight queries, and enemy combat decisions. Also resolved the character-import review finding about skeleton limits and invalid rest transforms.
-- Current task: 116 — add near/far/dormant actor update tiers with per-frame work budgets.
-- Current checklist: 126 of 154 ordered rows complete (81.8%); task 116 is the first unchecked row.
+- Last completed tasks: 116–118 — budgeted actor tiers, daily schedules, and dormant catch-up. The previous batch also added NPC travel, perception, combat AI, and resolved the character-import review finding.
+- Current task: 119 — define the fixed benchmark route, reference hardware, content counts, and provisional performance budgets.
+- Current checklist: 129 of 154 ordered rows complete (83.8%); task 119 is the first unchecked row.
 - Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, and Stage 12 multi-NPC schedule/travel remain Pending.
-- Latest changes: `WorldNpcCellTransition`, `ActorPerception`, `EnemyCombatAi`, their regression checks, and this roadmap/progress update.
+- Latest changes: `ActorUpdateBudget`, `WorldClock`, `NpcDailySchedule`, dormant catch-up, their checks, and this roadmap/progress update.
 - Verification: see the dated 24 September entry in `ENGINE_PROGRESS.md` for build, full-suite, and RPG check results.
-- Limits: NPC cell transitions are committed one authored portal at a time and deliberately keep the source cell active. The game loop advances its local follower, loads the next cell, then applies the returned AI movement intent to a controller. No navmesh generation, autonomous door animation, or full game sample has been added yet.
-- Next action: task 116, budget actor updates by near/far/dormant tier.
+- Limits: tier planning is deterministic and caps actor-update callbacks, while callers retain actor data between updates. Schedule catch-up resolves the current daily destination and actor timers; it does not replay dialogue, combat, or other historical events. No full game sample has been added yet.
+- Next action: task 119, define reproducible outdoor benchmark conditions and provisional targets.
 
 Suggested request to an implementing AI:
 

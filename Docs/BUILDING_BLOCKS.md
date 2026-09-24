@@ -805,6 +805,16 @@ an idle, chase, attack, or dead decision. Apply `DesiredMoveDirection` to the ph
 controller and commit the returned actor records together. The AI uses `MeleeCombat` for hits and clears
 its target and movement intent when sight is lost or either actor dies.
 
+`ActorUpdateBudget.Plan` assigns deterministic near, far, and dormant tiers around the player. Near and
+far callbacks have independent per-frame caps; far work rotates across frames, and dormant actors
+receive no expensive update request. The planner does not own actor state, so callers keep the same
+save/runtime records while an actor is dormant and reactivate them unchanged.
+
+`WorldClock` advances simulation time in seconds. `NpcDailySchedule` selects between a home and work
+cell, while `NpcScheduleSystem.Evaluate` creates at most one outstanding request per actor. For a
+dormant actor, `CatchUpDormant` resolves the current destination arithmetically, advances actor timers
+once, and reports how many schedule boundaries were collapsed instead of replaying missed frames.
+
 ## The sample
 
 `samples/FirstLight` is 178 lines and uses: `EngineHost`, `AttachCanvas`, `AttachScene`,
