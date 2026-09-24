@@ -128,6 +128,58 @@ public sealed class CellActivationQueueTests
         }
     }
 
+    [Fact]
+    public void CancelBeforeFirstStepDisposesStepperAndPreparedData()
+    {
+        var queue = new CellActivationQueue<PreparedProbe, ActiveProbe>(
+            maximumCostPerFrame: 100, maximumCellsPerFrame: 2,
+            maximumElapsedPerFrame: TimeSpan.FromSeconds(1));
+        var prepared = new PreparedProbe(new ExteriorCellCoordinate(0, 0), estimatedActivationCost: 10);
+        var operation = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var preparation = operation.PrepareAsync(_ => Task.FromResult(prepared));
+        using var completed = new ManualResetEventSlim();
+        preparation.ContinueWith(_ => completed.Set(), CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        Assert.True(completed.Wait(TimeSpan.FromSeconds(5)));
+        operation.PumpCompletions();
+        var stepper = new CancelProbeStepper();
+        queue.Enqueue(operation, stepper);
+
+        Assert.True(queue.Cancel(operation));
+
+        Assert.Equal(CellLifecycleState.Unloaded, operation.State);
+        Assert.Equal(1, prepared.DisposeCount);
+        Assert.Equal(1, stepper.DisposeCount);
+        Assert.Equal(0, queue.PendingCount);
+        Assert.Equal(0, queue.QueuedEstimatedCost);
+        queue.Dispose();
+    }
+
+    [Fact]
+    public void QueueNeverReportsNegativeEstimatedCostWhenStepperExceedsItsEstimate()
+    {
+        var queue = new CellActivationQueue<PreparedProbe, ActiveProbe>(
+            maximumCostPerFrame: 100, maximumCellsPerFrame: 1,
+            maximumElapsedPerFrame: TimeSpan.FromSeconds(1));
+        var operation = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var preparation = operation.PrepareAsync(_ => Task.FromResult(
+            new PreparedProbe(new ExteriorCellCoordinate(0, 0), estimatedActivationCost: 1)));
+        using var completed = new ManualResetEventSlim();
+        preparation.ContinueWith(_ => completed.Set(), CancellationToken.None,
+            TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+        Assert.True(completed.Wait(TimeSpan.FromSeconds(5)));
+        operation.PumpCompletions();
+        queue.Enqueue(operation, new OverEstimateStepper());
+
+        var metrics = queue.ProcessFrame();
+
+        Assert.Equal(10, metrics.CostConsumed);
+        Assert.Equal(0, metrics.QueuedEstimatedCost);
+        Assert.Equal(CellLifecycleState.Active, operation.State);
+        operation.Unload();
+        queue.Dispose();
+    }
+
     private sealed class PreparedProbe(ExteriorCellCoordinate coordinate, long estimatedActivationCost)
         : IDisposable, ICellActivationCost
     {
@@ -164,5 +216,20 @@ public sealed class CellActivationQueueTests
         }
 
         public void Dispose() => DisposeCount++;
+    }
+
+    private sealed class CancelProbeStepper : ICellActivationStepper<PreparedProbe, ActiveProbe>
+    {
+        public int DisposeCount { get; private set; }
+        public CellActivationStepResult<ActiveProbe> Step(PreparedProbe prepared, long maximumCost) =>
+            new(1, true, new ActiveProbe());
+        public void Dispose() => DisposeCount++;
+    }
+
+    private sealed class OverEstimateStepper : ICellActivationStepper<PreparedProbe, ActiveProbe>
+    {
+        public CellActivationStepResult<ActiveProbe> Step(PreparedProbe prepared, long maximumCost) =>
+            new(10, true, new ActiveProbe());
+        public void Dispose() { }
     }
 }

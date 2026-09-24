@@ -248,22 +248,35 @@ public sealed class WorldCellLoadOperation<TPrepared, TActive>
     }
 
     /// <summary>Cancels queued or in-progress incremental activation and disposes its partial work.</summary>
-    internal void CancelIncrementalActivation()
+    internal void CancelIncrementalActivation(ICellActivationStepper<TPrepared, TActive> stepper)
     {
+        ArgumentNullException.ThrowIfNull(stepper);
         EnsureOwningThread();
         if (_lifecycle.State != CellLifecycleState.Ready)
             throw new InvalidOperationException($"Only a ready cell can cancel activation; current state is {_lifecycle.State}.");
+        if (_incrementalActivation is not null && !ReferenceEquals(_incrementalActivation, stepper))
+            throw new InvalidOperationException("An incremental cell activation must keep using its original stepper.");
         if (!_activationInProgress)
         {
-            Discard();
+            Exception? unstartedFailure = null;
+            try { stepper.Dispose(); }
+            catch (Exception exception) { unstartedFailure = exception; }
+            try { Discard(); }
+            catch (Exception exception)
+            {
+                unstartedFailure = unstartedFailure is null
+                    ? exception
+                    : new AggregateException(unstartedFailure, exception);
+            }
+            if (unstartedFailure is not null) ExceptionDispatchInfo.Capture(unstartedFailure).Throw();
             return;
         }
 
-        var stepper = _incrementalActivation;
+        var activeStepper = _incrementalActivation;
         _incrementalActivation = null;
         _activationInProgress = false;
         Exception? failure = null;
-        try { stepper?.Dispose(); }
+        try { activeStepper?.Dispose(); }
         catch (Exception exception) { failure = exception; }
         try { Discard(); }
         catch (Exception exception)

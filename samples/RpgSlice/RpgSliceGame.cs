@@ -225,7 +225,9 @@ public sealed class RpgSliceGame : EngineHost
         }
         else
         {
-            Window.Title = _player.IsMovementWaitingForCell
+            Window.Title = _cellStreamer.LoadingStatus is { } streamingStatus
+                ? $"RPG Slice — {streamingStatus}"
+                : _player.IsMovementWaitingForCell
                 ? _collisionGate.LastMovementResult.State == ExteriorCellCollisionState.MissingCell
                     ? "RPG Slice — No exterior cell at boundary"
                     : "RPG Slice — Waiting for cell collision"

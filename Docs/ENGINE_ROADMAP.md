@@ -334,13 +334,13 @@ For each chosen feature, append tasks with the same four columns. Each task need
 ## Handoff — update after every implementation session
 
 - Last completed task: 132 — CharacterStudio can author cell-local paths and branching RPG dialogue records with validated atomic content-pack saves.
-- Current task: 133 — add a quest objective/event-reference panel.
+- First unchecked baseline task: 133 — add a quest objective/event-reference panel. Integration follow-up from the code review comes first.
 - Current checklist: 143 of 155 ordered rows complete (92.3%); task 133 is the first unchecked baseline row.
-- Current gates: the Stage 13 reference benchmark gate passed on the recorded 3×3 blockout. The Stage 14 settlement-authoring gate and earlier Release B/C/D integration gates remain Pending. Task 144 remains required before increasing world density if the long-frame tail recurs.
-- Latest changes: CharacterStudio can edit and visualize cell-local navigation paths, run a collision-aware character follower in play mode, and author branching dialogue nodes, requirements, and effects. Valid RPG content packs save atomically and report structural/reference errors before save.
-- Verification: see the 24 September 2026 tasks 131–132 entry in `ENGINE_PROGRESS.md` for the Release build, full test suite, RPG save/load check, and CharacterStudio capture.
-- Limits: path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: task 133, add quest objective and event-reference authoring.
+- Current gates: Release A and D passed; Release B and C remain Pending. Stages 9–12 remain Pending or unproven, the Stage 14 settlement-authoring gate is Pending, and Release E has no recorded status. The Stage 13 benchmark passed on the recorded 3×3 blockout, but its rerun after live activation changes ended during measured lap 7 without producing a report. Task 144 remains required before increasing world density if the long-frame tail recurs.
+- Latest changes: the live RpgSlice streamer now uses queued terrain-patch activation, shared patch-topology leases, retry/backoff, and a visible retry status. The engine queue now cleans up a canceled stepper before its first activation step. The reusable streamer and retirement orchestration still lives in the sample.
+- Verification: see the 24 September 2026 code-review follow-up in `ENGINE_PROGRESS.md` for the Release build, 231-test suite, RPG save/load check, and cell-seam smoke.
+- Limits: Stage 9–12 gameplay integration is still pending (live door travel, persistence wiring, scheduled NPC movement, and merchant/enemy use of `Ember.Rpg`). Path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: promote the reusable cell streamer into `Ember.Engine/World` and add evidence-backed Stage 9–12 integration rows before starting task 133.
 
 Suggested request to an implementing AI:
 

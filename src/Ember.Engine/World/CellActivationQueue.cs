@@ -125,8 +125,9 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
 
             cellsProcessed++;
             costConsumed += result.CostConsumed;
-            activation.RemainingEstimate = Math.Max(0, activation.RemainingEstimate - result.CostConsumed);
-            _queuedEstimatedCost -= result.CostConsumed;
+            var estimateConsumed = Math.Min(activation.RemainingEstimate, result.CostConsumed);
+            activation.RemainingEstimate -= estimateConsumed;
+            _queuedEstimatedCost -= estimateConsumed;
 
             if (result.IsComplete)
             {
@@ -168,7 +169,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
 
         if (canceled is null) return false;
         _queuedEstimatedCost -= canceled.RemainingEstimate;
-        operation.CancelIncrementalActivation();
+        operation.CancelIncrementalActivation(canceled.Stepper);
         return true;
     }
 
@@ -181,7 +182,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
         {
             _operations.Remove(activation.Operation);
             _queuedEstimatedCost -= activation.RemainingEstimate;
-            try { activation.Operation.CancelIncrementalActivation(); }
+            try { activation.Operation.CancelIncrementalActivation(activation.Stepper); }
             catch (Exception exception) { (failures ??= new()).Add(exception); }
         }
         if (failures is { Count: 1 }) throw failures[0];
