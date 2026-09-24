@@ -30,6 +30,7 @@ public sealed class RpgSliceGame : EngineHost
     private SceneRenderer _renderer = null!;
     private WorldManifest _world = null!;
     private HeightmapTerrainRenderer _terrain = null!;
+    private WaterSurfaceRenderer _water = null!;
     private RpgSliceTerrainSource _terrainSource = null!;
     private TerrainChunkSettings _terrainSettings = null!;
     private PhysicsWorld _physics = null!;
@@ -75,6 +76,8 @@ public sealed class RpgSliceGame : EngineHost
             VertexSpacing: 4f, TextureRepeatMetres: 6f);
         _terrain = new HeightmapTerrainRenderer(GraphicsDevice, _terrainSource, _terrainSettings,
             chunksAroundCamera: 1);
+        _water = new WaterSurfaceRenderer(GraphicsDevice,
+            halfExtent: _world.ExteriorCellWidth * 5f, textureTileMetres: 8f);
         AttachScene(_faults);
         foreach (var fault in _faults) Console.WriteLine($"RpgSlice: {fault}");
         _ui.Resize(GraphicsDevice.Viewport, _uiScalePreference);
@@ -214,6 +217,7 @@ public sealed class RpgSliceGame : EngineHost
 
         var playerPosition = _player.Pose.Position;
         _renderer.DrawCube(playerPosition, new Vector3(0.7f, 1.7f, 0.7f), new Color(65, 112, 178), 0f);
+        _water.Draw(_camera.View, _camera.Projection, _camera.Position, environment, waterLevel: 0.4f);
         base.Draw(gameTime);
         EndHostFrame(hold: false, exit: Exit);
     }
@@ -226,6 +230,7 @@ public sealed class RpgSliceGame : EngineHost
         _streamingSmoke?.Dispose();
         _streamingSmoke = null;
         _cellStreamer?.Dispose();
+        _water?.Dispose();
         _terrain?.Dispose();
         _player?.Dispose();
         _physics?.Dispose();

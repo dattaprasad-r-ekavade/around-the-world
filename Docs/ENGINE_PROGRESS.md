@@ -1095,7 +1095,20 @@ At this update, 132 of 154 roadmap rows are complete (85.7%). Task 122 is next. 
 | RpgSlice screenshots at 00:00 and 12:00 with paused clock | PASS — sky, terrain illumination, and scene lighting visibly change |
 | RpgSlice `--smoke-controls` | PASS — crossed cell (0, 0) to (0, -1) over 23.06 m and remained grounded |
 
-At this update, 134 of 154 roadmap rows are complete (87.0%). Task 124 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+At this update, 135 of 154 roadmap rows are complete (87.7%). Task 125 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+
+## Task 124 — outdoor water surface — 24 September 2026
+
+- Added a reusable flat water-plane renderer with a tiled ripple texture and an authored water level. Its draw pass uses alpha blending and depth-read/no-depth-write, then restores the caller's blend, depth, rasterizer, and sampler states.
+- RpgSlice now renders a sea-level plane after opaque terrain and scene geometry; terrain above the plane remains visible and defines the shoreline. The implementation is a single horizontal layer: it has no refraction or depth-based shoreline fade, and callers must order it relative to any other transparent surfaces.
+
+### Task 124 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| Water-plane geometry tests | PASS — dimensions, world-unit UV repeats, and invalid dimensions; 2 passed |
+| RpgSlice 1280×720 noon screenshot smoke | PASS — terrain shoreline remains visible around the water plane |
 
 ## Code-review fix — buffered jump input — 24 September 2026
 

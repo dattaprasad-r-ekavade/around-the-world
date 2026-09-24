@@ -269,7 +269,7 @@ This stage targets the requested visual style. It does not require modern PBR. P
 | [x] | 121 | Stream terrain/collision through cell lifecycle with shared boundary samples. | Crossing seams causes no visible gaps or loss of ground contact. |
 | [x] | 122 | Add alpha-cutout material support for foliage and fences, including shadows. | Cutout regions neither write solid depth nor cast solid rectangular shadows. |
 | [x] | 123 | Add simple time-of-day sky, fog, and directional light parameters. | A fixed clock value reproduces the same appearance; changing time updates all cells consistently. |
-| [ ] | 124 | Add a basic water surface with explicit transparency/depth rules. | Shoreline geometry remains visible as intended and sorting limitations are documented. |
+| [x] | 124 | Add a basic water surface with explicit transparency/depth rules. | Shoreline geometry remains visible as intended and sorting limitations are documented. |
 | [ ] | 125 | Add authored near/far mesh representations with distance thresholds and hysteresis. | Repeated threshold crossings do not flicker; distant scenery uses the cheaper representation. |
 | [ ] | 126 | Add shared static-mesh instancing for one repeated opaque prop type. | The benchmark shows reduced draw submissions with equivalent placement/materials. |
 | [ ] | 127 | Run the benchmark through populated cells and record average/p95 frame time, loading spikes, and memory/resource counts. | Measured failures become specific optimization tasks before increasing world density. |
