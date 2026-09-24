@@ -1078,3 +1078,21 @@ At this update, 131 of 154 roadmap rows are complete (85.1%). Task 121 is next. 
 | RpgSlice 1280×720 screenshot smoke | PASS — terrain and cell blockout rendered |
 
 At this update, 132 of 154 roadmap rows are complete (85.7%). Task 122 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+
+## Tasks 122–123 — masked materials and time-of-day lighting — 24 September 2026
+
+- Task 122 adds glTF `MASK` alpha mode and validated cutoff data while keeping `BLEND` explicitly unsupported. CharacterStudio's main scene shader and both static/skinned shadow-depth paths sample the same base-color alpha and discard fragments below the cutoff, so cutout holes do not write scene depth or solid shadow-map pixels.
+- Task 123 adds deterministic `OutdoorEnvironmentProfile` values for sky, fog, sun direction/color, and ambient light. RpgSlice can select a reproducible time with `--time-hours` and `--time-paused`; PageUp/PageDown adjust the clock, which otherwise advances at one game hour per real minute. Shared terrain normals let the same profile light the terrain and every active cell prop.
+
+### Tasks 122–123 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors; CharacterStudio shadow effect compiled |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 203 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — save then load equals original |
+| CharacterStudio 1280×720 screenshot smoke | PASS — static scene and shadow passes ran with the updated effect |
+| RpgSlice screenshots at 00:00 and 12:00 with paused clock | PASS — sky, terrain illumination, and scene lighting visibly change |
+| RpgSlice `--smoke-controls` | PASS — crossed cell (0, 0) to (0, -1) over 23.06 m and remained grounded |
+
+At this update, 134 of 154 roadmap rows are complete (87.0%). Task 124 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.

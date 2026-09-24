@@ -12,7 +12,8 @@ public interface ITerrainHeightMaterialSource
 
 public readonly record struct TerrainSurfaceSample(float Height, Color Tint);
 
-public readonly record struct TerrainChunkVertex(Vector3 Position, Color Tint, Vector2 TextureCoordinate);
+public readonly record struct TerrainChunkVertex(
+    Vector3 Position, Vector3 Normal, Color Tint, Vector2 TextureCoordinate);
 
 /// <summary>Sampling and texturing settings shared by terrain mesh consumers.</summary>
 public sealed record TerrainChunkSettings(float ChunkSize, float VertexSpacing, float TextureRepeatMetres = 6f)
@@ -86,8 +87,17 @@ public static class TerrainChunkMeshBuilder
             var sample = source.Sample(worldX, worldZ);
             if (!float.IsFinite(sample.Height))
                 throw new InvalidOperationException($"Terrain source returned a nonfinite height at ({worldX}, {worldZ}).");
+            var spacing = settings.VertexSpacing;
+            var left = SampleHeight(source, worldX - spacing, worldZ);
+            var right = SampleHeight(source, worldX + spacing, worldZ);
+            var back = SampleHeight(source, worldX, worldZ - spacing);
+            var front = SampleHeight(source, worldX, worldZ + spacing);
+            var tangentX = new Vector3(spacing * 2f, right - left, 0f);
+            var tangentZ = new Vector3(0f, front - back, spacing * 2f);
+            var normal = Vector3.Cross(tangentZ, tangentX);
+            normal.Normalize();
             vertices[z * stride + x] = new TerrainChunkVertex(
-                new Vector3(worldX, sample.Height, worldZ), sample.Tint,
+                new Vector3(worldX, sample.Height, worldZ), normal, sample.Tint,
                 new Vector2(worldX / settings.TextureRepeatMetres, worldZ / settings.TextureRepeatMetres));
         }
 
@@ -113,5 +123,13 @@ public static class TerrainChunkMeshBuilder
         }
 
         return indices;
+    }
+
+    private static float SampleHeight(ITerrainHeightMaterialSource source, float worldX, float worldZ)
+    {
+        var height = source.Sample(worldX, worldZ).Height;
+        if (!float.IsFinite(height))
+            throw new InvalidOperationException($"Terrain source returned a nonfinite height at ({worldX}, {worldZ}).");
+        return height;
     }
 }

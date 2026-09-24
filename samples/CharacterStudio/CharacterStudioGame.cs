@@ -594,6 +594,13 @@ public sealed class CharacterStudioGame : EngineHost
                     if (!_preview.Current.CharacterInstances.TryGetValue(item.Id, out var state)) continue;
                     foreach (var primitive in character.Primitives)
                     {
+                        SetShadowMaterial(effect, primitive.Material.BaseColorFactor,
+                            primitive.Material.BaseColorImageIndex is { } imageIndex
+                                ? asset.Textures[imageIndex]
+                                : _white,
+                            primitive.Material.HasBaseColorImage,
+                            primitive.Material.AlphaMode == GltfAlphaMode.Mask,
+                            primitive.Material.AlphaCutoff);
                         if (primitive.Material.DoubleSided) GraphicsDevice.RasterizerState = RasterizerState.CullNone;
                         else GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
                         effect.CurrentTechnique = effect.Techniques["SkinnedDepth"];
@@ -609,6 +616,13 @@ public sealed class CharacterStudioGame : EngineHost
                 foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
                 foreach (var part in parts)
                 {
+                    SetShadowMaterial(effect, part.Material.BaseColorFactor,
+                        part.Material.HasBaseColorImage
+                            ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
+                            : _white,
+                        part.Material.HasBaseColorImage,
+                        part.Material.AlphaMode == GltfAlphaMode.Mask,
+                        part.Material.AlphaCutoff);
                     GraphicsDevice.RasterizerState = part.Material.DoubleSided
                         ? RasterizerState.CullNone
                         : RasterizerState.CullCounterClockwise;
@@ -657,7 +671,9 @@ public sealed class CharacterStudioGame : EngineHost
                         primitive.Material.BaseColorImageIndex is { } imageIndex
                             ? asset.Textures[imageIndex]
                             : _white,
-                        primitive.Material.BaseColorImageIndex is not null);
+                        primitive.Material.HasBaseColorImage,
+                        primitive.Material.AlphaMode == GltfAlphaMode.Mask,
+                        primitive.Material.AlphaCutoff);
                     GraphicsDevice.RasterizerState = primitive.Material.DoubleSided
                         ? RasterizerState.CullNone
                         : RasterizerState.CullCounterClockwise;
@@ -693,7 +709,9 @@ public sealed class CharacterStudioGame : EngineHost
                     part.Material.HasBaseColorImage
                         ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
                         : _white,
-                    part.Material.HasBaseColorImage);
+                    part.Material.HasBaseColorImage,
+                    part.Material.AlphaMode == GltfAlphaMode.Mask,
+                    part.Material.AlphaCutoff);
                 GraphicsDevice.RasterizerState = part.Material.DoubleSided
                     ? RasterizerState.CullNone
                     : RasterizerState.CullCounterClockwise;
@@ -704,14 +722,26 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
+    private static void SetShadowMaterial(Effect effect, Vector4 materialColor,
+        Texture2D texture, bool textureEnabled, bool alphaCutoutEnabled, float alphaCutoff)
+    {
+        effect.Parameters["MaterialColor"]?.SetValue(materialColor);
+        effect.Parameters["BaseTexture"]?.SetValue(texture);
+        effect.Parameters["BaseTextureEnabled"]?.SetValue(textureEnabled);
+        effect.Parameters["AlphaCutoutEnabled"]?.SetValue(alphaCutoutEnabled);
+        effect.Parameters["AlphaCutoff"]?.SetValue(alphaCutoff);
+    }
+
     private static void SetSceneMaterial(Effect effect, Matrix world, Vector4 materialColor,
-        Texture2D texture, bool textureEnabled)
+        Texture2D texture, bool textureEnabled, bool alphaCutoutEnabled, float alphaCutoff)
     {
         SetMatrix(effect, "World", world);
         SetMatrix(effect, "WorldInverseTranspose", GetWorldInverseTranspose(world));
         effect.Parameters["MaterialColor"]?.SetValue(materialColor);
         effect.Parameters["BaseTexture"]?.SetValue(texture);
         effect.Parameters["BaseTextureEnabled"]?.SetValue(textureEnabled);
+        effect.Parameters["AlphaCutoutEnabled"]?.SetValue(alphaCutoutEnabled);
+        effect.Parameters["AlphaCutoff"]?.SetValue(alphaCutoff);
     }
 
     private static Matrix GetWorldInverseTranspose(Matrix world)

@@ -81,13 +81,29 @@ public sealed class GltfSceneImporterTests
     }
 
     [Fact]
-    public void RejectsNonOpaqueMaterialsWithActionableMessage()
+    public void ImportsMaskMaterialAndItsAlphaCutoff()
+    {
+        var model = ModelRoot.Load(FixturePath());
+        model.LogicalMaterials[4].Alpha = AlphaMode.MASK;
+        model.LogicalMaterials[4].AlphaCutoff = 0.63f;
+
+        var imported = GltfSceneImporter.Import(model);
+        var texturedObject = imported.Scene.Objects.Single(item => item.Name == "TopRightObj");
+        var texturedPart = Assert.Single(imported.MeshesByNodeId[texturedObject.Id]);
+
+        Assert.Equal(GltfAlphaMode.Mask, texturedPart.Material.AlphaMode);
+        Assert.Equal(0.63f, texturedPart.Material.AlphaCutoff);
+    }
+
+    [Fact]
+    public void RejectsBlendedMaterialsWithActionableMessage()
     {
         var model = ModelRoot.Load(FixturePath());
         model.LogicalMaterials[4].Alpha = AlphaMode.BLEND;
 
         var exception = Assert.Throws<NotSupportedException>(() => GltfSceneImporter.Import(model));
-        Assert.Contains("only OPAQUE is supported", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("OPAQUE and MASK are supported", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("BLEND is not", exception.Message, StringComparison.Ordinal);
         Assert.Contains("TopRightMat", exception.Message, StringComparison.Ordinal);
     }
 

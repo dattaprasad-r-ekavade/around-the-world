@@ -267,8 +267,8 @@ This stage targets the requested visual style. It does not require modern PBR. P
 | [x] | 119 | Define a fixed benchmark route, reference PC, resolution, content counts, and provisional frame/memory/loading budgets. | Results can be reproduced; target budgets are labeled as targets rather than measured capability. |
 | [x] | 120 | Adapt Campaign terrain chunk generation behind a game-independent height/material source. | RpgSlice draws terrain without referencing Campaign; adjacent chunk edges match. |
 | [x] | 121 | Stream terrain/collision through cell lifecycle with shared boundary samples. | Crossing seams causes no visible gaps or loss of ground contact. |
-| [ ] | 122 | Add alpha-cutout material support for foliage and fences, including shadows. | Cutout regions neither write solid depth nor cast solid rectangular shadows. |
-| [ ] | 123 | Add simple time-of-day sky, fog, and directional light parameters. | A fixed clock value reproduces the same appearance; changing time updates all cells consistently. |
+| [x] | 122 | Add alpha-cutout material support for foliage and fences, including shadows. | Cutout regions neither write solid depth nor cast solid rectangular shadows. |
+| [x] | 123 | Add simple time-of-day sky, fog, and directional light parameters. | A fixed clock value reproduces the same appearance; changing time updates all cells consistently. |
 | [ ] | 124 | Add a basic water surface with explicit transparency/depth rules. | Shoreline geometry remains visible as intended and sorting limitations are documented. |
 | [ ] | 125 | Add authored near/far mesh representations with distance thresholds and hysteresis. | Repeated threshold crossings do not flicker; distant scenery uses the cheaper representation. |
 | [ ] | 126 | Add shared static-mesh instancing for one repeated opaque prop type. | The benchmark shows reduced draw submissions with equivalent placement/materials. |
@@ -327,14 +327,14 @@ For each chosen feature, append tasks with the same four columns. Each task need
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 121 — terrain visuals and removable collision now use the same samples through exterior-cell activation and unload.
-- Current task: 122 — add alpha-cutout materials for foliage and fences, including their shadows.
-- Current checklist: 132 of 154 ordered rows complete (85.7%); task 122 is the first unchecked row.
+- Last completed tasks: 122–123 — masked materials share alpha rejection between scene and shadow passes; outdoor sky, fog, and lighting now follow a deterministic clock profile.
+- Current task: 124 — add a basic water surface with explicit transparency and depth rules.
+- Current checklist: 134 of 154 ordered rows complete (87.0%); task 124 is the first unchecked row.
 - Current gates: Stage 10 save/restart integration, Stage 11 branching-quest integration, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor budgets remain Pending.
-- Latest changes: removable BEPU triangle meshes, per-cell terrain/scene preparation and activation, collision-gated cell transitions, and shared terrain triangle winding.
-- Verification: see the dated 24 September entries in `ENGINE_PROGRESS.md` for build, full-suite, terrain collision, and cross-cell movement results.
-- Limits: RpgSlice still renders blockout props as cubes; foliage cutouts, scene shadows, and measured outdoor budgets remain pending. Benchmark budgets are targets only; task 127 records actual performance.
-- Next action: task 122, add alpha-cutout materials for foliage and fences, including their shadows.
+- Latest changes: MASK alpha and cutoff import, cutout-aware scene/shadow shaders, deterministic `OutdoorEnvironmentProfile`, terrain normals, and shared sky/fog/directional lighting across streamed cells.
+- Verification: see the dated 24 September entries in `ENGINE_PROGRESS.md` for build, full-suite, shader, outdoor lighting, and cell-seam results.
+- Limits: glTF BLEND materials remain unsupported; RpgSlice still renders blockout props as cubes. Water and measured outdoor budgets remain pending. Benchmark budgets are targets only; task 127 records actual performance.
+- Next action: task 124, add a basic water surface with explicit transparency and depth rules.
 
 Suggested request to an implementing AI:
 

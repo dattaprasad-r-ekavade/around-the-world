@@ -35,6 +35,8 @@ float3 DirectionalColor = float3(0.9, 0.9, 0.9);
 float ShadowTexelSize = 0.001;
 float ShadowDepthBias = 0.0015;
 bool BaseTextureEnabled = false;
+bool AlphaCutoutEnabled = false;
+float AlphaCutoff = 0.5;
 
 struct StaticInput
 {
@@ -56,6 +58,7 @@ struct DepthOutput
 {
     float4 Position : POSITION0;
     float Depth : TEXCOORD0;
+    float2 TextureCoordinate : TEXCOORD1;
 };
 
 struct SceneOutput
@@ -72,6 +75,7 @@ DepthOutput DepthStaticVertex(StaticInput input)
     float4 worldPosition = mul(input.Position, World);
     output.Position = mul(worldPosition, LightViewProjection);
     output.Depth = output.Position.z / output.Position.w;
+    output.TextureCoordinate = input.TextureCoordinate;
     return output;
 }
 
@@ -86,6 +90,9 @@ float4 PackDepth(float depth)
 
 float4 DepthPixel(DepthOutput input) : COLOR0
 {
+    float alpha = MaterialColor.a;
+    if (BaseTextureEnabled) alpha *= tex2D(BaseSampler, input.TextureCoordinate).a;
+    if (AlphaCutoutEnabled) clip(alpha - AlphaCutoff);
     return PackDepth(input.Depth);
 }
 
@@ -104,6 +111,7 @@ DepthOutput DepthSkinnedVertex(SkinnedInput input)
     float4 worldPosition = mul(skinnedPosition, World);
     output.Position = mul(worldPosition, LightViewProjection);
     output.Depth = output.Position.z / output.Position.w;
+    output.TextureCoordinate = input.TextureCoordinate;
     return output;
 }
 
@@ -164,11 +172,12 @@ float4 ScenePixel(SceneOutput input) : COLOR0
 {
     float4 baseColor = MaterialColor;
     if (BaseTextureEnabled) baseColor *= tex2D(BaseSampler, input.TextureCoordinate);
+    if (AlphaCutoutEnabled) clip(baseColor.a - AlphaCutoff);
 
     float diffuse = saturate(dot(normalize(input.Normal), normalize(-DirectionalDirection)));
     float visibility = ShadowVisibility(input.LightPosition);
     float3 lighting = AmbientColor + DirectionalColor * diffuse * visibility;
-    return float4(baseColor.rgb * lighting, baseColor.a);
+    return float4(baseColor.rgb * lighting, 1.0);
 }
 
 technique StaticDepth

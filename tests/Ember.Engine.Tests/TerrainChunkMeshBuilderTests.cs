@@ -8,7 +8,7 @@ namespace Ember.Engine.Tests;
 public sealed class TerrainChunkMeshBuilderTests
 {
     [Fact]
-    public void AdjacentChunksShareExactBorderPositionsMaterialsAndTextureCoordinates()
+    public void AdjacentChunksShareExactBorderGeometryMaterialsNormalsAndTextureCoordinates()
     {
         var source = new SlopedTerrainSource();
         var settings = new TerrainChunkSettings(32f, 4f, 8f);
@@ -23,8 +23,15 @@ public sealed class TerrainChunkMeshBuilderTests
             var leftEdge = left.Vertices[row * left.VertexStride + left.VertexStride - 1];
             var rightEdge = right.Vertices[row * right.VertexStride];
             Assert.Equal(leftEdge.Position, rightEdge.Position);
+            Assert.Equal(leftEdge.Normal, rightEdge.Normal);
             Assert.Equal(leftEdge.Tint, rightEdge.Tint);
             Assert.Equal(leftEdge.TextureCoordinate, rightEdge.TextureCoordinate);
+        }
+
+        foreach (var vertex in left.Vertices)
+        {
+            Assert.InRange(vertex.Normal.Length(), 0.999f, 1.001f);
+            Assert.True(vertex.Normal.Y > 0f);
         }
     }
 

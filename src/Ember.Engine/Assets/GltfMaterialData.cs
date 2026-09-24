@@ -6,16 +6,25 @@ using SharpGLTF.Schema2;
 
 namespace Ember.Assets;
 
+public enum GltfAlphaMode
+{
+    Opaque,
+    Mask
+}
+
 public sealed class GltfMaterialData
 {
     private readonly byte[]? _baseColorImage;
 
     private GltfMaterialData(string name, Vector4 baseColorFactor, bool doubleSided,
-        int? imageIndex, string? imageMimeType, byte[]? baseColorImage)
+        GltfAlphaMode alphaMode, float alphaCutoff, int? imageIndex,
+        string? imageMimeType, byte[]? baseColorImage)
     {
         Name = name;
         BaseColorFactor = baseColorFactor;
         DoubleSided = doubleSided;
+        AlphaMode = alphaMode;
+        AlphaCutoff = alphaCutoff;
         BaseColorImageIndex = imageIndex;
         BaseColorImageMimeType = imageMimeType;
         _baseColorImage = baseColorImage;
@@ -24,6 +33,8 @@ public sealed class GltfMaterialData
     public string Name { get; }
     public Vector4 BaseColorFactor { get; }
     public bool DoubleSided { get; }
+    public GltfAlphaMode AlphaMode { get; }
+    public float AlphaCutoff { get; }
     public int? BaseColorImageIndex { get; }
     public string? BaseColorImageMimeType { get; }
     public bool HasBaseColorImage => _baseColorImage is not null;
@@ -32,10 +43,21 @@ public sealed class GltfMaterialData
     public static GltfMaterialData Import(Material? material)
     {
         if (material is null)
-            return new GltfMaterialData("Default", Vector4.One, doubleSided: false, null, null, null);
+            return new GltfMaterialData("Default", Vector4.One, doubleSided: false,
+                GltfAlphaMode.Opaque, 0.5f, null, null, null);
 
-        if (material.Alpha != AlphaMode.OPAQUE)
-            throw new NotSupportedException($"Material '{DisplayName(material)}' uses alpha mode '{material.Alpha}'; only OPAQUE is supported.");
+        if (material.Alpha == SharpGLTF.Schema2.AlphaMode.BLEND)
+            throw new NotSupportedException(
+                $"Material '{DisplayName(material)}' uses BLEND alpha mode; OPAQUE and MASK are supported, but BLEND is not.");
+
+        var alphaMode = material.Alpha == SharpGLTF.Schema2.AlphaMode.MASK
+            ? GltfAlphaMode.Mask
+            : GltfAlphaMode.Opaque;
+        var alphaCutoff = material.AlphaCutoff;
+        if (alphaMode == GltfAlphaMode.Mask
+            && (!float.IsFinite(alphaCutoff) || alphaCutoff < 0f || alphaCutoff > 1f))
+            throw new InvalidDataException(
+                $"Material '{DisplayName(material)}' has alpha cutoff {alphaCutoff}; MASK cutoff must be between 0 and 1.");
 
         var channelValue = material.FindChannel("BaseColor");
         if (!channelValue.HasValue)
@@ -77,6 +99,8 @@ public sealed class GltfMaterialData
             DisplayName(material),
             new Vector4(factor.X, factor.Y, factor.Z, factor.W),
             material.DoubleSided,
+            alphaMode,
+            alphaCutoff,
             imageIndex,
             mimeType,
             imageBytes);

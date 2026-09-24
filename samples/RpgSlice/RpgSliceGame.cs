@@ -9,6 +9,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Linq;
 
@@ -21,6 +22,7 @@ public sealed class RpgSliceGame : EngineHost
     private readonly string _worldManifestPath;
     private readonly bool _smokeControls;
     private readonly bool _streamingSmokeRequested;
+    private readonly bool _timePaused;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
     private readonly List<PointLight> _lights = new();
@@ -35,6 +37,7 @@ public sealed class RpgSliceGame : EngineHost
     private ExteriorCellCollisionGate _collisionGate = null!;
     private RpgSliceCellStreamer _cellStreamer = null!;
     private ThirdPersonFollowCamera _camera = null!;
+    private float _timeOfDayHours = 12f;
     private RpgSliceStreamingSmoke? _streamingSmoke;
     private bool _smokeRan;
 
@@ -45,9 +48,18 @@ public sealed class RpgSliceGame : EngineHost
             ?? Path.Combine(AppContext.BaseDirectory, "Content", "World", WorldManifest.DefaultFileName);
         _smokeControls = HasArgument(args, "--smoke-controls");
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
+        _timePaused = HasArgument(args, "--time-paused");
         if (_smokeControls && _streamingSmokeRequested)
             throw new ArgumentException("Choose either --smoke-controls or --streaming-smoke.", nameof(args));
+        if (ParseOption(args, "--time-hours") is { } timeText)
+        {
+            if (!float.TryParse(timeText, NumberStyles.Float, CultureInfo.InvariantCulture, out _timeOfDayHours)
+                || !float.IsFinite(_timeOfDayHours))
+                throw new ArgumentException("--time-hours must be a finite number.", nameof(args));
+        }
         _actions.Bind("Exit", Keys.Escape);
+        _actions.Bind("TimeEarlier", Keys.PageDown);
+        _actions.Bind("TimeLater", Keys.PageUp);
     }
 
     protected override void LoadContent()
@@ -123,6 +135,10 @@ public sealed class RpgSliceGame : EngineHost
     {
         var input = _actions.Sample(keyboard, focused, uiCapturesKeyboard: false);
         if (_actions.ConsumePressed("Exit")) Exit();
+        if (_actions.ConsumePressed("TimeEarlier")) _timeOfDayHours -= 1f;
+        if (_actions.ConsumePressed("TimeLater")) _timeOfDayHours += 1f;
+        if (!_timePaused) _timeOfDayHours = (_timeOfDayHours + elapsedSeconds / 60f) % 24f;
+        if (_timeOfDayHours < 0f) _timeOfDayHours += 24f;
         if (_actions.ConsumePressed(GameplayActionNames.Jump)) _player.RequestJump();
 
         _player.SetMoveInput(_camera.MoveDirection(input.ReadMovement()));
@@ -164,13 +180,25 @@ public sealed class RpgSliceGame : EngineHost
 
     protected override void Draw(GameTime gameTime)
     {
-        GraphicsDevice.Clear(new Color(119, 157, 190));
+        var environment = OutdoorEnvironmentProfile.Evaluate(_timeOfDayHours,
+            fogStart: _world.ExteriorCellWidth * 1.25f,
+            fogEnd: _world.ExteriorCellWidth * 3f);
+        GraphicsDevice.Clear(environment.SkyColor);
         GraphicsDevice.DepthStencilState = DepthStencilState.Default;
         GraphicsDevice.RasterizerState = RasterizerState.CullCounterClockwise;
 
+        LitEffect.FogEnabled = true;
+        LitEffect.FogColor = environment.FogColor.ToVector3();
+        LitEffect.FogStart = environment.FogStart;
+        LitEffect.FogEnd = environment.FogEnd;
+        LitEffect.AmbientLightColor = environment.AmbientLightColor;
+        LitEffect.DirectionalLight0.Direction = environment.LightDirection;
+        LitEffect.DirectionalLight0.DiffuseColor = environment.DirectionalLightColor;
+        LitEffect.DirectionalLight0.SpecularColor = environment.DirectionalLightColor * 0.2f;
+
         _renderer.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
             _camera.Yaw, StoneTextures.StonePalette.Sandstone, _lights);
-        _terrain.Draw(_camera.View, _camera.Projection, _camera.Position);
+        _terrain.Draw(_camera.View, _camera.Projection, _camera.Position, environment);
         foreach (var activeCell in _cellStreamer.ActiveCells)
         foreach (var sceneObject in activeCell.Scene.Objects.Where(item => item.Enabled))
         {

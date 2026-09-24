@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Runtime.InteropServices;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -49,16 +50,24 @@ public sealed class HeightmapTerrainRenderer : IDisposable
 
         _effect = new BasicEffect(device)
         {
-            LightingEnabled = false,
+            LightingEnabled = true,
             TextureEnabled = false,
             VertexColorEnabled = true,
             FogEnabled = false
         };
+        _effect.AmbientLightColor = new Vector3(0.45f);
+        _effect.DirectionalLight0.Enabled = true;
+        _effect.DirectionalLight0.Direction = Vector3.Normalize(new Vector3(-0.4f, -1f, -0.25f));
+        _effect.DirectionalLight0.DiffuseColor = new Vector3(0.9f);
+        _effect.DirectionalLight0.SpecularColor = Vector3.Zero;
+        _effect.DirectionalLight1.Enabled = false;
+        _effect.DirectionalLight2.Enabled = false;
     }
 
     public int CachedChunkCount => _chunks.Count;
 
-    public void Draw(Matrix view, Matrix projection, Vector3 cameraPosition)
+    public void Draw(Matrix view, Matrix projection, Vector3 cameraPosition,
+        OutdoorEnvironmentState? environment = null)
     {
         ThrowIfDisposed();
         if (!IsFinite(cameraPosition))
@@ -83,6 +92,22 @@ public sealed class HeightmapTerrainRenderer : IDisposable
             _effect.World = Matrix.Identity;
             _effect.View = view;
             _effect.Projection = projection;
+            _effect.FogEnabled = environment.HasValue;
+            if (environment is { } lighting)
+            {
+                _effect.LightingEnabled = true;
+                _effect.AmbientLightColor = lighting.AmbientLightColor;
+                _effect.DirectionalLight0.Direction = lighting.LightDirection;
+                _effect.DirectionalLight0.DiffuseColor = lighting.DirectionalLightColor;
+                _effect.DirectionalLight0.SpecularColor = lighting.DirectionalLightColor * 0.08f;
+                _effect.FogColor = lighting.FogColor.ToVector3();
+                _effect.FogStart = lighting.FogStart;
+                _effect.FogEnd = lighting.FogEnd;
+            }
+            else
+            {
+                _effect.LightingEnabled = false;
+            }
 
             for (var z = centerZ - _chunksAroundCamera; z <= centerZ + _chunksAroundCamera; z++)
             for (var x = centerX - _chunksAroundCamera; x <= centerX + _chunksAroundCamera; x++)
@@ -120,13 +145,14 @@ public sealed class HeightmapTerrainRenderer : IDisposable
     {
         if (_chunks.TryGetValue((x, z), out var chunk)) return chunk;
         var data = TerrainChunkMeshBuilder.Build(_source, x, z, _settings);
-        var vertices = new VertexPositionColorTexture[data.Vertices.Count];
+        var vertices = new TerrainVertex[data.Vertices.Count];
         for (var index = 0; index < vertices.Length; index++)
         {
             var vertex = data.Vertices[index];
-            vertices[index] = new VertexPositionColorTexture(vertex.Position, vertex.Tint, vertex.TextureCoordinate);
+            vertices[index] = new TerrainVertex(vertex.Position, vertex.Tint,
+                vertex.TextureCoordinate, vertex.Normal);
         }
-        var buffer = new VertexBuffer(_device, VertexPositionColorTexture.VertexDeclaration,
+        var buffer = new VertexBuffer(_device, TerrainVertex.Declaration,
             vertices.Length, BufferUsage.WriteOnly);
         try
         {
@@ -169,5 +195,29 @@ public sealed class HeightmapTerrainRenderer : IDisposable
     {
         public VertexBuffer Vertices { get; } = vertices;
         public void Dispose() => Vertices.Dispose();
+    }
+
+    [StructLayout(LayoutKind.Sequential, Pack = 1)]
+    private readonly struct TerrainVertex : IVertexType
+    {
+        public static readonly VertexDeclaration Declaration = new(
+            new VertexElement(0, VertexElementFormat.Vector3, VertexElementUsage.Position, 0),
+            new VertexElement(12, VertexElementFormat.Color, VertexElementUsage.Color, 0),
+            new VertexElement(16, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
+            new VertexElement(24, VertexElementFormat.Vector3, VertexElementUsage.Normal, 0));
+
+        public TerrainVertex(Vector3 position, Color tint, Vector2 textureCoordinate, Vector3 normal)
+        {
+            Position = position;
+            Tint = tint;
+            TextureCoordinate = textureCoordinate;
+            Normal = normal;
+        }
+
+        public readonly Vector3 Position;
+        public readonly Color Tint;
+        public readonly Vector2 TextureCoordinate;
+        public readonly Vector3 Normal;
+        VertexDeclaration IVertexType.VertexDeclaration => Declaration;
     }
 }
