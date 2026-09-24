@@ -626,3 +626,19 @@ The queue is not yet connected to a live world loader. Continue with task 79 aft
 | RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — loaded v2 manifest cell (0, 0), moved 2.50 m |
 
 The Stage 9 manifest/ring prerequisites are resolved. Continue with task 79: bounded, cost-aware per-frame activation and the integrated 3×3 RpgSlice proof.
+
+## Task 79 — bounded per-frame cell activation — 24 September 2026
+
+- Added `ICellActivationCost` for prepared data to declare expected upload work, resumable owner-thread activation steps, and `CellActivationQueue<TPrepared,TActive>` with per-frame cost, cell-step, and elapsed-time limits.
+- The queue rotates incomplete cells fairly and records processed/completed cells, consumed and queued estimated cost, pending cells, and elapsed milliseconds. Failed or canceled activation releases partial work and prepared data through the cell lifecycle.
+- Expanded the RpgSlice world fixture to a 3×3 manifest grid. Its `--streaming-smoke` path delays the (1, 1) preparation by 150 ms and exercises the real ring, async lifecycle, and budgeted activation queue.
+
+### Task 79 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 150 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--streaming-smoke --windowed` | PASS — all 9 cells activated after the slow preparation; each frame stayed within 300 cost units and 3 cell steps, total cost 2,250 |
+
+At this point 90 of 154 roadmap rows are complete (58.4%). Task 80 is next. The sample's upload costs are deterministic work units used to validate scheduling; real GPU upload implementations still need to report their own cost estimates.

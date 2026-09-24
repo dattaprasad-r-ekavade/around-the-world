@@ -54,6 +54,13 @@ public sealed class CellLifecycle
         return resource;
     }
 
+    internal IDisposable? GetPreparationResource()
+    {
+        if (State != CellLifecycleState.Ready)
+            throw new InvalidOperationException("Preparation resources can only be inspected while a cell is ready.");
+        return _preparationResource;
+    }
+
     public void TransitionTo(CellLifecycleState next)
     {
         if (next == CellLifecycleState.Failed)

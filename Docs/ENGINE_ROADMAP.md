@@ -188,7 +188,7 @@ Start after task 72. Put reusable cell/loading code in `Ember.Engine/World`; kee
 | [x] | 76 | Add an explicit cell lifecycle: unloaded, preparing, ready, active, unloading, failed. | Invalid transitions are rejected and failed loading releases temporary resources. |
 | [x] | 77 | Prepare one cell's CPU data asynchronously; activate graphics/physics resources on their owning thread. | Loading records thread ownership correctly and never exposes a partially active cell. |
 | [x] | 78 | Add a configurable nearby-cell loading ring around the player. | Crossing a boundary requests the correct neighbors exactly once. |
-| [ ] | 79 | Add a bounded per-frame activation/upload queue. | A multi-cell load respects configured work limits and exposes queue/timing diagnostics. |
+| [x] | 79 | Add a bounded per-frame activation/upload queue. | A multi-cell load respects configured work limits and exposes queue/timing diagnostics. |
 | [ ] | 80 | Unload cells outside a wider retention ring using asset reference counts. | Shared assets stay alive while another cell needs them; repeated crossings do not accumulate resources. |
 | [ ] | 81 | Cancel obsolete load requests and reject stale completion results. | Rapid travel cannot activate old destination cells or leak their prepared resources. |
 | [ ] | 82 | Prevent movement into a required cell until its collision is ready; expose a loading state. | Artificially delayed loading cannot make the player fall through missing terrain. |
@@ -570,5 +570,5 @@ Done well in the scene, physics, input, and rendering areas:
 
 1. **Resolved 24 September 2026:** the owner-thread completion path, `Discard`/`Cancel`, and generation stamping are implemented; see the follow-up in `ENGINE_PROGRESS.md`. These were prerequisites for tasks 79–81.
 2. **Resolved 24 September 2026:** world manifest v2 owns cell width, indexes cells by ID and exterior coordinate, migrates v1, and supports distance-ordered entered/left ring updates with hysteresis. Saving no longer requires scenes to exist; duplicate scene paths are rejected.
-3. Then implement task 79 with a cost-based budget, verified in `RpgSlice` on a 3×3 grid.
+3. **Resolved 24 September 2026:** task 79 uses a cost-based budget and was verified in `RpgSlice` on a 3×3 grid with one delayed cell.
 4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a sixth copy.

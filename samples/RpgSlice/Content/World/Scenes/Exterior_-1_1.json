@@ -1,0 +1,53 @@
+{
+  "Version": 2,
+  "Objects": [
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a11",
+      "Name": "Ground",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Position": [16, -0.5, 16],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [32, 1, 32]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a12",
+      "Name": "Boulder",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Position": [20, 0.7, 16],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [2.2, 1.4, 2]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a13",
+      "Name": "Trunk",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Position": [12, 1.7, 14],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [0.8, 3.4, 0.8]
+    },
+    {
+      "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a14",
+      "Name": "Foliage",
+      "Enabled": true,
+      "ParentId": null,
+      "GltfAssetId": null,
+      "GltfAssetPath": null,
+      "Character": null,
+      "Position": [12, 4, 14],
+      "Rotation": [0, 0, 0, 1],
+      "Scale": [3.4, 3, 3.4]
+    }
+  ]
+}

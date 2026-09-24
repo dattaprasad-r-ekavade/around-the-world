@@ -19,6 +19,7 @@ public sealed class RpgSliceGame : EngineHost
 {
     private readonly string _worldManifestPath;
     private readonly bool _smokeControls;
+    private readonly bool _streamingSmokeRequested;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
     private readonly List<PointLight> _lights = new();
@@ -30,6 +31,7 @@ public sealed class RpgSliceGame : EngineHost
     private PhysicsWorld _physics = null!;
     private PhysicsCharacterController _player = null!;
     private ThirdPersonFollowCamera _camera = null!;
+    private RpgSliceStreamingSmoke? _streamingSmoke;
     private bool _smokeRan;
 
     public RpgSliceGame(string[] args)
@@ -38,6 +40,9 @@ public sealed class RpgSliceGame : EngineHost
         _worldManifestPath = ParseOption(args, "--world")
             ?? Path.Combine(AppContext.BaseDirectory, "Content", "World", WorldManifest.DefaultFileName);
         _smokeControls = HasArgument(args, "--smoke-controls");
+        _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
+        if (_smokeControls && _streamingSmokeRequested)
+            throw new ArgumentException("Choose either --smoke-controls or --streaming-smoke.", nameof(args));
         _actions.Bind("Exit", Keys.Escape);
     }
 
@@ -71,6 +76,10 @@ public sealed class RpgSliceGame : EngineHost
             _smokeRan = true;
             Exit();
         }
+        else if (_streamingSmokeRequested)
+        {
+            _streamingSmoke = new RpgSliceStreamingSmoke(_world);
+        }
     }
 
     private void LoadCellGeometry()
@@ -96,7 +105,17 @@ public sealed class RpgSliceGame : EngineHost
     {
         BeginHostFrame();
         if (!_smokeRan)
-            UpdateMovement(Keyboard.GetState(), RealSeconds(gameTime), IsActive);
+        {
+            if (_streamingSmoke is null)
+                UpdateMovement(Keyboard.GetState(), RealSeconds(gameTime), IsActive);
+            else if (_streamingSmoke.Tick())
+            {
+                _streamingSmoke.Dispose();
+                _streamingSmoke = null;
+                _smokeRan = true;
+                Exit();
+            }
+        }
         base.Update(gameTime);
     }
 
@@ -156,6 +175,8 @@ public sealed class RpgSliceGame : EngineHost
 
     protected override void UnloadContent()
     {
+        _streamingSmoke?.Dispose();
+        _streamingSmoke = null;
         _player?.Dispose();
         _physics?.Dispose();
         DisposeHost();
