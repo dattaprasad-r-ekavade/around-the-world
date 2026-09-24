@@ -21,6 +21,9 @@ internal static class Program
         {
             PlayDialogue(original, problems);
             QuestRoundTrip(original, path, problems);
+            ContentValidationChecks(problems);
+            ActorStatFormulaChecks(problems);
+            ModifierRuleChecks(problems);
 
             original.Write(path);
             var loaded = SaveState.Read(path);
@@ -49,12 +52,16 @@ internal static class Program
 
             // The dialogue test, after the round trip: still on the node the pick advanced
             // to, and the flag the pick wrote is still set.
-            if (loaded.Dialogue.Tree != "elder")
+            if (loaded.Dialogue.Tree?.Value != "elder")
                 problems.Add($"dialogue should still be in the 'elder' tree after a load, is '{loaded.Dialogue.Tree}'");
             if (loaded.Dialogue.Node != "gate")
                 problems.Add($"dialogue should still be at 'gate' after a load, is '{loaded.Dialogue.Node}'");
             if (!loaded.Flags.GetBool("gate_topic"))
                 problems.Add("gate_topic should still be set after a load");
+            if (loaded.Player.Stats.Attributes.Strength != 10 || loaded.Player.Stats.Skills.GetValueOrDefault("Blade") != 34)
+                problems.Add("player base stats and skills should survive a load");
+            if (loaded.Player.Modifiers.Active.Count != 2 || loaded.Player.EffectiveStats.MaximumHealth != 31)
+                problems.Add("stacked timed modifiers and their derived health should survive a load");
 
             if (problems.Count == 0)
             {
@@ -70,6 +77,119 @@ internal static class Program
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    private static void ContentValidationChecks(List<string> problems)
+    {
+        var loaded = RpgContentJson.FromJson(ValidContentJson);
+        if (loaded.Actors.Get(new ContentId<ActorContentKind>("actor.elder")) is null
+            || loaded.Items.Get(new ContentId<ItemContentKind>("item.potion")) is null
+            || loaded.Factions.Get(new ContentId<FactionContentKind>("faction.mages")) is null
+            || !loaded.Quests.TryGet(new ContentId<QuestContentKind>("quest.relic"), out _)
+            || loaded.Dialogues.Count != 1)
+            problems.Add("the content pack should register typed actor, item, faction, dialogue, and quest IDs");
+
+        var save = new SaveState
+        {
+            Entities = new[]
+            {
+                EntityRecord.Create("elder_instance", "npc") with
+                {
+                    ActorId = new ContentId<ActorContentKind>("actor.elder")
+                }
+            },
+            ItemDefs = loaded.Items,
+            Dialogue = new DialogueProgress { Tree = new ContentId<DialogueContentKind>("dialogue.elder") }
+        };
+        save.Player.Bag.Add(loaded.Items.Get(new ContentId<ItemContentKind>("item.potion"))!);
+        save.Player.Equip.Set("quick", "item.potion");
+        if (loaded.ValidateSaveReferences(save).Count != 0)
+            problems.Add("registered actor, inventory, equipment, and dialogue references should validate in a save");
+        var missingActorSave = save with
+        {
+            Entities = new[]
+            {
+                EntityRecord.Create("elder_instance", "npc") with
+                {
+                    ActorId = new ContentId<ActorContentKind>("actor.missing")
+                }
+            }
+        };
+        if (loaded.ValidateSaveReferences(missingActorSave) is not { Count: 1 } missing
+            || !missing[0].ToString().Contains("entity 'elder_instance'.ActorId", StringComparison.Ordinal)
+            || !missing[0].ToString().Contains("actor.missing", StringComparison.Ordinal))
+            problems.Add("a saved entity link should report its source instance and missing actor ID");
+
+        var brokenJson = ValidContentJson
+            .Replace("\"FactionId\": \"faction.mages\"", "\"FactionId\": \"faction.missing\"", StringComparison.Ordinal)
+            .Replace("\"SpeakerActorId\": \"actor.elder\"", "\"SpeakerActorId\": \"actor.missing\"", StringComparison.Ordinal)
+            .Replace("\"Next\": \"greet\"", "\"Next\": \"node.missing\"", StringComparison.Ordinal)
+            .Replace("\"StartDialogueId\": \"dialogue.elder\"", "\"StartDialogueId\": \"dialogue.missing\"", StringComparison.Ordinal)
+            .Replace("\"TargetActorId\": \"actor.elder\"", "\"TargetActorId\": \"actor.missing\"", StringComparison.Ordinal)
+            .Replace("\"RequiredItemId\": \"item.potion\"", "\"RequiredItemId\": \"item.missing\"", StringComparison.Ordinal);
+        try
+        {
+            RpgContentJson.FromJson(brokenJson);
+            problems.Add("broken RPG content references should fail validation");
+        }
+        catch (InvalidDataException exception)
+        {
+            foreach (var expected in new[]
+            {
+                "actor 'actor.elder'.FactionId", "faction.missing",
+                "dialogue 'dialogue.elder' node 'greet'.SpeakerActorId", "actor.missing",
+                "node 'node.missing'", "quest 'quest.relic'.StartDialogueId", "dialogue.missing",
+                "stage 'fetch'.TargetActorId", "stage 'fetch'.RequiredItemId", "item.missing"
+            })
+                if (!exception.Message.Contains(expected, StringComparison.Ordinal))
+                    problems.Add($"content validation diagnostic should identify '{expected}'");
+        }
+    }
+
+    private static void ActorStatFormulaChecks(List<string> problems)
+    {
+        var stats = ExampleStats();
+        if (stats.MaximumHealth != 26 || stats.MaximumMagicka != 45 || stats.MaximumStamina != 20)
+            problems.Add($"default formulas should derive 26 health, 45 magicka, and 20 stamina (got {stats.MaximumHealth}, {stats.MaximumMagicka}, {stats.MaximumStamina})");
+
+        var stronger = stats.WithAttribute(ActorAttribute.Strength, 12);
+        if (stronger.MaximumHealth != 28 || stats.MaximumHealth != 26 || stats.Attributes.Strength != 10)
+            problems.Add("changing strength should recalculate derived health without changing the original base stats");
+
+        var actors = new ActorCatalogue();
+        actors.Add(new ActorDef(new ContentId<ActorContentKind>("actor.fixture"), "Fixture", stats: stats));
+        if (actors.Count != 1) problems.Add("ActorCatalogue should register a validated actor stats fixture");
+    }
+
+    private static void ModifierRuleChecks(List<string> problems)
+    {
+        var stacked = new ActorStatModifiers()
+            .Apply(new ActorStatModifier("boost-a", "potion:strength", ActorAttribute.Strength, 2, 10))
+            .Apply(new ActorStatModifier("boost-b", "potion:strength", ActorAttribute.Strength, 3, 20));
+        if (stacked.Active.Count != 2 || stacked.TotalFor(ActorAttribute.Strength) != 5)
+            problems.Add("Stack should keep distinct applications and add their values");
+
+        var replaced = stacked.Apply(new ActorStatModifier("replacement", "potion:strength",
+            ActorAttribute.Strength, 4, 8, ModifierStackingRule.ReplaceSameSource));
+        if (replaced.Active.Count != 1 || replaced.TotalFor(ActorAttribute.Strength) != 4)
+            problems.Add("ReplaceSameSource should replace all matching source effects on that attribute");
+
+        var refreshed = replaced.Apply(new ActorStatModifier("refresh", "potion:strength",
+            ActorAttribute.Strength, 99, 20, ModifierStackingRule.RefreshDurationSameSource));
+        if (refreshed.Active.Count != 1 || refreshed.TotalFor(ActorAttribute.Strength) != 4
+            || refreshed.Active[0].RemainingSeconds != 20)
+            problems.Add("RefreshDurationSameSource should preserve strength and extend the remaining duration");
+
+        var afterTenSeconds = stacked.Advance(10);
+        var afterTwentySeconds = afterTenSeconds.Advance(10);
+        if (afterTenSeconds.Active.Count != 1 || afterTenSeconds.Active[0].Id != "boost-b"
+            || afterTwentySeconds.Active.Count != 0 || stacked.Active.Count != 2)
+            problems.Add("Advance should expire timed effects at their deadline without mutating the prior modifier set");
+
+        var baseStats = ExampleStats();
+        var effective = baseStats.WithModifiers(replaced);
+        if (effective.MaximumHealth != 30 || baseStats.MaximumHealth != 26 || baseStats.Attributes.Strength != 10)
+            problems.Add("an active modifier should recalculate derived stats without permanently changing base attributes");
     }
 
     /// <summary>
@@ -166,7 +286,14 @@ internal static class Program
                 EntityRecord.Create("gate_01", "prop")
                     .WithField("state", "shut")
             },
-            Flags = Flags()
+            Flags = Flags(),
+            Player = new PlayerRecord
+            {
+                Stats = ExampleStats(),
+                Modifiers = new ActorStatModifiers()
+                    .Apply(new ActorStatModifier("strength-a", "potion:strength", ActorAttribute.Strength, 2, 30))
+                    .Apply(new ActorStatModifier("strength-b", "potion:strength", ActorAttribute.Strength, 3, 45))
+            }
         };
 
         state.ItemDefs.Add(new ItemDef("potion_heal", "Healing Potion", Slot: null, Stackable: true));
@@ -179,6 +306,58 @@ internal static class Program
 
         return state;
     }
+
+    private static ActorStats ExampleStats() => new()
+    {
+        Attributes = new ActorAttributes
+        {
+            Strength = 10,
+            Intelligence = 20,
+            Willpower = 5,
+            Agility = 6,
+            Endurance = 8
+        },
+        Skills = new Dictionary<string, int> { ["Blade"] = 34 }
+    };
+
+    private const string ValidContentJson = """
+    {
+      "Actors": [
+        {
+          "Id": "actor.elder",
+          "Name": "Rowan",
+          "FactionId": "faction.mages",
+          "Stats": {
+            "Attributes": { "Strength": 10, "Intelligence": 20, "Willpower": 5, "Agility": 6, "Endurance": 8 },
+            "Skills": { "Blade": 34 }
+          }
+        }
+      ],
+      "Items": [ { "Id": "item.potion", "Name": "Healing Potion", "Stackable": true } ],
+      "Factions": [ { "Id": "faction.mages", "Name": "Mages" } ],
+      "Dialogues": [
+        {
+          "Id": "dialogue.elder",
+          "Nodes": [
+            {
+              "Id": "greet",
+              "Speaker": "Rowan",
+              "SpeakerActorId": "actor.elder",
+              "Options": [ { "Label": "Continue", "Next": "greet" } ]
+            }
+          ]
+        }
+      ],
+      "Quests": [
+        {
+          "Id": "quest.relic",
+          "Title": "Find the Relic",
+          "StartDialogueId": "dialogue.elder",
+          "Stages": [ { "Id": "fetch", "TargetActorId": "actor.elder", "RequiredItemId": "item.potion" } ]
+        }
+      ]
+    }
+    """;
 
     /// <summary>A quest loaded from JSON by the check: two stages, flag-gated completion.</summary>
     private const string ElderQuest = """

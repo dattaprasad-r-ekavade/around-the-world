@@ -884,3 +884,20 @@ At this update, 104 of 154 roadmap rows are complete (67.5%). Task 94 is next. T
 | `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
 | `RejectsAdditionalUnskinnedMeshNodesByName` | PASS — rejected unsupported node and named it in the diagnostic |
+
+## Tasks 94–96 — typed RPG content, actor stats, and timed modifiers — 24 September 2026
+
+- Added `ContentId<TKind>` and typed actor, item, faction, dialogue, and quest catalogs while preserving string IDs in JSON. `RpgContentJson` validates actor/faction, dialogue speaker/node, quest/dialogue/actor/item, and saved entity/inventory/equipment/dialogue links; diagnostics include the source record and missing target.
+- Added base actor attributes and named skills with configurable formulas for maximum health, magicka, and stamina. Attribute changes recalculate derived maxima without changing the original base record.
+- Added timed additive attribute modifiers with explicit stack, replace-by-source, refresh-duration, and expiry behavior. `PlayerRecord` saves base stats and remaining modifier durations through the existing save format.
+- Resolved the remaining High skinned-draw allocation finding: `SkinnedMeshGpuBuffer` now reuses a per-buffer bone-matrix scratch array in both draw paths.
+
+### Task 94–96 and code-review checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — content references, formula fixtures, modifier rules/expiry, and save/load round trip |
+
+At this update, 107 of 154 roadmap rows are complete (69.5%). Task 97 is next. The Stage 10 integration gate remains Pending until the live world loader wires these stores into gameplay and the full two-cell restart scenario is exercised.

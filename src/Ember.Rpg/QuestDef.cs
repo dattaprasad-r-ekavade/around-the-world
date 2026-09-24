@@ -16,6 +16,10 @@ public sealed record QuestStage
 {
     public string Id { get; init; } = "";
 
+    public ContentId<ActorContentKind>? TargetActorId { get; init; }
+
+    public ContentId<ItemContentKind>? RequiredItemId { get; init; }
+
     /// <summary>What the journal says while this is the current stage.</summary>
     public string Journal { get; init; } = "";
 
@@ -46,13 +50,15 @@ public sealed record QuestStage
 /// </summary>
 public sealed record QuestDef
 {
-    public string Id { get; init; } = "";
+    public ContentId<QuestContentKind> Id { get; init; }
 
     public string Title { get; init; } = "";
 
+    public ContentId<DialogueContentKind>? StartDialogueId { get; init; }
+
     public IReadOnlyList<QuestStage> Stages { get; init; } = Array.Empty<QuestStage>();
 
-    public string StartFlag() => $"quest.{Id}.started";
+    public string StartFlag() => $"quest.{Id.Value}.started";
 
     public void Start(FlagStore flags)
     {

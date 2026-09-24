@@ -10,6 +10,9 @@ public sealed record DialogueNode
 
     public string Speaker { get; init; } = "";
 
+    /// <summary>Optional content link when the speaker is a registered actor rather than display-only text.</summary>
+    public ContentId<ActorContentKind>? SpeakerActorId { get; init; }
+
     public string Text { get; init; } = "";
 
     public IReadOnlyList<DialogueOption> Options { get; init; } = Array.Empty<DialogueOption>();

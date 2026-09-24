@@ -13,18 +13,24 @@ namespace Ember.Rpg;
 /// </summary>
 public sealed class ItemCatalogue
 {
-    private readonly Dictionary<string, ItemDef> _defs = new(StringComparer.Ordinal);
+    private readonly Dictionary<ContentId<ItemContentKind>, ItemDef> _defs = new();
 
     /// <summary>Every definition, by id. Read it; use <see cref="Add"/> to change it.</summary>
-    public IReadOnlyDictionary<string, ItemDef> All => _defs;
+    public IReadOnlyDictionary<ContentId<ItemContentKind>, ItemDef> All => _defs;
 
     public int Count => _defs.Count;
 
-    public void Add(ItemDef def) => _defs[def.Id] = def;
+    public void Add(ItemDef def)
+    {
+        ArgumentNullException.ThrowIfNull(def);
+        if (string.IsNullOrWhiteSpace(def.Id.Value)) throw new ArgumentException("An item needs an id.", nameof(def));
+        _defs[def.Id] = def;
+    }
 
-    public bool Has(string id) => _defs.ContainsKey(id);
+    public bool Has(ContentId<ItemContentKind> id) => _defs.ContainsKey(id);
+    public bool Has(string id) => Has(new ContentId<ItemContentKind>(id));
 
-    public bool TryGet(string id, out ItemDef def)
+    public bool TryGet(ContentId<ItemContentKind> id, out ItemDef def)
     {
         if (_defs.TryGetValue(id, out var found))
         {
@@ -36,6 +42,9 @@ public sealed class ItemCatalogue
         return false;
     }
 
+    public bool TryGet(string id, out ItemDef def) => TryGet(new ContentId<ItemContentKind>(id), out def);
+
     /// <summary>The definition, or null if nothing wears this id.</summary>
-    public ItemDef? Get(string id) => _defs.TryGetValue(id, out var def) ? def : null;
+    public ItemDef? Get(ContentId<ItemContentKind> id) => _defs.TryGetValue(id, out var def) ? def : null;
+    public ItemDef? Get(string id) => Get(new ContentId<ItemContentKind>(id));
 }

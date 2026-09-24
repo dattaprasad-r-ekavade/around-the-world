@@ -9,7 +9,7 @@ namespace Ember.Rpg;
 /// </summary>
 public sealed class DialogueProgress
 {
-    public string? Tree { get; set; }
+    public ContentId<DialogueContentKind>? Tree { get; set; }
 
     public string? Node { get; set; }
 }

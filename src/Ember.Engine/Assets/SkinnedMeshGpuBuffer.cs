@@ -29,6 +29,7 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
     private IndexBuffer? _indices;
     private readonly int _primitiveCount;
     private readonly int _jointCount;
+    private readonly Matrix[] _boneTransforms;
     private bool _disposed;
 
     public SkinnedMeshGpuBuffer(GraphicsDevice device, GltfSkinnedMeshData mesh, int jointCount)
@@ -40,6 +41,7 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
             throw new ArgumentException("A GPU skinned mesh requires vertices and triangle indices.", nameof(mesh));
 
         _jointCount = jointCount;
+        _boneTransforms = new Matrix[jointCount];
         _primitiveCount = mesh.TriangleIndices.Count / 3;
         _vertexDeclaration = CreateVertexDeclaration();
 
@@ -107,9 +109,8 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         effect.Projection = projection;
         effect.WeightsPerVertex = 4;
         effect.Texture = texture;
-        var boneTransforms = new Matrix[pose.JointCount];
-        pose.SkinMatrices.CopyTo(boneTransforms, 0);
-        effect.SetBoneTransforms(boneTransforms);
+        CopyBoneTransforms(pose);
+        effect.SetBoneTransforms(_boneTransforms);
 
         _device.SetVertexBuffer(_vertices);
         _device.Indices = _indices;
@@ -129,11 +130,10 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         if (pose.JointCount != _jointCount)
             throw new ArgumentException($"Pose has {pose.JointCount} joints; this buffer expects {_jointCount}.", nameof(pose));
 
-        var boneTransforms = new Matrix[pose.JointCount];
-        pose.SkinMatrices.CopyTo(boneTransforms, 0);
+        CopyBoneTransforms(pose);
         var boneParameter = effect.Parameters["BoneTransforms"]
             ?? throw new InvalidOperationException("Effect is missing the BoneTransforms parameter.");
-        boneParameter.SetValue(boneTransforms);
+        boneParameter.SetValue(_boneTransforms);
 
         _device.SetVertexBuffer(_vertices);
         _device.Indices = _indices;
@@ -161,6 +161,12 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         new VertexElement(24, VertexElementFormat.Vector2, VertexElementUsage.TextureCoordinate, 0),
         new VertexElement(32, VertexElementFormat.Byte4, VertexElementUsage.BlendIndices, 0),
         new VertexElement(36, VertexElementFormat.Vector4, VertexElementUsage.BlendWeight, 0));
+
+    private void CopyBoneTransforms(GltfSkinPose pose)
+    {
+        for (var i = 0; i < _boneTransforms.Length; i++)
+            _boneTransforms[i] = pose.SkinMatrices[i];
+    }
 
     [StructLayout(LayoutKind.Sequential, Pack = 1, Size = VertexStride)]
     private struct SkinnedVertex

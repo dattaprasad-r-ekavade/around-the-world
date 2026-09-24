@@ -4,7 +4,20 @@ using System.Collections.Generic;
 namespace Ember.Rpg;
 
 /// <summary>What is in the bag: an item id and how many of it.</summary>
-public sealed record BagEntry(string ItemId, int Count);
+public sealed record BagEntry
+{
+    public ContentId<ItemContentKind> ItemId { get; init; }
+    public int Count { get; init; }
+
+    public BagEntry() { }
+    public BagEntry(ContentId<ItemContentKind> itemId, int count)
+    {
+        ItemId = itemId;
+        Count = count;
+    }
+
+    public BagEntry(string itemId, int count) : this(new ContentId<ItemContentKind>(itemId), count) { }
+}
 
 /// <summary>
 /// The bag: item ids and counts, nothing more.
@@ -28,15 +41,19 @@ public sealed class Bag
 
     /// <summary>How many of this item the bag holds, across all of its entries.</summary>
     public int Count(string itemId)
+        => Count(new ContentId<ItemContentKind>(itemId));
+
+    public int Count(ContentId<ItemContentKind> itemId)
     {
         var total = 0;
         foreach (var entry in _entries)
-            if (string.Equals(entry.ItemId, itemId, StringComparison.Ordinal))
+            if (entry.ItemId == itemId)
                 total += entry.Count;
         return total;
     }
 
     public bool Has(string itemId, int count = 1) => Count(itemId) >= count;
+    public bool Has(ContentId<ItemContentKind> itemId, int count = 1) => Count(itemId) >= count;
 
     public void Add(ItemDef def, int count = 1)
     {
@@ -47,7 +64,7 @@ public sealed class Bag
         {
             for (var i = 0; i < _entries.Count; i++)
             {
-                if (!string.Equals(_entries[i].ItemId, def.Id, StringComparison.Ordinal)) continue;
+                if (_entries[i].ItemId != def.Id) continue;
 
                 _entries[i] = _entries[i] with { Count = _entries[i].Count + count };
                 return;
@@ -62,7 +79,9 @@ public sealed class Bag
     /// Take up to <paramref name="count"/> of an item. False, and nothing changed, when the
     /// bag does not hold that many — a half-taken remove is worse than a refused one.
     /// </summary>
-    public bool Remove(string itemId, int count = 1)
+    public bool Remove(string itemId, int count = 1) => Remove(new ContentId<ItemContentKind>(itemId), count);
+
+    public bool Remove(ContentId<ItemContentKind> itemId, int count = 1)
     {
         if (count < 1) throw new ArgumentOutOfRangeException(nameof(count), count, "Remove at least one.");
         if (Count(itemId) < count) return false;
@@ -70,7 +89,7 @@ public sealed class Bag
         var remaining = count;
         for (var i = _entries.Count - 1; i >= 0 && remaining > 0; i--)
         {
-            if (!string.Equals(_entries[i].ItemId, itemId, StringComparison.Ordinal)) continue;
+            if (_entries[i].ItemId != itemId) continue;
 
             var entry = _entries[i];
             if (entry.Count <= remaining)

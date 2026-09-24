@@ -12,6 +12,9 @@ namespace Ember.Rpg;
 /// </summary>
 public sealed record EntityRecord(string Id, string Kind, IReadOnlyDictionary<string, string> Fields)
 {
+    /// <summary>Content actor definition for this saved world instance, when it is an actor.</summary>
+    public ContentId<ActorContentKind>? ActorId { get; init; }
+
     public static EntityRecord Create(string id, string kind) =>
         new(id, kind, new Dictionary<string, string>());
 

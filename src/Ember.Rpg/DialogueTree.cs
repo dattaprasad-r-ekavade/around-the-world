@@ -18,7 +18,7 @@ public sealed class DialogueTree
         Converters = { FlagValueJson.Instance }
     };
 
-    public string Id { get; set; } = "";
+    public ContentId<DialogueContentKind> Id { get; set; }
 
     public List<DialogueNode> Nodes { get; set; } = new();
 

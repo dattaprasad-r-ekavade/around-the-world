@@ -1,3 +1,5 @@
+using System.Text.Json.Serialization;
+
 namespace Ember.Rpg;
 
 /// <summary>
@@ -11,4 +13,11 @@ public sealed record PlayerRecord
     public Bag Bag { get; init; } = new();
 
     public EquipSlots Equip { get; init; } = new();
+
+    public ActorStats Stats { get; init; } = new();
+
+    public ActorStatModifiers Modifiers { get; init; } = new();
+
+    [JsonIgnore]
+    public ActorStats EffectiveStats => Stats.WithModifiers(Modifiers);
 }

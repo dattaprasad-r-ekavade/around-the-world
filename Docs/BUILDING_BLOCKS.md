@@ -706,6 +706,26 @@ wire the physics character controller into play mode.
 
 ---
 
+## RPG content, stats, and timed modifiers
+
+`Ember.Rpg` stays independent of rendering and physics. `ContentId<TKind>` distinguishes actor,
+item, faction, dialogue, and quest IDs at compile time while writing each ID as a plain JSON string.
+Build a `RpgContentSet` or load one with `RpgContentJson.Load(path)`. Validation registers every
+catalogue before checking its links, so forward references work and a broken link reports both its
+source field (for example, `quest 'relic' stage 'fetch'.RequiredItemId`) and the missing target.
+Actor-to-faction, dialogue-to-actor/node, quest-to-dialogue/actor/item links are checked together.
+
+`ActorStats` contains base attributes and named skill ranks. `ActorStatFormulas` makes maximum
+health, magicka, and stamina formulas explicit and configurable; the defaults are Health = Strength
++ 2×Endurance, Magicka = 2×Intelligence + Willpower, and Stamina = Endurance + 2×Agility. Changing
+an attribute recalculates the derived maxima without writing them back into base attributes.
+
+`ActorStatModifiers` is immutable. Apply timed additive attribute effects with one of three rules:
+`Stack` keeps each distinct effect, `ReplaceSameSource` replaces all effects from the same source
+on that attribute, and `RefreshDurationSameSource` keeps the existing strength and extends its timer.
+Call `Advance(elapsedSeconds)` from the simulation clock to expire effects. The player's base stats
+and active modifiers live on `PlayerRecord` and round-trip with `SaveState`.
+
 ## The sample
 
 `samples/FirstLight` is 178 lines and uses: `EngineHost`, `AttachCanvas`, `AttachScene`,
