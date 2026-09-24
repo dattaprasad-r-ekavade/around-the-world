@@ -18,6 +18,15 @@ public static class SkinnedEffectCompatibility
             throw new NotSupportedException(
                 $"The current SkinnedEffect supports at most {SkinnedEffect.MaxBones} joints; this skin has {jointCount}.");
     }
+
+    /// <summary>Rejects a pose calculated for another skin, even when both skins have the same joint count.</summary>
+    public static void ValidatePose(GltfSkinData skin, GltfSkinPose pose)
+    {
+        ArgumentNullException.ThrowIfNull(skin);
+        ArgumentNullException.ThrowIfNull(pose);
+        if (!pose.UsesSkin(skin))
+            throw new ArgumentException("The pose belongs to a different skin.", nameof(pose));
+    }
 }
 
 public sealed class SkinnedMeshGpuBuffer : IDisposable
@@ -29,13 +38,16 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
     private IndexBuffer? _indices;
     private readonly int _primitiveCount;
     private readonly int _jointCount;
+    private readonly GltfSkinData _skin;
     private readonly Matrix[] _boneTransforms;
     private bool _disposed;
 
-    public SkinnedMeshGpuBuffer(GraphicsDevice device, GltfSkinnedMeshData mesh, int jointCount)
+    public SkinnedMeshGpuBuffer(GraphicsDevice device, GltfSkinnedMeshData mesh, GltfSkinData skin)
     {
         _device = device ?? throw new ArgumentNullException(nameof(device));
         if (mesh is null) throw new ArgumentNullException(nameof(mesh));
+        _skin = skin ?? throw new ArgumentNullException(nameof(skin));
+        var jointCount = skin.JointNodeIndices.Count;
         SkinnedEffectCompatibility.Validate(device.GraphicsProfile, jointCount);
         if (mesh.Vertices.Count == 0 || mesh.TriangleIndices.Count == 0)
             throw new ArgumentException("A GPU skinned mesh requires vertices and triangle indices.", nameof(mesh));
@@ -101,6 +113,7 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         if (_disposed) throw new ObjectDisposedException(nameof(SkinnedMeshGpuBuffer));
         if (effect is null) throw new ArgumentNullException(nameof(effect));
         if (pose is null) throw new ArgumentNullException(nameof(pose));
+        SkinnedEffectCompatibility.ValidatePose(_skin, pose);
         if (pose.JointCount != _jointCount)
             throw new ArgumentException($"Pose has {pose.JointCount} joints; this buffer expects {_jointCount}.", nameof(pose));
 
@@ -127,6 +140,7 @@ public sealed class SkinnedMeshGpuBuffer : IDisposable
         if (_disposed) throw new ObjectDisposedException(nameof(SkinnedMeshGpuBuffer));
         ArgumentNullException.ThrowIfNull(effect);
         ArgumentNullException.ThrowIfNull(pose);
+        SkinnedEffectCompatibility.ValidatePose(_skin, pose);
         if (pose.JointCount != _jointCount)
             throw new ArgumentException($"Pose has {pose.JointCount} joints; this buffer expects {_jointCount}.", nameof(pose));
 

@@ -335,7 +335,7 @@ internal sealed class MinimalGame : EngineHost
                 {
                     if (!_buffers.ContainsKey(primitive.Mesh))
                         _buffers.Add(primitive.Mesh, new SkinnedMeshGpuBuffer(
-                            device, primitive.Mesh, character.Skin.JointNodeIndices.Count));
+                            device, primitive.Mesh, character.Skin));
                     if (primitive.Material.HasBaseColorImage
                         && primitive.Material.BaseColorImageIndex is { } imageIndex
                         && !_textures.ContainsKey(imageIndex))

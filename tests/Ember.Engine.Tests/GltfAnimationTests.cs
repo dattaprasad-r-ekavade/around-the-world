@@ -142,6 +142,20 @@ public sealed class GltfAnimationTests
     }
 
     [Fact]
+    public void SkinnedDrawPoseValidationRejectsAnotherSkinWithTheSameJointCount()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var expectedSkin = ImportFoxSkin(model);
+        var otherSkin = ImportFoxSkin(model);
+        Assert.Equal(expectedSkin.JointNodeIndices.Count, otherSkin.JointNodeIndices.Count);
+
+        SkinnedEffectCompatibility.ValidatePose(expectedSkin, expectedSkin.CreatePose());
+        var exception = Assert.Throws<ArgumentException>(() =>
+            SkinnedEffectCompatibility.ValidatePose(expectedSkin, otherSkin.CreatePose()));
+        Assert.Contains("different skin", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void RotationInterpolationUsesTheShortestQuaternionPath()
     {
         var model = ModelRoot.Load(FoxFixturePath());

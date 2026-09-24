@@ -1737,7 +1737,7 @@ public sealed class CharacterStudioGame : EngineHost
                         foreach (var primitive in character.Primitives)
                         {
                             var buffer = resources.Own(new SkinnedMeshGpuBuffer(
-                                device, primitive.Mesh, character.Skin.JointNodeIndices.Count));
+                                device, primitive.Mesh, character.Skin));
                             skinnedMeshBuffers.Add(primitive.Mesh, buffer);
 
                             if (primitive.Material.HasBaseColorImage

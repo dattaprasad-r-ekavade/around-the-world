@@ -1183,3 +1183,17 @@ At this update, 138 of 155 roadmap rows are complete (89.0%). Task 128 is next. 
 | Direct mouse-driven editor actions | Not exercised; corresponding workspace file operations are covered by regression tests |
 
 At this update, 139 of 155 roadmap rows are complete (89.7%). Task 129 is next. Task 144 remains a performance-triage gate before increasing world density if the long-frame tail recurs.
+
+## Code-review fix — skinned buffer pose ownership — 24 September 2026
+
+- `SkinnedMeshGpuBuffer` previously validated only the pose's joint count. A pose from a different skeleton with the same number of joints could therefore be submitted to the buffer and render using unrelated bone transforms.
+- The buffer now retains the exact `GltfSkinData` used to create it. Both `Draw` overloads validate skin identity before copying bone transforms; the CharacterStudio and generated MinimalGame call sites now pass the skin object.
+- Added a CPU-only regression proving that the matching skin is accepted and a separately imported skin with the same joint count is rejected.
+
+### Code-review fix checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln -c Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln -c Release --no-build --no-restore --nologo` | PASS — 218 passed, 0 failed, 0 skipped; includes the equal-joint-count/different-skin regression |
+| Generated Minimal Ember Game Release build | PASS — generated outside the checkout and built against this engine; 0 warnings and 0 errors |
