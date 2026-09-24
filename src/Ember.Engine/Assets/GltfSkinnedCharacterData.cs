@@ -75,6 +75,10 @@ public sealed class GltfSkinnedCharacterData
 
         void FindSkinnedNodes(Node node)
         {
+            if (node.Mesh is not null && node.Skin is null)
+                throw new NotSupportedException(
+                    $"The current character importer does not support unskinned mesh node '{DisplayName(node)}'.");
+
             if (node.Skin is not null)
             {
                 if (node.Mesh is null)

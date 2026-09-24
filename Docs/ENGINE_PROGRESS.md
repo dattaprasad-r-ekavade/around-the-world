@@ -871,3 +871,16 @@ At this update, 103 of 154 roadmap rows are complete (66.9%). Task 93 is next. T
 | `WorldCellResetServiceTests` | PASS — resettable data reset; default and quest-persistent state survived |
 
 At this update, 104 of 154 roadmap rows are complete (67.5%). Task 94 is next. The Stage 10 integration gate remains Pending until the live world loader wires these stores into gameplay and the full two-cell restart scenario is exercised.
+
+## Code-review follow-up — reject unskinned character meshes — 24 September 2026
+
+- Fixed the remaining High finding for `GltfSkinnedCharacterData`: a mesh node without a skin now raises a clear `NotSupportedException` naming that node instead of being silently omitted.
+- Added an in-memory negative GLB fixture by attaching the Fox mesh to an additional unskinned node. The error identifies `UnskinnedAccessory`.
+
+### Code-review follow-up checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 181 tests, 0 failed, 0 skipped |
+| `RejectsAdditionalUnskinnedMeshNodesByName` | PASS — rejected unsupported node and named it in the diagnostic |

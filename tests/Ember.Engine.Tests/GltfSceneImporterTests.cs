@@ -355,6 +355,19 @@ public sealed class GltfSceneImporterTests
         Assert.Equal(24, character.CreatePose().JointCount);
     }
 
+    [Fact]
+    public void RejectsAdditionalUnskinnedMeshNodesByName()
+    {
+        var model = ModelRoot.Load(FoxFixturePath());
+        var skinnedNode = model.LogicalNodes.Single(node => node.Skin is not null);
+        var unsupportedNode = model.DefaultScene.CreateNode("UnskinnedAccessory");
+        unsupportedNode.Mesh = skinnedNode.Mesh;
+
+        var exception = Assert.Throws<NotSupportedException>(() => GltfSkinnedCharacterData.Import(model));
+
+        Assert.Contains("unskinned mesh node 'UnskinnedAccessory'", exception.Message, StringComparison.Ordinal);
+    }
+
     private static string FixturePath() => Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
     private static string FoxFixturePath() => Path.Combine(AppContext.BaseDirectory, "Assets", "Fox.glb");
 
