@@ -569,6 +569,6 @@ Done well in the scene, physics, input, and rendering areas:
 ### Recommended order before continuing
 
 1. **Resolved 24 September 2026:** the owner-thread completion path, `Discard`/`Cancel`, and generation stamping are implemented; see the follow-up in `ENGINE_PROGRESS.md`. These were prerequisites for tasks 79–81.
-2. Add cell width to the manifest and a coordinate index, and give the ring entered/left sets with distance ordering.
+2. **Resolved 24 September 2026:** world manifest v2 owns cell width, indexes cells by ID and exterior coordinate, migrates v1, and supports distance-ordered entered/left ring updates with hysteresis. Saving no longer requires scenes to exist; duplicate scene paths are rejected.
 3. Then implement task 79 with a cost-based budget, verified in `RpgSlice` on a 3×3 grid.
 4. Extract the shared atomic-write and content-path helpers before task 90 (world save) adds a sixth copy.

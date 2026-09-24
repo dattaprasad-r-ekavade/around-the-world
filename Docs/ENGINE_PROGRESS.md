@@ -608,3 +608,21 @@ At this update, 89 of 154 roadmap rows are complete (57.8%). Task 79 is next. Th
 | `dotnet test Ember.sln --no-build --nologo` | PASS — 146 tests, 0 failed, 0 skipped |
 
 The queue is not yet connected to a live world loader. Continue with task 79 after the remaining Stage 9 manifest/ring prerequisites in the code review are addressed.
+
+## Code-review follow-up — world manifest and loading ring — 24 September 2026
+
+- Resolved the Stage 9 Medium findings for manifest cell width, coordinate lookup, ring lifecycle, and scene references. World manifest v2 stores `exteriorCellWidth` and an `exteriorCoordinate` value; v1 manifests migrate with the former RpgSlice width of 32 m.
+- Added ID and exterior-coordinate dictionaries plus `TryGetExterior`, so absent edge coordinates return false without a scan. RpgSlice now obtains its origin coordinate from the manifest, and `WorldManifest.CreateLoadingRing` gives the future loader the same configured cell width.
+- The loading ring returns entered and left coordinates, uses a wider configurable retention radius, sorts new requests nearest-first with stable X/Z tie-breaking, and reuses a shared empty result when the centre cell has not changed.
+- Manifest saves can precede scene creation; loads still require each scene file, and duplicate scene paths fail validation.
+
+### Manifest and ring follow-up checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| Focused world-manifest and loading-ring tests | PASS — 15 tests, 0 failed |
+| `dotnet test Ember.sln --no-build --nologo` | PASS — 148 tests, 0 failed, 0 skipped |
+| RpgSlice managed-DLL `--smoke-controls --windowed` | PASS — loaded v2 manifest cell (0, 0), moved 2.50 m |
+
+The Stage 9 manifest/ring prerequisites are resolved. Continue with task 79: bounded, cost-aware per-frame activation and the integrated 3×3 RpgSlice proof.

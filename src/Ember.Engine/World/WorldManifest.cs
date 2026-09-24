@@ -18,15 +18,15 @@ public sealed class WorldCellDefinition
 {
     public Guid Id { get; init; }
     public WorldCellKind Kind { get; init; }
-    public int? ExteriorX { get; init; }
-    public int? ExteriorZ { get; init; }
+    public ExteriorCellCoordinate? ExteriorCoordinate { get; init; }
     public string ScenePath { get; init; } = string.Empty;
 }
 
 /// <summary>Versioned world index whose scene paths are relative to the manifest file.</summary>
 public sealed class WorldManifest
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
+    public const float Version1DefaultExteriorCellWidth = 32f;
     public const string DefaultFileName = "world.json";
 
     private static readonly JsonSerializerOptions JsonOptions = new()
@@ -34,24 +34,44 @@ public sealed class WorldManifest
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Converters = { new JsonStringEnumConverter() }
     };
 
     private readonly List<WorldCellDefinition> _cells;
+    private readonly Dictionary<Guid, WorldCellDefinition> _cellsById;
+    private readonly Dictionary<ExteriorCellCoordinate, WorldCellDefinition> _exteriorCells;
 
-    private WorldManifest(string filePath, IEnumerable<WorldCellDefinition> cells)
+    private WorldManifest(string filePath, float exteriorCellWidth,
+        IEnumerable<WorldCellDefinition> cells, bool requireSceneFiles)
     {
         FilePath = Path.GetFullPath(filePath);
         RootDirectory = Path.GetDirectoryName(FilePath)!;
+        ExteriorCellWidth = ValidateCellWidth(exteriorCellWidth);
         _cells = cells.ToList();
-        Validate(_cells, RootDirectory);
+        Validate(_cells, RootDirectory, requireSceneFiles);
+        _cellsById = _cells.ToDictionary(cell => cell.Id);
+        _exteriorCells = _cells
+            .Where(cell => cell.Kind == WorldCellKind.Exterior)
+            .ToDictionary(cell => cell.ExteriorCoordinate!.Value);
     }
 
     public string FilePath { get; }
     public string RootDirectory { get; }
+    public float ExteriorCellWidth { get; }
     public IReadOnlyList<WorldCellDefinition> Cells => _cells.AsReadOnly();
 
-    public WorldCellDefinition? FindCell(Guid id) => _cells.FirstOrDefault(cell => cell.Id == id);
+    public WorldCellDefinition? FindCell(Guid id) => _cellsById.GetValueOrDefault(id);
+
+    /// <summary>Returns false for coordinates outside the authored world.</summary>
+    public bool TryGetExterior(ExteriorCellCoordinate coordinate, out WorldCellDefinition? cell) =>
+        _exteriorCells.TryGetValue(coordinate, out cell);
+
+    public ExteriorCellCoordinate GetExteriorCoordinate(Microsoft.Xna.Framework.Vector3 worldPosition) =>
+        ExteriorCellGrid.FromWorldPosition(worldPosition, ExteriorCellWidth);
+
+    public ExteriorCellLoadingRing CreateLoadingRing(int radiusInCells, int? retentionRadiusInCells = null) =>
+        new(radiusInCells, ExteriorCellWidth, retentionRadiusInCells);
 
     public string ResolveScenePath(Guid cellId)
     {
@@ -77,15 +97,33 @@ public sealed class WorldManifest
             throw new InvalidDataException($"World manifest JSON is invalid: {exception.Message}", exception);
         }
 
-        if (document.Version != CurrentVersion)
-            throw new InvalidDataException(
-                $"Unsupported world manifest version {document.Version}; expected {CurrentVersion}.");
         if (document.Cells is null)
             throw new InvalidDataException("World manifest cell list is missing.");
 
+        float cellWidth;
+        List<WorldCellDefinition> cells;
+        switch (document.Version)
+        {
+            case 1:
+                if (document.ExteriorCellWidth is not null)
+                    throw new InvalidDataException("Version 1 world manifests cannot define exteriorCellWidth.");
+                cellWidth = Version1DefaultExteriorCellWidth;
+                cells = ConvertVersion1Cells(document.Cells);
+                break;
+            case CurrentVersion:
+                if (document.ExteriorCellWidth is null)
+                    throw new InvalidDataException("World manifest exteriorCellWidth is missing.");
+                cellWidth = document.ExteriorCellWidth.Value;
+                cells = ConvertVersion2Cells(document.Cells);
+                break;
+            default:
+                throw new InvalidDataException(
+                    $"Unsupported world manifest version {document.Version}; expected 1 or {CurrentVersion}.");
+        }
+
         try
         {
-            return new WorldManifest(fullPath, document.Cells);
+            return new WorldManifest(fullPath, cellWidth, cells, requireSceneFiles: true);
         }
         catch (ArgumentException exception)
         {
@@ -93,7 +131,7 @@ public sealed class WorldManifest
         }
     }
 
-    public static void SaveAtomic(string path, IEnumerable<WorldCellDefinition> cells)
+    public static void SaveAtomic(string path, float exteriorCellWidth, IEnumerable<WorldCellDefinition> cells)
     {
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("A world manifest path is required.", nameof(path));
@@ -103,10 +141,15 @@ public sealed class WorldManifest
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new InvalidDataException("World manifest path has no parent directory.");
         var snapshot = cells.ToList();
-        _ = new WorldManifest(fullPath, snapshot);
+        var validated = new WorldManifest(fullPath, exteriorCellWidth, snapshot, requireSceneFiles: false);
         Directory.CreateDirectory(directory);
 
-        var document = new WorldManifestDocument { Version = CurrentVersion, Cells = snapshot };
+        var document = new WorldManifestDocument
+        {
+            Version = CurrentVersion,
+            ExteriorCellWidth = validated.ExteriorCellWidth,
+            Cells = snapshot.Select(ToDocumentCell).ToList()
+        };
         var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
         try
         {
@@ -121,10 +164,58 @@ public sealed class WorldManifest
         }
     }
 
-    private static void Validate(IReadOnlyList<WorldCellDefinition> cells, string rootDirectory)
+    private static List<WorldCellDefinition> ConvertVersion1Cells(IEnumerable<WorldCellDocument> cells) =>
+        cells.Select(cell =>
+        {
+            if (cell.ExteriorCoordinate is not null)
+                throw new InvalidDataException("Version 1 world manifests must use exteriorX and exteriorZ.");
+            return new WorldCellDefinition
+            {
+                Id = cell.Id,
+                Kind = cell.Kind,
+                ExteriorCoordinate = cell.ExteriorX is null && cell.ExteriorZ is null
+                    ? null
+                    : cell.ExteriorX is not null && cell.ExteriorZ is not null
+                        ? new ExteriorCellCoordinate(cell.ExteriorX.Value, cell.ExteriorZ.Value)
+                        : throw new InvalidDataException($"Exterior cell {cell.Id} must define both exteriorX and exteriorZ."),
+                ScenePath = cell.ScenePath
+            };
+        }).ToList();
+
+    private static List<WorldCellDefinition> ConvertVersion2Cells(IEnumerable<WorldCellDocument> cells) =>
+        cells.Select(cell =>
+        {
+            if (cell.ExteriorX is not null || cell.ExteriorZ is not null)
+                throw new InvalidDataException("Version 2 world manifests must use exteriorCoordinate.");
+            return new WorldCellDefinition
+            {
+                Id = cell.Id,
+                Kind = cell.Kind,
+                ExteriorCoordinate = cell.ExteriorCoordinate,
+                ScenePath = cell.ScenePath
+            };
+        }).ToList();
+
+    private static WorldCellDocument ToDocumentCell(WorldCellDefinition cell) => new()
+    {
+        Id = cell.Id,
+        Kind = cell.Kind,
+        ExteriorCoordinate = cell.ExteriorCoordinate,
+        ScenePath = cell.ScenePath
+    };
+
+    private static float ValidateCellWidth(float cellWidth)
+    {
+        if (!float.IsFinite(cellWidth) || cellWidth <= 0f)
+            throw new InvalidDataException("World manifest exteriorCellWidth must be finite and positive.");
+        return cellWidth;
+    }
+
+    private static void Validate(IReadOnlyList<WorldCellDefinition> cells, string rootDirectory, bool requireSceneFiles)
     {
         var ids = new HashSet<Guid>();
-        var exteriorCoordinates = new HashSet<(int X, int Z)>();
+        var exteriorCoordinates = new HashSet<ExteriorCellCoordinate>();
+        var scenePaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         foreach (var cell in cells)
         {
             if (cell is null)
@@ -139,14 +230,14 @@ public sealed class WorldManifest
             switch (cell.Kind)
             {
                 case WorldCellKind.Exterior:
-                    if (cell.ExteriorX is null || cell.ExteriorZ is null)
-                        throw new InvalidDataException($"Exterior cell {cell.Id} must define ExteriorX and ExteriorZ.");
-                    if (!exteriorCoordinates.Add((cell.ExteriorX.Value, cell.ExteriorZ.Value)))
+                    if (cell.ExteriorCoordinate is null)
+                        throw new InvalidDataException($"Exterior cell {cell.Id} must define ExteriorCoordinate.");
+                    if (!exteriorCoordinates.Add(cell.ExteriorCoordinate.Value))
                         throw new InvalidDataException(
-                            $"Duplicate exterior cell coordinates ({cell.ExteriorX.Value}, {cell.ExteriorZ.Value}).");
+                            $"Duplicate exterior cell coordinates ({cell.ExteriorCoordinate.Value.X}, {cell.ExteriorCoordinate.Value.Z}).");
                     break;
                 case WorldCellKind.Interior:
-                    if (cell.ExteriorX is not null || cell.ExteriorZ is not null)
+                    if (cell.ExteriorCoordinate is not null)
                         throw new InvalidDataException($"Interior cell {cell.Id} cannot define exterior coordinates.");
                     break;
                 default:
@@ -154,7 +245,9 @@ public sealed class WorldManifest
             }
 
             var scenePath = ResolveScenePath(rootDirectory, cell.ScenePath);
-            if (!File.Exists(scenePath))
+            if (!scenePaths.Add(scenePath))
+                throw new InvalidDataException($"Multiple world cells refer to the same scene path '{cell.ScenePath}'.");
+            if (requireSceneFiles && !File.Exists(scenePath))
                 throw new InvalidDataException(
                     $"World cell {cell.Id} refers to missing scene '{cell.ScenePath}' at '{scenePath}'.");
         }
@@ -188,6 +281,17 @@ public sealed class WorldManifest
     private sealed class WorldManifestDocument
     {
         public int Version { get; set; }
-        public List<WorldCellDefinition>? Cells { get; set; }
+        public float? ExteriorCellWidth { get; set; }
+        public List<WorldCellDocument>? Cells { get; set; }
+    }
+
+    private sealed class WorldCellDocument
+    {
+        public Guid Id { get; set; }
+        public WorldCellKind Kind { get; set; }
+        public int? ExteriorX { get; set; }
+        public int? ExteriorZ { get; set; }
+        public ExteriorCellCoordinate? ExteriorCoordinate { get; set; }
+        public string ScenePath { get; set; } = string.Empty;
     }
 }

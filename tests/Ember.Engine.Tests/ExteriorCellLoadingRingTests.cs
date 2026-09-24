@@ -1,5 +1,4 @@
 using System;
-using System.Linq;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Xunit;
@@ -9,34 +8,52 @@ namespace Ember.Engine.Tests;
 public sealed class ExteriorCellLoadingRingTests
 {
     [Fact]
-    public void InitialUpdateRequestsEveryCellInConfiguredSquareRingOnce()
+    public void InitialUpdateRequestsNearestCellsFirstAndUnchangedCentreAllocatesNoNewResult()
     {
         var ring = new ExteriorCellLoadingRing(radiusInCells: 1, cellWidth: 32f);
 
-        var requested = ring.UpdatePlayerPosition(Vector3.Zero);
+        var update = ring.UpdatePlayerPosition(Vector3.Zero);
 
-        Assert.Equal(9, requested.Count);
-        Assert.Equal(new ExteriorCellCoordinate(-1, -1), requested[0]);
-        Assert.Equal(new ExteriorCellCoordinate(0, 0), requested[4]);
-        Assert.Equal(new ExteriorCellCoordinate(1, 1), requested[8]);
-        Assert.Empty(ring.UpdatePlayerPosition(Vector3.Zero));
+        Assert.Equal(9, update.Entered.Count);
+        Assert.Equal(new ExteriorCellCoordinate(0, 0), update.Entered[0]);
+        Assert.Equal(new ExteriorCellCoordinate(-1, -1), update.Entered[1]);
+        Assert.Empty(update.Left);
+        var repeated = ring.UpdatePlayerPosition(new Vector3(1f, 0f, 1f));
+        var repeatedAgain = ring.UpdatePlayerPosition(new Vector3(2f, 0f, 2f));
+        Assert.Same(repeated.Entered, repeatedAgain.Entered);
+        Assert.Same(repeated.Left, repeatedAgain.Left);
     }
 
     [Fact]
-    public void CrossingCellBoundaryRequestsOnlyTheNewNeighborColumn()
+    public void CrossingBoundaryRequestsNewColumnAndRetentionRadiusDelaysUnload()
     {
-        var ring = new ExteriorCellLoadingRing(radiusInCells: 1, cellWidth: 32f);
+        var ring = new ExteriorCellLoadingRing(radiusInCells: 1, cellWidth: 32f, retentionRadiusInCells: 2);
         ring.UpdatePlayerPosition(new Vector3(31.99f, 0f, 5f));
 
-        var requested = ring.UpdatePlayerPosition(new Vector3(32f, 0f, 5f));
+        var firstCrossing = ring.UpdatePlayerPosition(new Vector3(32f, 0f, 5f));
 
         Assert.Equal(
         [
             new ExteriorCellCoordinate(2, -1),
             new ExteriorCellCoordinate(2, 0),
             new ExteriorCellCoordinate(2, 1)
-        ], requested);
-        Assert.Empty(ring.UpdatePlayerPosition(new Vector3(33f, 0f, 5f)));
+        ], firstCrossing.Entered);
+        Assert.Empty(firstCrossing.Left);
+
+        var secondCrossing = ring.UpdatePlayerPosition(new Vector3(64f, 0f, 5f));
+
+        Assert.Equal(
+        [
+            new ExteriorCellCoordinate(3, -1),
+            new ExteriorCellCoordinate(3, 0),
+            new ExteriorCellCoordinate(3, 1)
+        ], secondCrossing.Entered);
+        Assert.Equal(
+        [
+            new ExteriorCellCoordinate(-1, -1),
+            new ExteriorCellCoordinate(-1, 0),
+            new ExteriorCellCoordinate(-1, 1)
+        ], secondCrossing.Left);
     }
 
     [Fact]
@@ -48,13 +65,15 @@ public sealed class ExteriorCellLoadingRingTests
 
         Assert.True(ring.Forget(coordinate));
         Assert.False(ring.Forget(coordinate));
-        Assert.Equal([coordinate], ring.UpdatePlayerPosition(Vector3.Zero));
+        Assert.Equal([coordinate], ring.UpdatePlayerPosition(Vector3.Zero).Entered);
     }
 
     [Fact]
-    public void ConstructorRejectsNegativeRadiusAndInvalidCellWidth()
+    public void ConstructorRejectsInvalidRadiiAndCellWidth()
     {
         Assert.Throws<ArgumentOutOfRangeException>(() => new ExteriorCellLoadingRing(-1, 32f));
         Assert.Throws<ArgumentOutOfRangeException>(() => new ExteriorCellLoadingRing(1, 0f));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new ExteriorCellLoadingRing(2, 32f, retentionRadiusInCells: 1));
     }
 }

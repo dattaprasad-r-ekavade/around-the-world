@@ -45,14 +45,13 @@ public sealed class WorldManifestTests
             var interiorId = Guid.Parse("22222222-2222-2222-2222-222222222222");
             var path = Path.Combine(directory, WorldManifest.DefaultFileName);
 
-            WorldManifest.SaveAtomic(path,
+            WorldManifest.SaveAtomic(path, exteriorCellWidth: 48f,
             [
                 new WorldCellDefinition
                 {
                     Id = exteriorId,
                     Kind = WorldCellKind.Exterior,
-                    ExteriorX = -2,
-                    ExteriorZ = 4,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(-2, 4),
                     ScenePath = "Scenes/Exterior.json"
                 },
                 new WorldCellDefinition
@@ -66,10 +65,93 @@ public sealed class WorldManifestTests
             var loaded = WorldManifest.Load(path);
 
             Assert.Equal(2, loaded.Cells.Count);
+            Assert.Equal(2, WorldManifest.CurrentVersion);
+            Assert.Equal(48f, loaded.ExteriorCellWidth);
             Assert.Equal(exteriorId, loaded.Cells[0].Id);
-            Assert.Equal((-2, 4), (loaded.Cells[0].ExteriorX, loaded.Cells[0].ExteriorZ));
+            Assert.Equal(new ExteriorCellCoordinate(-2, 4), loaded.Cells[0].ExteriorCoordinate);
             Assert.Equal(interiorId, loaded.FindCell(interiorId)!.Id);
+            Assert.True(loaded.TryGetExterior(new ExteriorCellCoordinate(-2, 4), out var exterior));
+            Assert.Equal(exteriorId, exterior!.Id);
+            Assert.False(loaded.TryGetExterior(new ExteriorCellCoordinate(500, 500), out _));
             Assert.Equal(Path.Combine(directory, "Scenes", "Interior.json"), loaded.ResolveScenePath(interiorId));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Version1ManifestMigratesToDefaultWidthAndCoordinateValue()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            File.WriteAllText(Path.Combine(directory, "cell.json"), "{}");
+            var manifestPath = Path.Combine(directory, "world.json");
+            var id = Guid.Parse("abababab-abab-abab-abab-abababababab");
+            File.WriteAllText(manifestPath, $$"""
+                {
+                  "version": 1,
+                  "cells": [
+                    { "id": "{{id}}", "kind": "Exterior", "exteriorX": -3, "exteriorZ": 7, "scenePath": "cell.json" }
+                  ]
+                }
+                """);
+
+            var loaded = WorldManifest.Load(manifestPath);
+
+            Assert.Equal(WorldManifest.Version1DefaultExteriorCellWidth, loaded.ExteriorCellWidth);
+            Assert.True(loaded.TryGetExterior(new ExteriorCellCoordinate(-3, 7), out var cell));
+            Assert.Equal(id, cell!.Id);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SaveAllowsScenesNotCreatedYetButRejectsDuplicateScenePaths()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var manifestPath = Path.Combine(directory, "world.json");
+            var firstId = Guid.Parse("abababab-abab-abab-abab-abababababab");
+            var secondId = Guid.Parse("cdcdcdcd-cdcd-cdcd-cdcd-cdcdcdcdcdcd");
+            WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition
+                {
+                    Id = firstId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(0, 0),
+                    ScenePath = "Scenes/NotCreatedYet.json"
+                }
+            ]);
+
+            var missing = Assert.Throws<InvalidDataException>(() => WorldManifest.Load(manifestPath));
+            Assert.Contains("refers to missing scene", missing.Message, StringComparison.Ordinal);
+
+            var duplicate = Assert.Throws<InvalidDataException>(() => WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition
+                {
+                    Id = firstId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(0, 0),
+                    ScenePath = "Scenes/Shared.json"
+                },
+                new WorldCellDefinition
+                {
+                    Id = secondId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(1, 0),
+                    ScenePath = "Scenes/Shared.json"
+                }
+            ]));
+            Assert.Contains("same scene path", duplicate.Message, StringComparison.Ordinal);
         }
         finally
         {

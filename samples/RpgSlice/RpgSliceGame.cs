@@ -44,10 +44,10 @@ public sealed class RpgSliceGame : EngineHost
     protected override void LoadContent()
     {
         _world = WorldManifest.Load(_worldManifestPath);
-        var originCell = ExteriorCellGrid.FromWorldPosition(Vector3.Zero, cellWidth: 32f);
-        _cell = _world.Cells.SingleOrDefault(cell => cell.Kind == WorldCellKind.Exterior
-                && cell.ExteriorX == originCell.X && cell.ExteriorZ == originCell.Z)
-            ?? throw new InvalidDataException("World manifest needs an exterior cell at coordinate (0, 0).");
+        var originCell = _world.GetExteriorCoordinate(Vector3.Zero);
+        if (!_world.TryGetExterior(originCell, out var cell) || cell is null)
+            throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
+        _cell = cell;
         _scene = SceneFile.Load(_world.ResolveScenePath(_cell.Id));
 
         _renderer = new SceneRenderer(GraphicsDevice);
@@ -64,7 +64,7 @@ public sealed class RpgSliceGame : EngineHost
         _camera.Follow(_physics, _player.Pose.Position);
         _lights.Add(new PointLight(new Vector3(12f, 12f, 19f), new Vector3(0.9f, 0.82f, 0.65f) * 1.7f, 28f));
 
-        Console.WriteLine($"RpgSlice: loaded exterior cell {_cell.Id} at ({_cell.ExteriorX}, {_cell.ExteriorZ}) from {_cell.ScenePath}");
+        Console.WriteLine($"RpgSlice: loaded exterior cell {_cell.Id} at ({originCell.X}, {originCell.Z}) from {_cell.ScenePath}");
         if (_smokeControls)
         {
             RunMovementSmoke();
