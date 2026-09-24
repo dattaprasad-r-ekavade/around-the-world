@@ -157,6 +157,44 @@ public sealed class PhysicsWorldTests
     }
 
     [Fact]
+    public void JumpRequestSurvivesCatchUpUntilCharacterLands()
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(20f, 1f, 20f));
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 1.0505f, 0f));
+        Assert.False(character.IsGrounded);
+        character.RequestJump();
+
+        var stepper = new PhysicsFixedStepper();
+        var result = stepper.Advance(stepper.FixedDeltaSeconds * 2d,
+            seconds => world.Step(seconds));
+
+        Assert.Equal(2, result.Steps);
+        Assert.True(character.JumpedThisStep);
+        Assert.True(character.Velocity.Y > 0f);
+        Assert.False(character.IsGrounded);
+    }
+
+    [Fact]
+    public void JumpRequestExpiresWhileCharacterRemainsAirborne()
+    {
+        using var world = new PhysicsWorld();
+        world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(20f, 1f, 20f));
+        using var character = new PhysicsCharacterController(world, new Vector3(0f, 1f, 0f));
+        character.RequestJump();
+        world.Step(1f / 60f);
+        Assert.True(character.JumpedThisStep);
+        character.RequestJump();
+
+        for (var step = 0; step < 120; step++)
+            world.Step(1f / 60f);
+
+        Assert.True(character.IsGrounded);
+        Assert.False(character.JumpedThisStep);
+        Assert.InRange(character.Pose.Position.Y, 0.85f, 1.05f);
+    }
+
+    [Fact]
     public void CapsuleJumpCannotPassThroughLowCeiling()
     {
         using var world = new PhysicsWorld();

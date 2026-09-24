@@ -11,6 +11,7 @@ public sealed record PhysicsCharacterSettings
     public float Mass { get; init; } = 80f;
     public float MoveSpeed { get; init; } = 5f;
     public float JumpSpeed { get; init; } = 6f;
+    public float JumpBufferSeconds { get; init; } = 0.1f;
     public float MaximumSlopeAngleDegrees { get; init; } = 50f;
     public float GroundProbeDistance { get; init; } = 0.15f;
 }
@@ -31,6 +32,7 @@ public sealed class PhysicsCharacterController : IDisposable
     private Vector3 _groundNormal = Vector3.Up;
     private Func<Vector3, Vector3, float, bool>? _horizontalMovementGate;
     private bool _jumpRequested;
+    private float _jumpRequestRemainingSeconds;
     private bool _groundedBeforeStep;
     private bool _hasWalkableSupport;
     private bool _worldDisposed;
@@ -102,11 +104,12 @@ public sealed class PhysicsCharacterController : IDisposable
         IsMovementWaitingForCell = false;
     }
 
-    /// <summary>Queues one jump attempt for the next fixed step.</summary>
+    /// <summary>Queues one jump attempt, retained until landing or the configured buffer expires.</summary>
     public void RequestJump()
     {
         ThrowIfDisposed();
         _jumpRequested = true;
+        _jumpRequestRemainingSeconds = _settings.JumpBufferSeconds;
     }
 
     internal void PreparePhysicsStep(float seconds)
@@ -117,13 +120,20 @@ public sealed class PhysicsCharacterController : IDisposable
 
         var velocity = Velocity;
         var jumping = _jumpRequested && IsGrounded;
-        _jumpRequested = false;
         if (jumping)
         {
+            _jumpRequested = false;
+            _jumpRequestRemainingSeconds = 0f;
             velocity.Y = _settings.JumpSpeed;
             IsGrounded = false;
             _groundedBeforeStep = false;
             JumpedThisStep = true;
+        }
+        else if (_jumpRequested)
+        {
+            _jumpRequestRemainingSeconds = MathF.Max(0f, _jumpRequestRemainingSeconds - seconds);
+            if (_jumpRequestRemainingSeconds <= 0f)
+                _jumpRequested = false;
         }
 
         var desiredVelocity = _moveInput * _settings.MoveSpeed;
@@ -223,6 +233,8 @@ public sealed class PhysicsCharacterController : IDisposable
             throw new ArgumentOutOfRangeException(nameof(settings), "Character move speed must be finite and nonnegative.");
         if (!float.IsFinite(settings.JumpSpeed) || settings.JumpSpeed <= 0f)
             throw new ArgumentOutOfRangeException(nameof(settings), "Character jump speed must be finite and positive.");
+        if (!float.IsFinite(settings.JumpBufferSeconds) || settings.JumpBufferSeconds < 0f)
+            throw new ArgumentOutOfRangeException(nameof(settings), "Jump buffer duration must be finite and nonnegative.");
         if (!float.IsFinite(settings.MaximumSlopeAngleDegrees)
             || settings.MaximumSlopeAngleDegrees <= 0f || settings.MaximumSlopeAngleDegrees >= 90f)
             throw new ArgumentOutOfRangeException(nameof(settings), "Maximum slope angle must be between zero and 90 degrees.");

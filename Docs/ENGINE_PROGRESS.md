@@ -1096,3 +1096,14 @@ At this update, 132 of 154 roadmap rows are complete (85.7%). Task 122 is next. 
 | RpgSlice `--smoke-controls` | PASS — crossed cell (0, 0) to (0, -1) over 23.06 m and remained grounded |
 
 At this update, 134 of 154 roadmap rows are complete (87.0%). Task 124 is next. Stage 10 save/restart, Stage 11 branching-quest, Stage 12 multi-NPC schedule/travel, and Stage 13 measured outdoor-budget gates remain Pending.
+
+## Code-review fix — buffered jump input — 24 September 2026
+
+- `PhysicsCharacterController` now retains a jump request for a configurable 0.1 seconds of fixed simulation time. A request made while airborne can trigger on the first grounded physics step; it is discarded after the window expires or after one successful jump.
+- Added a two-substep catch-up regression where the first step lands and the second jumps, plus an expiry case proving an old airborne request does not trigger on a later landing.
+
+### Code-review fix checks
+
+| Check | Result |
+| --- | --- |
+| Focused jump-buffer tests | PASS — catch-up landing/jump and expiry, 2 passed |
