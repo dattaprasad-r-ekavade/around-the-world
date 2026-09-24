@@ -615,6 +615,52 @@ Count of references in the two sample games at `43f06a7`:
 | High | **Stage gates 9–12 are unproven, while the checklist moves on to tools.** Tasks 137–139 assume that doors, persistence, RPG systems, and NPCs already work together in a game. | Roadmap Stages 9–12 gates | Before task 133, add explicit integration rows: an `RpgSlice` door plus a live `WorldCellTravelTransaction`; wiring the change store, runtime objects, and world save into the streamer; one NPC on the path network with a schedule; one merchant and one enemy using `Ember.Rpg`. Mark each gate Pass or Blocked with evidence. Don't count task 137 as the first integration test. |
 | Medium | **Five stage gates are still "Pending" or have no status:** Release B, Release C, and Stages 9–12. The handoff says so honestly. However, the "92.3% complete" headline invites the wrong conclusion. | Handoff, `ENGINE_ROADMAP.md:338-339` | Report two things in the handoff: rows checked, and the list of gates passed. Today that list is Release A, Release D, and the Stage 13 benchmark; Release E's status isn't recorded on its line. |
 
+### World persistence and travel (tasks 83–93)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| High | **A travel can half-commit.** If `_source.Unload()` throws after `_placePlayer(destinationSpawn)`, the transaction reports `Failed`. At that point the destination is active and the player has already moved, while the source is partly disposed. A caller that treats `Failed` as "the source is still playable" (task 84's contract) is now wrong. | `World/WorldCellTravelTransaction.cs:131-152` | Treat an unload failure after placement as `Completed` with a cleanup error, because the player is in the destination. Or restore the player and unload the destination. Add a fixture where the source unload throws. |
+| Medium | **Save restore is not atomic, and the stores can't be cleared.** `Restore` imports identities, then changes, then runtime objects, each in place. A throw partway leaves the stores partly filled, and `Restore` refuses non-empty stores, so an in-process retry is impossible. | `World/WorldSaveFile.cs:80-92`; `WorldInstanceIdentityMap.cs:121-128` | Build all three stores into temporaries and swap them only after all three succeed. Add `Clear()`. |
+| Medium | **`Cancel` doesn't drain completions, and the transaction isn't `IDisposable`.** A late prepared result stays queued until someone calls `Tick`. A caller that cancels and drops the transaction leaks the result. | `WorldCellTravelTransaction.cs:160-170` | Pump completions in `Cancel`, and implement `Dispose` as cancel, pump, then discard. |
+| Medium | **Saving blocks the frame.** `WorldSaveRequestQueue.ProcessStableBoundary` writes the file synchronously on the owner thread, and `_completed` grows forever. | `World/WorldSaveRequestQueue.cs:13,43-52` | Snapshot at the stable boundary, write on a worker, and complete on the owner thread. Bound or coalesce the results. |
+| Medium | **The collision gate requests only the first missing cell.** A clearance box that overlaps two loading cells raises `CollisionRequired` for one of them; the other waits for the next movement attempt. | `World/ExteriorCellCollisionGate.cs:70-78` | Request every blocking cell, then return one state. |
+| Medium | **World-instance IDs are unique only within one scene file.** A copied or hand-edited cell scene can ship duplicate IDs, which fail only when both cells load. | `Scene/SceneFile.cs:426-434`; `WorldInstanceIdentityMap.cs` | When a manifest is open, check new IDs across all cells when placing or saving. Task 135 is the natural home for this. |
+| Low | The activation queue subtracts `CostConsumed` without clamping it to the estimate, so `QueuedEstimatedCost` can go negative. The identity and change maps are never pruned, which the soak in task 141 will expose. `RpgSliceCellStreamer` still blocks with `GetResult()` at startup and on disposal. | `CellActivationQueue.cs:127-134`; `RpgSliceCellStreamer.cs:76,143` | Clamp the cost, prune on save, and pump with a timeout instead of blocking. |
+
+### RPG rules (tasks 94–108, 117–118)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| High | **Player saves are not atomic.** `SaveState.Write` is `File.WriteAllText(path, ToJson())`, so a crash mid-write can destroy the only save. Content packs in the same assembly already use temp file, flush, and replace. | `Ember.Rpg/SaveState.cs:87` | Use the shared atomic writer (see the eight-copies finding below). |
+| High | **The world clock and NPC schedule state are not saved.** `SaveState` has no clock or `NpcScheduleRuntimeState`. The Stage 12 gate ("survives restart") can't pass. | `Ember.Rpg/SaveState.cs`; `WorldClockAndSchedules.cs` | Persist the total clock time and each NPC's schedule state, and round-trip them in the check program. |
+| Medium | **Dialogue and `FactionSystem` disagree about a missing standing.** `FactionSystem.Reputation` returns 0 when the actor has no standing for a faction. Dialogue requirements fail in that case, even for "reputation ≥ 0, no membership required". | `Ember.Rpg/DialogueContext.cs:44-54` vs `SpellFactionSystems.cs:113-118` | Treat a missing standing as (not a member, reputation 0) in both places. |
+| Medium | **A quest interaction stage that targets only an actor may never complete.** Validation accepts an interaction stage with only `TargetActorId`, but interaction events don't require `ActorId`. `Apply` skips the stage when the event's `ActorId` is null. | `RpgContentSet.cs:269-272`; `QuestEvents.cs:20-23,45` | Require `ActorId` on interaction events when a stage targets an actor, or require a world-instance target. Add a check case. |
+| Medium | **A pending schedule trip ignores a change of destination.** While a trip is pending, a new desired destination (the clock crossed a schedule boundary) is not considered until the NPC arrives at the old one. | `WorldClockAndSchedules.cs:121-122` | If the desired destination differs from the pending one, cancel and re-issue the trip. Add a fixture where time crosses a boundary mid-trip. |
+| Medium | **There are two "effective stats" APIs.** `PlayerRecord.EffectiveStats` (base plus modifiers) and `EquipmentSystem.EffectiveStats` (base plus gear plus modifiers) disagree. That invites applying gear twice or not at all. | `PlayerRecord.cs:24-25`; `EquipmentSystem.cs:71-90` | Keep one API. |
+| Low | Smaller issues: `Bag.Add(count > 1)` on a non-stackable item contradicts its own comment (`Bag.cs:74-75`). `ItemCatalogue.Add` doesn't validate bonuses. `TheftSystem` rejects a positive penalty value. The spell-cast and theft ID lists grow without bound. The clock uses a `double` modulo. The check program's `Compare()` omits currency, actor states, and world items. | as listed | Fix each opportunistically, and extend `Compare`. |
+
+### Navigation, NPCs, and outdoor rendering (tasks 109–127)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| Medium | **Near-tier actors past the per-frame cap never update.** Far actors rotate round-robin by `frameIndex`, but near actors always take the closest N. In a crowded area, everyone beyond the cap starves. | `World/ActorUpdateBudget.cs:76-77` | Rotate the near tier the same way the far tier rotates. |
+| Medium | **Task 122's outdoor half is missing.** Alpha-cutout clipping in the shadow depth pass exists only in CharacterStudio's `SceneShadow.fx`. RpgSlice foliage is opaque instanced geometry, and RpgSlice has no shadow pass at all. LOD from task 125 is likewise used only in CharacterStudio. | `samples/CharacterStudio/Content/Effects/SceneShadow.fx:95`; `RpgSliceGame.cs:296-308` | Move the cutout depth/colour path into a shared engine effect. Draw one masked foliage asset and one LOD prop in the 3×3 benchmark. |
+| Medium | **Terrain chunks are built and uploaded during `Draw`.** The first visit to a chunk rebuilds a mesh the cell streamer already prepared for collision. This likely feeds the frame tail that task 144 is chasing. | `Render/HeightmapTerrainRenderer.cs:144-160` | Reuse the streamer's prepared chunk data, and upload through the activation queue. |
+| Low | `ActorPerception` hardcodes the `World` layer for line of sight, so dynamic props never block it. Route search re-validates the whole network on every call. The path follower's stuck check ignores Y. Cross-cell transition cost defaults to 0. | `ActorPerception.cs:37`; `CellRouteSearch.cs:16`; `PhysicsCharacterPathFollower.cs:90-96`; `WorldPathNetwork.cs:24` | Add a layer mask, validate once at load, and default the transition cost to the node gap. |
+
+Credit where due: Dijkstra with a lazy priority queue and stable tie-breaking is correct. Terrain seams share world-grid samples, and tests check positions and normals at the edges. `OUTDOOR_BENCHMARK.md` separates targets from measured values and reports the bad run honestly.
+
+### Tools (tasks 128–132)
+
+| Sev | Finding | Where | Suggested fix |
+| --- | --- | --- | --- |
+| Medium | **Path edits save to disk immediately, with no undo.** Every node or edge add, update, or delete calls `CellPathGraphFile.SaveAtomic`, so one misclick permanently replaces the graph. Doors and placements, by contrast, go through `SceneCommandHistory`. The Paths tab also stays editable during play mode. | `samples/CharacterStudio/CharacterStudioPathEditor.cs:324-331,70-156` | Keep a dirty in-memory graph with undo and save explicitly. Disable editing while playing, as the placement panel already does. |
+| Medium | **Task 131's acceptance is a flat-floor preview.** The follower runs in a separate `PhysicsWorld` with a ground box and writes its world position into a local `Transform.Position`, ignoring parents. It proves the follower, not "a route authored in the tool followed by an NPC in play mode." | `CharacterStudioGame.cs:1018-1021,1071-1073` | Mark the row as fixture-level evidence and move the claim to the Stage 14 gate. |
+| Medium | **Reloading the content pack discards unsaved dialogue edits without warning.** The UI also runs a full `RpgContentSet.Validate()` and rebuilds the placement lists every frame. | `CharacterStudioEditorUi.cs:314-336`; `CharacterStudioDialogueEditor.cs:39,66-67` | Add a dirty flag and a confirm prompt. Validate on edit, and cache the options. |
+| Low | Clearing the faction field turns it into `ContentId("invalid")`. The door status panel can show stale results until "Check" is pressed. | `CharacterStudioDialogueEditor.cs:376-379`; `CharacterStudioEditorUi.cs:435-511` | Keep the previous value or block the edit; recompute the status on every edit. |
+
+Credit where due: `WorldCellWorkspace.RenameCell` keeps IDs and coordinates stable, and cell creation rolls back orphaned scenes. Placements and doors are undoable commands, validated before they are committed. An invalid content pack can't overwrite a valid one.
+
 ### Status of the first review's findings
 
 | Finding (first review) | Status at `43f06a7` |
@@ -647,6 +693,6 @@ Count of references in the two sample games at `43f06a7`:
 
 1. Route `RpgSliceCellStreamer` through `CellActivationQueue` and `CellAssetReferencePool`, add retry, then promote the streamer into `Ember.Engine/World`. Re-run the Stage 13 benchmark.
 2. Add the Stage 9–12 integration rows above, starting with a door plus live travel in `RpgSlice`, then persistence wiring. Pass or explicitly block each gate.
-3. Extract `SafeFile.WriteAtomic` (with flush) and turn on `UnmappedMemberHandling.Disallow` for every persisted format.
+3. Fix the data-safety items: extract `SafeFile.WriteAtomic` (with flush) and use it for `SaveState.Write`; persist the clock and schedules; make the travel commit and save restore atomic. Turn on `UnmappedMemberHandling.Disallow` for every persisted format.
 4. Extend packaging to world manifests and cell scenes before task 142.
 5. Add CI: `Ember.Rpg` tests on Linux now; the engine on a Windows runner.
