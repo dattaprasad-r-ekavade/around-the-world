@@ -3,12 +3,35 @@ using System;
 namespace Ember.Rpg;
 
 /// <summary>
-/// Prepares inventory/world-item transfers on copies. Inputs change only when the caller
-/// accepts both returned values, so a failed pickup or drop cannot duplicate or destroy data.
+/// Prepares inventory and world-item transfers on copies. Inputs change only when the caller
+/// accepts both returned values, so a failed move, pickup, or drop cannot duplicate or destroy data.
 /// Pass <c>WorldInstanceId.Value</c> from Ember.Engine without making RPG depend on the engine.
 /// </summary>
 public static class InventoryTransfer
 {
+    public static bool TryMove(Bag source, Bag destination, ItemCatalogue definitions,
+        ContentId<ItemContentKind> itemId, int count, out Bag updatedSource, out Bag updatedDestination)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        ArgumentNullException.ThrowIfNull(destination);
+        ArgumentNullException.ThrowIfNull(definitions);
+        updatedSource = source;
+        updatedDestination = destination;
+        if (ReferenceEquals(source, destination) || count < 1 || !source.Has(itemId, count)
+            || !definitions.TryGet(itemId, out var definition))
+            return false;
+
+        var nextSource = source.Copy();
+        var nextDestination = destination.Copy();
+        if (!nextSource.Remove(itemId, count)) return false;
+        try { nextDestination.Add(definition, count); }
+        catch (ArgumentException) { return false; }
+        catch (OverflowException) { return false; }
+        updatedSource = nextSource;
+        updatedDestination = nextDestination;
+        return true;
+    }
+
     public static bool TryPickup(Guid worldInstanceId, Bag inventory, WorldItemStore worldItems,
         ItemCatalogue definitions, out Bag updatedInventory, out WorldItemStore updatedWorldItems)
     {

@@ -963,3 +963,19 @@ At this update, 115 of 154 roadmap rows are complete (74.7%). Task 105 is next. 
 | `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
 | `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 182 tests, 0 failed, 0 skipped |
 | `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
+
+## Tasks 105–107 — quest events, merchant trades, and owned items — 24 September 2026
+
+- Quest stages can complete on interaction, actor-killed, and item-collected events. Events carry unique IDs plus stable world-instance and content IDs; processed event IDs and stage flags prevent replay and survive save/load, so progression does not require the target cell or actor object to remain loaded.
+- Added `MerchantTrade.TryBuy` and `TrySell`. Currency is saved for players and actors; transactions preflight funds, stock, definitions, and overflow, then return both updated parties together. A failed transaction leaves both inputs unchanged.
+- World item stacks can name an owning faction. `TheftSystem.TryTake` enforces faction membership, records theft event IDs, and applies a witnessed reputation penalty once. Unwitnessed theft transfers the item without reputation loss; authorized members do not trigger theft handling.
+
+### Tasks 105–107 checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet test Ember.sln --no-build --no-restore --nologo` | PASS — 182 tests, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — quest event replay/save/unloaded-target behavior, atomic trade rules, ownership/witness rules, and save/load checks |
+
+At this update, 118 of 154 roadmap rows are complete (76.6%). Task 108 is next. The Stage 10 live world-loader/save/restart and Stage 11 complete branching-quest integration gates remain Pending.

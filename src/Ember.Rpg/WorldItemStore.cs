@@ -6,7 +6,10 @@ using System.Text.Json.Serialization;
 namespace Ember.Rpg;
 
 /// <summary>One item stack represented by a stable world-instance GUID.</summary>
-public sealed record WorldItemEntry(Guid WorldInstanceId, ContentId<ItemContentKind> ItemId, int Count);
+public sealed record WorldItemEntry(Guid WorldInstanceId, ContentId<ItemContentKind> ItemId, int Count)
+{
+    public ContentId<FactionContentKind>? OwnerFactionId { get; init; }
+}
 
 /// <summary>Save-friendly item data keyed by the same GUID value as an engine world instance.</summary>
 public sealed record WorldItemStore
@@ -62,5 +65,6 @@ public sealed record WorldItemStore
     }
 
     private static bool IsValid(WorldItemEntry entry) => entry.WorldInstanceId != Guid.Empty
-        && !string.IsNullOrWhiteSpace(entry.ItemId.Value) && entry.Count > 0;
+        && !string.IsNullOrWhiteSpace(entry.ItemId.Value) && entry.Count > 0
+        && (entry.OwnerFactionId is null || !string.IsNullOrWhiteSpace(entry.OwnerFactionId.Value.Value));
 }

@@ -729,10 +729,11 @@ and active modifiers live on `PlayerRecord` and round-trip with `SaveState`.
 `ContainerInventoryStore` keeps one `Bag` per stable world-instance GUID. Pass the engine's
 `WorldInstanceId.Value`; keep an empty bag entry after looting a chest so reloading its cell does
 not fall back to authored contents. `WorldItemStore` records loose stacks under the same identity
-value. `InventoryTransfer.TryPickup` and `TryDrop` prepare new inventory/world-item snapshots and
-return `false` with the original snapshots intact when the item, count, definition, or target ID is
-invalid. Apply both returned snapshots together to commit a successful transfer. Both stores are
-included in `SaveState` and validated on save/load.
+value. `InventoryTransfer.TryPickup` and `TryDrop` prepare new inventory/world-item snapshots, while
+`TryMove` transfers a stack between two bags. They return `false` with the original snapshots
+intact when the item, count, definition, or target ID is invalid. Apply both returned snapshots
+together to commit a successful transfer. Both stores are included in `SaveState` and validated
+on save/load.
 
 `ItemDef` can carry equipment attribute bonuses, an attachment bone name, and a melee profile.
 `EquipmentSystem.TryEquip`/`TryUnequip` atomically swap bag contents and slots; calculate current
@@ -759,6 +760,21 @@ Dialogue options can require all three. `DialogueTree.Pick` rechecks the require
 stable choice key on `DialogueProgress` before applying its flag effects; that key survives save/load
 and prevents a self-looping choice from executing twice. Give choices explicit IDs when content may
 be reordered; otherwise the option's position within its node is used as the fallback key.
+
+Set `QuestStage.CompleteOn` to `Interaction`, `ActorKilled`, or `ItemCollected` to advance from
+committed gameplay events. Match the event's stable `WorldInstanceId` and typed actor/item IDs in the
+stage. Give each `QuestEvent` a unique `EventId`; the event system records it with quest flags, so a
+replayed kill, pickup, or interaction cannot advance a later stage twice. Emit the event after its
+source action succeeds. Quest progress then survives save/load and cell unload without looking up a
+live target object.
+
+`MerchantTrade.TryBuy` and `TrySell` return replacement player and merchant records together. Currency
+is stored on `PlayerRecord` and `ActorRuntimeState`; apply both returned values to commit a trade. A
+failed funds, stock, definition, or overflow check leaves both inputs unchanged. Set a loose
+`WorldItemEntry.OwnerFactionId` to restrict its pickup to faction members. For other takers,
+`TheftSystem.TryTake` transfers the item and records the stable theft event ID; a witnessed theft
+applies its negative reputation adjustment once, while an unwitnessed theft does not change standing.
+All balances, ownership, faction standing, inventory, and replay IDs round-trip in `SaveState`.
 
 ## The sample
 

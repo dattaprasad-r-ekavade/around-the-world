@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using Ember.Rpg;
 
 namespace Ember.Rpg.Check;
@@ -29,6 +30,9 @@ internal static class Program
             EquipmentChecks(problems);
             MeleeAndActorPersistenceChecks(problems);
             SpellAndFactionChecks(problems);
+            QuestEventChecks(problems);
+            MerchantTradeChecks(problems);
+            TheftChecks(problems);
 
             original.Write(path);
             var loaded = SaveState.Read(path);
@@ -426,6 +430,215 @@ internal static class Program
         if (!factionSave.ActorStates.TryGet(joined.WorldInstanceId, out var restored)
             || !FactionSystem.IsMember(restored, factionId) || FactionSystem.Reputation(restored, factionId) != 18)
             problems.Add("actor faction membership and reputation should survive save/load");
+    }
+
+    private static void QuestEventChecks(List<string> problems)
+    {
+        var questId = new ContentId<QuestContentKind>("quest.events");
+        var actorId = new ContentId<ActorContentKind>("actor.guard");
+        var itemId = new ContentId<ItemContentKind>("item.relic");
+        var talkTarget = Guid.NewGuid();
+        var deadActorInstance = Guid.NewGuid();
+        var relicInstance = Guid.NewGuid();
+        var quest = new QuestDef
+        {
+            Id = questId,
+            Title = "Stable Event Quest",
+            Stages = new[]
+            {
+                new QuestStage { Id = "talk", CompleteOn = QuestEventKind.Interaction, TargetWorldInstanceId = talkTarget },
+                new QuestStage
+                {
+                    Id = "kill", CompleteOn = QuestEventKind.ActorKilled,
+                    TargetWorldInstanceId = deadActorInstance, TargetActorId = actorId
+                },
+                new QuestStage
+                {
+                    Id = "collect", CompleteOn = QuestEventKind.ItemCollected,
+                    TargetWorldInstanceId = relicInstance, RequiredItemId = itemId
+                }
+            }
+        };
+        var quests = new QuestCatalogue();
+        quests.Add(quest);
+        var flags = new FlagStore();
+        quest.Start(flags);
+
+        var wrongInteraction = new QuestEvent
+        {
+            EventId = Guid.NewGuid(), Kind = QuestEventKind.Interaction, WorldInstanceId = Guid.NewGuid()
+        };
+        if (QuestEventSystem.Apply(quests, flags, wrongInteraction) != 0
+            || quest.StageIn(flags)?.Id != "talk")
+            problems.Add("an interaction at a different stable world instance should not advance the quest");
+
+        var interaction = new QuestEvent
+        {
+            EventId = Guid.NewGuid(), Kind = QuestEventKind.Interaction, WorldInstanceId = talkTarget
+        };
+        if (QuestEventSystem.Apply(quests, flags, interaction) != 1
+            || QuestEventSystem.Apply(quests, flags, interaction) != 0
+            || quest.StageIn(flags)?.Id != "kill")
+            problems.Add("a stable interaction event should advance once and ignore a replay of the same event ID");
+
+        var deadActor = new ActorRuntimeState(deadActorInstance, actorId, currentHealth: 0);
+        var deadActorSave = SaveState.FromJson(new SaveState
+        {
+            ActorStates = new ActorRuntimeStore().Set(deadActor),
+            Flags = flags
+        }.ToJson());
+        if (!deadActorSave.ActorStates.TryGet(deadActorInstance, out var restoredDead) || !restoredDead.IsDead)
+            problems.Add("the quest target fixture should remain dead in saved actor state after its cell unloads");
+
+        var killed = new QuestEvent
+        {
+            EventId = Guid.NewGuid(), Kind = QuestEventKind.ActorKilled,
+            WorldInstanceId = deadActorInstance, ActorId = actorId
+        };
+        if (QuestEventSystem.Apply(quests, deadActorSave.Flags, killed) != 1
+            || quest.StageIn(deadActorSave.Flags)?.Id != "collect")
+            problems.Add("a stable actor-killed event should resolve a dead target without a loaded cell object");
+
+        var progressedSave = SaveState.FromJson(new SaveState { Flags = deadActorSave.Flags }.ToJson());
+        var collected = new QuestEvent
+        {
+            EventId = Guid.NewGuid(), Kind = QuestEventKind.ItemCollected,
+            WorldInstanceId = relicInstance, ItemId = itemId
+        };
+        if (QuestEventSystem.Apply(quests, progressedSave.Flags, collected) != 1
+            || quest.StatusIn(progressedSave.Flags) != QuestStatus.Complete)
+            problems.Add("a stable item-collected event should finish the saved quest after its target cell unloads");
+    }
+
+    private static void MerchantTradeChecks(List<string> problems)
+    {
+        var itemId = new ContentId<ItemContentKind>("item.apple");
+        var definitions = new ItemCatalogue();
+        definitions.Add(new ItemDef(itemId, "Apple", null, Stackable: true));
+        var actorDef = new ActorDef(new ContentId<ActorContentKind>("actor.merchant"), "Merchant", stats: ExampleStats());
+        var stock = new Bag();
+        stock.Add(definitions.Get(itemId)!, 5);
+        var player = new PlayerRecord { Currency = 100 };
+        var merchant = ActorRuntimeState.Create(Guid.NewGuid(), actorDef, stock) with { Currency = 500 };
+
+        if (MerchantTrade.TryBuy(player with { Currency = 10 }, merchant, definitions, itemId, 2, 10,
+            out var poorPlayer, out var richStock)
+            || poorPlayer.Currency != 10 || richStock.Inventory.Count(itemId) != 5)
+            problems.Add("a buy without enough currency should preserve both inventories and balances");
+        if (MerchantTrade.TryBuy(player, merchant with { Inventory = new Bag() }, definitions, itemId, 1, 10,
+            out var noStockPlayer, out var noStockMerchant)
+            || noStockPlayer.Currency != 100 || noStockMerchant.Currency != 500)
+            problems.Add("a buy without merchant stock should preserve both parties");
+        if (!MerchantTrade.TryBuy(player, merchant, definitions, itemId, 2, 10,
+            out var boughtPlayer, out var paidMerchant)
+            || boughtPlayer.Currency != 80 || boughtPlayer.Bag.Count(itemId) != 2
+            || paidMerchant.Currency != 520 || paidMerchant.Inventory.Count(itemId) != 3
+            || player.Currency != 100 || merchant.Inventory.Count(itemId) != 5)
+            problems.Add("a valid buy should atomically transfer items and currency without mutating its inputs");
+
+        if (MerchantTrade.TrySell(boughtPlayer, paidMerchant with { Currency = 1 }, definitions, itemId, 1, 10,
+            out var poorMerchantPlayer, out var poorMerchant)
+            || poorMerchantPlayer.Currency != 80 || poorMerchant.Currency != 1)
+            problems.Add("a merchant unable to pay for a sale should change neither side");
+        if (!MerchantTrade.TrySell(boughtPlayer, paidMerchant, definitions, itemId, 1, 10,
+            out var soldPlayer, out var soldMerchant)
+            || soldPlayer.Currency != 90 || soldPlayer.Bag.Count(itemId) != 1
+            || soldMerchant.Currency != 510 || soldMerchant.Inventory.Count(itemId) != 4)
+            problems.Add("a valid sale should atomically transfer items and currency");
+
+        var overflowMerchant = merchant with { Currency = long.MaxValue };
+        if (MerchantTrade.TryBuy(player, overflowMerchant, definitions, itemId, 1, 1,
+            out var overflowPlayer, out var unchangedMerchant)
+            || overflowPlayer.Currency != player.Currency || unchangedMerchant.Currency != long.MaxValue
+            || unchangedMerchant.Inventory.Count(itemId) != 5)
+            problems.Add("a merchant balance overflow should reject a buy without changing either party");
+
+        var roundTrip = SaveState.FromJson(new SaveState
+        {
+            Player = boughtPlayer,
+            ItemDefs = definitions,
+            ActorStates = new ActorRuntimeStore().Set(paidMerchant)
+        }.ToJson());
+        if (roundTrip.Player.Currency != 80
+            || !roundTrip.ActorStates.TryGet(merchant.WorldInstanceId, out var restoredMerchant)
+            || restoredMerchant.Currency != 520)
+            problems.Add("player and merchant balances should survive save/load");
+    }
+
+    private static void TheftChecks(List<string> problems)
+    {
+        var factionId = new ContentId<FactionContentKind>("faction.mages");
+        var actorId = new ContentId<ActorContentKind>("actor.elder");
+        var itemId = new ContentId<ItemContentKind>("item.apple");
+        var definitions = new ItemCatalogue();
+        definitions.Add(new ItemDef(itemId, "Apple", null, Stackable: true));
+        var actorDef = new ActorDef(actorId, "Thief", stats: ExampleStats());
+        var thief = ActorRuntimeState.Create(Guid.NewGuid(), actorDef);
+        var firstItemId = Guid.NewGuid();
+        var firstEventId = Guid.NewGuid();
+        var firstWorld = new WorldItemStore();
+        if (!firstWorld.TryAdd(new WorldItemEntry(firstItemId, itemId, 1) { OwnerFactionId = factionId }, out firstWorld))
+        {
+            problems.Add("an owned world item should be valid");
+            return;
+        }
+
+        if (!TheftSystem.TryTake(firstEventId, thief, firstItemId, firstWorld, definitions,
+            witnessed: true, reputationPenalty: -5, out var witnessedThief, out var emptiedWorld, out var witnessedTheft)
+            || !witnessedTheft || witnessedThief.Inventory.Count(itemId) != 1
+            || FactionSystem.Reputation(witnessedThief, factionId) != -5
+            || emptiedWorld.TryGet(firstItemId, out _))
+            problems.Add("a witnessed faction theft should transfer the item and apply one reputation penalty");
+        if (TheftSystem.TryTake(firstEventId, witnessedThief, firstItemId, firstWorld, definitions,
+            witnessed: true, reputationPenalty: -5, out var replayTaker, out _, out _)
+            || FactionSystem.Reputation(replayTaker, factionId) != -5
+            || replayTaker.Inventory.Count(itemId) != 1)
+            problems.Add("replaying a witnessed theft event should not transfer again or double the penalty");
+
+        var secondItemId = Guid.NewGuid();
+        var unwitnessedEventId = Guid.NewGuid();
+        var secondWorld = new WorldItemStore();
+        secondWorld.TryAdd(new WorldItemEntry(secondItemId, itemId, 1) { OwnerFactionId = factionId }, out secondWorld);
+        if (!TheftSystem.TryTake(unwitnessedEventId, thief, secondItemId, secondWorld, definitions,
+            witnessed: false, reputationPenalty: -5, out var unwitnessedThief, out _, out var unwitnessedTheft)
+            || !unwitnessedTheft || FactionSystem.Reputation(unwitnessedThief, factionId) != 0
+            || !unwitnessedThief.ProcessedTheftEventIds.Contains(unwitnessedEventId))
+            problems.Add("an unwitnessed theft should transfer the item without reputation loss and still record its event");
+        if (TheftSystem.TryTake(unwitnessedEventId, unwitnessedThief, secondItemId, secondWorld, definitions,
+            witnessed: true, reputationPenalty: -5, out var replayedUnwitnessed, out _, out _)
+            || FactionSystem.Reputation(replayedUnwitnessed, factionId) != 0)
+            problems.Add("replaying an unwitnessed event as witnessed should not apply a delayed reputation penalty");
+
+        var member = FactionSystem.SetMembership(thief, factionId, true);
+        var lawfulItemId = Guid.NewGuid();
+        var lawfulWorld = new WorldItemStore();
+        lawfulWorld.TryAdd(new WorldItemEntry(lawfulItemId, itemId, 1) { OwnerFactionId = factionId }, out lawfulWorld);
+        if (!TheftSystem.TryTake(Guid.NewGuid(), member, lawfulItemId, lawfulWorld, definitions,
+            witnessed: true, reputationPenalty: -5, out var memberTaker, out _, out var lawfulTheft)
+            || lawfulTheft || FactionSystem.Reputation(memberTaker, factionId) != 0
+            || memberTaker.ProcessedTheftEventIds.Count != 0)
+            problems.Add("a faction member should take faction property without theft penalties");
+
+        var save = SaveState.FromJson(new SaveState
+        {
+            ItemDefs = definitions,
+            ActorStates = new ActorRuntimeStore().Set(witnessedThief),
+            WorldItems = new WorldItemStore().TryAdd(
+                new WorldItemEntry(Guid.NewGuid(), itemId, 1) { OwnerFactionId = factionId }, out var ownedItems)
+                ? ownedItems : new WorldItemStore()
+        }.ToJson());
+        var pack = RpgContentJson.FromJson(ValidContentJson);
+        if (!save.ActorStates.TryGet(witnessedThief.WorldInstanceId, out var restoredThief))
+            problems.Add("a saved thief actor should be restored");
+        else if (!restoredThief.ProcessedTheftEventIds.Contains(firstEventId)
+            || FactionSystem.Reputation(restoredThief, factionId) != -5
+            || pack.ValidateSaveReferences(save).Count != 0)
+            problems.Add("theft replay records, faction standing, and world-item ownership should survive a valid save/load");
+        else if (TheftSystem.TryTake(firstEventId, restoredThief, firstItemId, firstWorld, definitions,
+            witnessed: true, reputationPenalty: -5, out var replayedAfterLoad, out _, out _)
+            || replayedAfterLoad.Inventory.Count(itemId) != 1
+            || FactionSystem.Reputation(replayedAfterLoad, factionId) != -5)
+            problems.Add("a witnessed theft event replayed after loading should remain idempotent");
     }
 
     /// <summary>

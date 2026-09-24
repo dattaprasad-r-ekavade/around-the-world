@@ -132,8 +132,31 @@ public sealed class RpgContentSet
         {
             if (quest.StartDialogueId is { } dialogueId)
                 AddReferenceError(registry.CheckReference($"quest '{quest.Id.Value}'.StartDialogueId", dialogueId), errors);
+            var stageIds = new HashSet<string>(StringComparer.Ordinal);
             foreach (var stage in quest.Stages)
             {
+                var stageSource = $"quest '{quest.Id.Value}' stage '{stage.Id}'";
+                if (string.IsNullOrWhiteSpace(stage.Id) || !stageIds.Add(stage.Id))
+                    errors.Add(new ContentDiagnostic($"quest '{quest.Id.Value}'", $"empty or duplicate stage id '{stage.Id}'"));
+                if (stage.TargetWorldInstanceId == Guid.Empty)
+                    errors.Add(new ContentDiagnostic(stageSource, "TargetWorldInstanceId cannot be empty"));
+                if (stage.CompleteOn is { } eventKind)
+                {
+                    if (!Enum.IsDefined(eventKind))
+                        errors.Add(new ContentDiagnostic(stageSource, $"unknown completion event '{eventKind}'"));
+                    else if (eventKind == QuestEventKind.Interaction
+                        && stage.TargetWorldInstanceId is null && stage.TargetActorId is null)
+                        errors.Add(new ContentDiagnostic(stageSource,
+                            "an interaction objective needs a stable actor or world-instance target"));
+                    else if (eventKind == QuestEventKind.ActorKilled
+                        && stage.TargetActorId is null && stage.TargetWorldInstanceId is null)
+                        errors.Add(new ContentDiagnostic(stageSource,
+                            "an actor-killed objective needs an actor or world-instance target"));
+                    else if (eventKind == QuestEventKind.ItemCollected
+                        && stage.RequiredItemId is null && stage.TargetWorldInstanceId is null)
+                        errors.Add(new ContentDiagnostic(stageSource,
+                            "an item-collected objective needs an item or world-instance target"));
+                }
                 if (stage.TargetActorId is { } actorId)
                     AddReferenceError(registry.CheckReference(
                         $"quest '{quest.Id.Value}' stage '{stage.Id}'.TargetActorId", actorId), errors);
@@ -178,8 +201,13 @@ public sealed class RpgContentSet
                 AddReferenceError(registry.CheckReference(
                     $"container '{container.WorldInstanceId}' item '{entry.ItemId.Value}'", entry.ItemId), errors);
         foreach (var entry in save.WorldItems.Entries)
+        {
             AddReferenceError(registry.CheckReference(
                 $"world item '{entry.WorldInstanceId}'", entry.ItemId), errors);
+            if (entry.OwnerFactionId is { } ownerFactionId)
+                AddReferenceError(registry.CheckReference(
+                    $"world item '{entry.WorldInstanceId}'.OwnerFactionId", ownerFactionId), errors);
+        }
         foreach (var (slot, itemId) in save.Player.Equip.All)
         {
             if (string.IsNullOrWhiteSpace(itemId))

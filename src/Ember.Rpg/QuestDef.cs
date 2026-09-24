@@ -11,7 +11,14 @@ public enum QuestStatus
     Complete
 }
 
-/// <summary>One step of a quest: an id, the journal line it shows, and the flags that finish it.</summary>
+public enum QuestEventKind
+{
+    Interaction,
+    ActorKilled,
+    ItemCollected
+}
+
+/// <summary>One quest step, completed by flag conditions or a committed world event.</summary>
 public sealed record QuestStage
 {
     public string Id { get; init; } = "";
@@ -19,6 +26,10 @@ public sealed record QuestStage
     public ContentId<ActorContentKind>? TargetActorId { get; init; }
 
     public ContentId<ItemContentKind>? RequiredItemId { get; init; }
+
+    public Guid? TargetWorldInstanceId { get; init; }
+
+    public QuestEventKind? CompleteOn { get; init; }
 
     /// <summary>What the journal says while this is the current stage.</summary>
     public string Journal { get; init; } = "";
@@ -29,8 +40,12 @@ public sealed record QuestStage
     /// </summary>
     public IReadOnlyList<FlagCondition> DoneWhen { get; init; } = Array.Empty<FlagCondition>();
 
-    public bool IsDone(FlagStore flags)
+    public string CompletionFlag(ContentId<QuestContentKind> questId) =>
+        $"quest.{questId.Value}.stage.{Id}.done";
+
+    public bool IsDone(FlagStore flags, ContentId<QuestContentKind> questId)
     {
+        if (CompleteOn is not null) return flags.GetBool(CompletionFlag(questId));
         if (DoneWhen is not { Count: > 0 }) return false;
         foreach (var condition in DoneWhen)
             if (!condition.Matches(flags))
@@ -46,7 +61,7 @@ public sealed record QuestStage
 /// the flags it already carries.
 ///
 /// The start flag is <c>quest.{id}.started</c>; stages run in order, each finishing when its
-/// DoneWhen holds; the quest completes when every stage has.
+/// DoneWhen holds or its configured world event is recorded; the quest completes when every stage has.
 /// </summary>
 public sealed record QuestDef
 {
@@ -83,7 +98,7 @@ public sealed record QuestDef
         if (!flags.GetBool(StartFlag())) return null;
 
         foreach (var stage in Stages)
-            if (!stage.IsDone(flags))
+            if (!stage.IsDone(flags, Id))
                 return stage;
         return null;
     }

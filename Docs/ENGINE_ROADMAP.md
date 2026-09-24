@@ -232,9 +232,9 @@ Extend existing `Ember.Rpg` records, flags, inventory, dialogue, and quests wher
 | [x] | 102 | Add one targeted spell using the modifier system, resource cost, and casting cooldown. | Invalid casts consume nothing; valid casts apply their cost/effect exactly once. |
 | [x] | 103 | Add faction membership and reputation records. | Changes persist and two actors/factions do not share mutable state accidentally. |
 | [x] | 104 | Evaluate dialogue choices against stats, flags, and faction conditions using existing dialogue structures. | Choices appear correctly and execute effects once, including after reload. |
-| [ ] | 105 | Connect quest objectives to interaction/death/item events through stable IDs. | A quest survives target cell unload and handles dead/missing targets explicitly. |
-| [ ] | 106 | Add one merchant transaction using inventory transfers and currency. | Insufficient funds/stock changes nothing; a valid trade updates both parties atomically. |
-| [ ] | 107 | Add ownership checks and one witnessed theft event affecting reputation. | Unwitnessed and witnessed test cases follow documented rules without duplicate penalties. |
+| [x] | 105 | Connect quest objectives to interaction/death/item events through stable IDs. | A quest survives target cell unload and handles dead/missing targets explicitly. |
+| [x] | 106 | Add one merchant transaction using inventory transfers and currency. | Insufficient funds/stock changes nothing; a valid trade updates both parties atomically. |
+| [x] | 107 | Add ownership checks and one witnessed theft event affecting reputation. | Unwitnessed and witnessed test cases follow documented rules without duplicate penalties. |
 | [ ] | 108 | Add data-driven skill-use progression. | Repeated qualifying actions advance only the intended skill; progress survives restart. |
 
 **Gate:** complete one branching quest involving dialogue, an item, a merchant, and an enemy. Equipment, effects, faction changes, loot, and progression survive a save/restart.

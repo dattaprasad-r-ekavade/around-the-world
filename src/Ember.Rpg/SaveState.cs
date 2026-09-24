@@ -64,6 +64,8 @@ public sealed record SaveState
 
     public string ToJson()
     {
+        if (Player is null) throw new InvalidDataException("Save state has no player record.");
+        Player.Validate();
         ContainerInventories.Validate();
         WorldItems.Validate();
         ActorStates.Validate();
@@ -74,6 +76,8 @@ public sealed record SaveState
     {
         var state = JsonSerializer.Deserialize<SaveState>(json, JsonOptions)
             ?? throw new JsonException("The save was empty.");
+        if (state.Player is null) throw new InvalidDataException("Save state has no player record.");
+        state.Player.Validate();
         state.ContainerInventories.Validate();
         state.WorldItems.Validate();
         state.ActorStates.Validate();

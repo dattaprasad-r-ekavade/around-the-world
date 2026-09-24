@@ -15,10 +15,12 @@ public sealed record ActorRuntimeState
     public bool IsDead { get; init; }
     public double MeleeCooldownRemaining { get; init; }
     public double SpellCooldownRemaining { get; init; }
+    public long Currency { get; init; }
     public Bag Inventory { get; init; } = new();
     public ActorStatModifiers Modifiers { get; init; } = new();
     public IReadOnlyList<FactionStanding> Factions { get; init; } = Array.Empty<FactionStanding>();
     public IReadOnlyList<Guid> AppliedSpellCastIds { get; init; } = Array.Empty<Guid>();
+    public IReadOnlyList<Guid> ProcessedTheftEventIds { get; init; } = Array.Empty<Guid>();
 
     public ActorRuntimeState() { }
 
@@ -57,6 +59,7 @@ public sealed record ActorRuntimeState
             throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid melee cooldown.");
         if (!double.IsFinite(SpellCooldownRemaining) || SpellCooldownRemaining < 0)
             throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid spell cooldown.");
+        if (Currency < 0) throw new InvalidDataException($"Actor {WorldInstanceId} has negative currency.");
         if (Inventory is null) throw new InvalidDataException($"Actor {WorldInstanceId} has no inventory.");
         if (Modifiers is null) throw new InvalidDataException($"Actor {WorldInstanceId} has no stat modifier set.");
         foreach (var modifier in Modifiers.Active) modifier.Validate();
@@ -69,6 +72,10 @@ public sealed record ActorRuntimeState
         foreach (var castId in AppliedSpellCastIds)
             if (castId == Guid.Empty || !castIds.Add(castId))
                 throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid or duplicate spell cast ID.");
+        var theftIds = new HashSet<Guid>();
+        foreach (var theftId in ProcessedTheftEventIds)
+            if (theftId == Guid.Empty || !theftIds.Add(theftId))
+                throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid or duplicate theft event ID.");
         foreach (var item in Inventory.Entries)
             if (string.IsNullOrWhiteSpace(item.ItemId.Value) || item.Count < 1)
                 throw new InvalidDataException($"Actor {WorldInstanceId} has an invalid inventory entry.");
@@ -79,7 +86,8 @@ public sealed record ActorRuntimeState
         Inventory = Inventory.Copy(),
         Modifiers = new ActorStatModifiers { Active = new List<ActorStatModifier>(Modifiers.Active) },
         Factions = new List<FactionStanding>(Factions),
-        AppliedSpellCastIds = new List<Guid>(AppliedSpellCastIds)
+        AppliedSpellCastIds = new List<Guid>(AppliedSpellCastIds),
+        ProcessedTheftEventIds = new List<Guid>(ProcessedTheftEventIds)
     };
 
     public ActorStats EffectiveStats(ActorStats baseStats)
