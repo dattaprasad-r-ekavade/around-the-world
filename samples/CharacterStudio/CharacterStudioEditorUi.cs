@@ -256,6 +256,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 DrawRpgPlacementTab(scene);
                 ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("Templates"))
+            {
+                DrawPlacementTemplatesTab(scene);
+                ImGui.EndTabItem();
+            }
             if (ImGui.BeginTabItem("Travel"))
             {
                 DrawWorldTravelTab(scene);
@@ -269,6 +274,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             if (ImGui.BeginTabItem("Dialogue"))
             {
                 DrawDialogueAuthoringTab();
+                ImGui.EndTabItem();
+            }
+            if (ImGui.BeginTabItem("Quests"))
+            {
+                DrawQuestAuthoringTab();
                 ImGui.EndTabItem();
             }
             ImGui.EndTabBar();

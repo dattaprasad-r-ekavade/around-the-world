@@ -11,7 +11,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 6;
+    public const int CurrentVersion = 7;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -218,7 +218,8 @@ public static class SceneFile
     private static WorldEntityPlacementComponent? ToWorldEntityComponent(SceneWorldEntityData? data) =>
         data is null
             ? null
-            : new WorldEntityPlacementComponent(data.Kind, data.DefinitionId!, data.InstanceId);
+            : new WorldEntityPlacementComponent(data.Kind, data.DefinitionId!, data.InstanceId,
+                data.TemplateId, data.TemplateOverrides);
 
     private static SceneWorldEntityData? ToWorldEntityData(WorldEntityPlacementComponent? component) =>
         component is null
@@ -227,7 +228,9 @@ public static class SceneFile
             {
                 Kind = component.Kind,
                 DefinitionId = component.DefinitionId,
-                InstanceId = component.InstanceId
+                InstanceId = component.InstanceId,
+                TemplateId = component.TemplateId,
+                TemplateOverrides = component.TemplateOverrides
             };
 
     private static SceneDoorData? ToDoorData(WorldDoorComponent? door) =>
@@ -355,7 +358,15 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} has an empty spawn ID.");
         if (data.WorldEntity is { } worldEntity)
         {
-            try { _ = new WorldEntityPlacementComponent(worldEntity.Kind, worldEntity.DefinitionId!, worldEntity.InstanceId); }
+            if (documentVersion < 7
+                && (worldEntity.TemplateId is not null
+                    || worldEntity.TemplateOverrides != PlacementTemplateOverrideFlags.None))
+                throw new InvalidDataException($"Object {data.Id} placement template data requires scene version 7.");
+            try
+            {
+                _ = new WorldEntityPlacementComponent(worldEntity.Kind, worldEntity.DefinitionId!,
+                    worldEntity.InstanceId, worldEntity.TemplateId, worldEntity.TemplateOverrides);
+            }
             catch (ArgumentException exception)
             {
                 throw new InvalidDataException($"Object {data.Id} has an invalid world entity placement: {exception.Message}", exception);
@@ -536,5 +547,7 @@ public static class SceneFile
         public WorldEntityKind Kind { get; set; }
         public string? DefinitionId { get; set; }
         public Guid InstanceId { get; set; }
+        public Guid? TemplateId { get; set; }
+        public PlacementTemplateOverrideFlags TemplateOverrides { get; set; }
     }
 }

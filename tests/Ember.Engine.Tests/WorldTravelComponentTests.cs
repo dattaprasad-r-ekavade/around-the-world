@@ -76,7 +76,7 @@ public sealed class WorldTravelComponentTests
             });
 
             var loadedDoor = loadedExterior.Find(Guid.Parse("55555555-5555-5555-5555-555555555555"))!.Door!;
-            Assert.Equal(6, SceneFile.CurrentVersion);
+            Assert.Equal(7, SceneFile.CurrentVersion);
             Assert.Equal(interiorId, loadedDoor.DestinationCellId);
             Assert.Equal(interiorSpawnId, loadedDoor.DestinationSpawnId);
             Assert.Equal(Quaternion.Normalize(facing), loadedDoor.Facing);

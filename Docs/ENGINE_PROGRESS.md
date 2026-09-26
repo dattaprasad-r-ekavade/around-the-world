@@ -1336,3 +1336,25 @@ No ordered roadmap rows were added or marked complete. Stage 9–12 gameplay wor
 - Stage 11 still needs the full branching quest and save/restart coverage for equipment, effects, faction changes, loot, and progression.
 - Stage 12 still needs several scheduled NPCs, a follower through an interior door and restart, and dormant actor scene-retention evidence.
 - The RPG sidecar and engine world save can disagree after an interrupted two-file write. Atomic world-save restore and strict unmapped-member handling in the other persisted formats are also open.
+
+## Tasks 133–134c — quest objectives and placement templates — 26 September 2026
+
+- Task 133: added the CharacterStudio Quests tab. It creates quests and ordered event objectives, edits journal text, event kind, optional start dialogue, and actor/item/world-instance targets. The existing content validator supplies owning-record diagnostics and prevents saving a pack with broken references.
+- Quest objective checks round-trip a valid authored event target, report a missing actor ID with its quest/stage source, and apply a matching `ActorKilled` event to complete the authored objective.
+- Task 134 was split into three independently checked rows. Scene version 7 persists template IDs and explicit definition/position/rotation/scale override flags on RPG placements. Older untemplated scenes still load through the existing version migration path.
+- Added a versioned atomic placement-template library and update operation. Updating a template refreshes only inherited definition/transform fields; explicit overrides and world-instance IDs remain. The update command participates in scene undo/redo, and duplication preserves the template link/mask while assigning a fresh world-instance ID.
+- CharacterStudio now has a Templates tab to create/update a template from a selected placement, save/reload the library, place an instance, apply updated defaults, and toggle explicit per-instance override flags.
+- Roadmap rows 133 and 134a–134c are checked. Two rows were added by splitting 134; the checklist is now 147/157 (93.6%). Task 135 is first unchecked. The Stage 14 gate remains Pending until project-wide validation, recovery, and complete settlement authoring are proven.
+
+### Quest and template checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build samples/CharacterStudio/CharacterStudio.csproj --configuration Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors; FirstLight, Campaign, RpgSlice, CharacterStudio, engine, RPG, and check projects compiled |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --configuration Release --no-restore --nologo` | PASS — 239 passed, 0 failed, 0 skipped |
+| `dotnet test Ember.sln --no-restore --nologo` | PASS — 239 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` | PASS — save/load check plus quest objective reference and event checks |
+| CharacterStudio direct UI interaction | Not automated — the desktop automation surface returned no app inventory and no native launch API; editor code compiled, while model/reference/event behavior has automated coverage |
+
+The Stage 14 gate remains Pending. The next batch starts at task 135 (project-wide reference validation), then task 136 (authored-content autosave/recovery). The remaining Stage 9–12 and Release gates are unchanged.

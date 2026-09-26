@@ -302,7 +302,8 @@ internal static class SceneObjectCopy
                 : id is null
                     ? source.WorldEntity
                     : new WorldEntityPlacementComponent(source.WorldEntity.Kind,
-                        source.WorldEntity.DefinitionId, Guid.NewGuid()),
+                        source.WorldEntity.DefinitionId, Guid.NewGuid(), source.WorldEntity.TemplateId,
+                        source.WorldEntity.TemplateOverrides),
             SpawnPoint = source.SpawnPoint is null
                 ? null
                 : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())

@@ -24,6 +24,7 @@ internal static class Program
             PlayDialogue(original, problems);
             QuestRoundTrip(original, path, problems);
             ContentValidationChecks(problems);
+            QuestObjectiveAuthoringChecks(problems);
             ActorStatFormulaChecks(problems);
             SkillUseProgressionChecks(problems);
             ModifierRuleChecks(problems);
@@ -168,6 +169,63 @@ internal static class Program
                 if (!exception.Message.Contains(expected, StringComparison.Ordinal))
                     problems.Add($"content validation diagnostic should identify '{expected}'");
         }
+    }
+
+    private static void QuestObjectiveAuthoringChecks(List<string> problems)
+    {
+        var content = RpgContentJson.FromJson(ValidContentJson);
+        var questId = new ContentId<QuestContentKind>("quest.panel");
+        var targetActorId = new ContentId<ActorContentKind>("actor.elder");
+        var targetInstanceId = Guid.Parse("9d1b12c8-6e25-4f4c-a7fd-294fd4ce0b21");
+        var quest = new QuestDef
+        {
+            Id = questId,
+            Title = "Clear the old vault",
+            StartDialogueId = new ContentId<DialogueContentKind>("dialogue.elder"),
+            Stages = new[]
+            {
+                new QuestStage
+                {
+                    Id = "defeat-guardian",
+                    Journal = "Defeat the vault guardian.",
+                    CompleteOn = QuestEventKind.ActorKilled,
+                    TargetActorId = targetActorId,
+                    TargetWorldInstanceId = targetInstanceId
+                }
+            }
+        };
+        content.Quests.Add(quest);
+
+        var missingTargetContent = RpgContentJson.FromJson(RpgContentJson.ToJson(content));
+        missingTargetContent.Quests.Add(quest with
+        {
+            Stages = new[] { quest.Stages[0] with { TargetActorId = new ContentId<ActorContentKind>("actor.missing") } }
+        });
+        if (!missingTargetContent.Validate().Any(diagnostic =>
+            diagnostic.ToString().Contains("quest 'quest.panel' stage 'defeat-guardian'.TargetActorId", StringComparison.Ordinal)
+            && diagnostic.ToString().Contains("actor.missing", StringComparison.Ordinal)))
+            problems.Add("quest objective validation should identify a missing target actor ID and its owning stage");
+
+        var reopened = RpgContentJson.FromJson(RpgContentJson.ToJson(content));
+        if (reopened.Validate().Count != 0 || !reopened.Quests.TryGet(questId, out var loadedQuest)
+            || loadedQuest.Stages.Single().TargetActorId != targetActorId
+            || loadedQuest.Stages.Single().TargetWorldInstanceId != targetInstanceId)
+        {
+            problems.Add("a valid event objective and its typed target references should save and reopen");
+            return;
+        }
+
+        var flags = new FlagStore();
+        loadedQuest.Start(flags);
+        var applied = QuestEventSystem.Apply(reopened.Quests, flags, new QuestEvent
+        {
+            EventId = Guid.NewGuid(),
+            Kind = QuestEventKind.ActorKilled,
+            WorldInstanceId = targetInstanceId,
+            ActorId = targetActorId
+        });
+        if (applied != 1 || loadedQuest.StatusIn(flags) != QuestStatus.Complete)
+            problems.Add("an authored event objective should complete when its validated target event is applied");
     }
 
     private static void ActorStatFormulaChecks(List<string> problems)

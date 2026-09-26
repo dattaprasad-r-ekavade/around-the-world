@@ -287,12 +287,14 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 130 | Add a door destination/spawn picker. | Selecting a destination creates a valid travel link and exposes broken links visibly. |
 | [x] | 131 | Add path-node/edge editing with reachability visualization. | A route authored in the tool can be followed by an NPC in play mode. |
 | [x] | 132 | Add a dialogue record panel with condition/effect editing. | The branching conversation can be edited and validated without source changes. |
-| [ ] | 133 | Add a quest objective/event-reference panel. | Missing target IDs are identified before play/package, and valid objectives run. |
-| [ ] | 134 | Add reusable placement templates with explicit instance overrides. | Updating a template preserves documented overrides and stable world-instance IDs. |
+| [x] | 133 | Add a quest objective/event-reference panel. | Missing target IDs are identified before play/package, and valid objectives run. |
+| [x] | 134a | Persist a placement template ID and explicit override-field mask on an RPG placement. | Scene save/reopen preserves template references and masks while older scenes still load. |
+| [x] | 134b | Add reusable placement-template data and update semantics. | Updating a template refreshes inherited values while explicit overrides, stable world-instance IDs, and undo/redo are preserved. |
+| [x] | 134c | Add CharacterStudio controls to create, save, load, apply, and update placement templates. | A template library reopens and can place instances; editor controls mark per-instance overrides explicitly. |
 | [ ] | 135 | Add project-wide reference validation for cells, doors, paths, actors, items, dialogue, and quests. | A deliberately broken fixture reports every known error with its owning file/record. |
 | [ ] | 136 | Add autosave/recovery for authored content, separate from player saves. | Interrupted editing can be recovered without replacing a valid player save or silently accepting invalid content. |
 
-**Gate:** author one small settlement, two interiors, an NPC route, and a quest through the tools without handwritten placement or reference wiring.
+**Gate: Pending.** CharacterStudio now edits quest objectives and placement templates. Project-wide validation, autosave/recovery, and authoring the complete settlement/interiors/route/quest without handwritten reference wiring remain.
 
 ## Stage 15 — Prove the intended RPG before enlarging it
 
@@ -359,14 +361,14 @@ The broad Stage 9–12 gates remain Pending. Remaining data-safety work includes
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 132 — CharacterStudio can author cell-local paths and branching RPG dialogue records with validated atomic content-pack saves.
-- First unchecked baseline task: 133 — add a quest objective/event-reference panel. Integration follow-up from the code review comes first.
-- Current checklist: 143 of 155 ordered rows complete (92.3%); task 133 is the first unchecked baseline row.
+- Last completed task: 134c — CharacterStudio can create and apply reusable RPG placement templates with explicit instance override flags.
+- First unchecked baseline task: 135 — add project-wide reference validation for the authored world and RPG content.
+- Current checklist: 147 of 157 ordered rows complete (93.6%); task 135 is the first unchecked baseline row.
 - Current gates: Release A and D passed; Release B and C remain Pending. Stages 9–12 remain Pending or unproven, the Stage 14 settlement-authoring gate is Pending, and Release E has no recorded status. Stage 13 passed again on the 3×3 blockout: the canonical ten-lap route and all provisional frame-time, activation, memory, and resource targets passed on the additional i7-13650HX validation host. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: RpgSlice now wires one scheduled NPC to authored cross-cell paths, merchant transactions to `Ember.Rpg`, and enemy perception/combat to engine physics and RPG AI. `SaveState` version 2 persists world time and NPC schedule state. The live gameplay smoke completes the worker's work trip and return.
-- Verification: see the 24–26 September 2026 follow-ups in `ENGINE_PROGRESS.md` for the 237-test Release suite, RpgSlice build, live door/persistence/RPG integration smokes, and Stage 13 benchmark. Full Stage 9–12 gates remain Pending.
-- Limits: RPG state is stored in a sidecar separate from the engine world save; the pair is not transactional. The broader Stage 9–12 acceptance checks remain open. Path following still uses a flat path preview and does not import scene collision geometry or handle slopes; direct mouse-driven authoring was not automated. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: continue with the first unchecked roadmap task, while scheduling the outstanding atomic world-save/restore and broader stage-gate checks before claiming the gates passed.
+- Latest changes: CharacterStudio now edits quest objectives and their typed event targets, and creates/saves/reloads/applies reusable RPG placement templates. Scene version 7 persists template IDs and explicit override masks; template updates preserve stable world-instance IDs and can be undone/redone. RpgSlice gameplay integrations from the previous batch remain in place.
+- Verification: `dotnet build Ember.sln --no-restore --nologo` passed with 0 warnings/errors; `dotnet test Ember.sln --no-restore --nologo` passed 239 tests; `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` passed. CharacterStudio Release build passed. See the 26 September 2026 progress entry for scoped checks.
+- Limits: The editor controls were compiled but could not be clicked through here because the desktop automation surface exposed no apps or native launch API. Project-wide validation and authored-content recovery are still pending. RPG state remains a non-transactional sidecar; broad Stage 9–12 gates remain Pending. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: implement task 135's project-wide validator, then task 136's authored-content autosave/recovery; keep the Stage 14 gate Pending until its full settlement authoring check passes.
 
 Suggested request to an implementing AI:
 

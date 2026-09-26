@@ -51,9 +51,11 @@ public sealed class SceneFileTests
         var scene = new SceneGraph();
         var objectId = Guid.NewGuid();
         var instanceId = Guid.NewGuid();
+        var templateId = Guid.NewGuid();
         scene.Add(new SceneObject(objectId, "Town Guard")
         {
-            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.town-guard", instanceId),
+            WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Actor, "actors.town-guard", instanceId,
+                templateId, PlacementTemplateOverrideFlags.Position | PlacementTemplateOverrideFlags.Scale),
             Transform = new Transform { Position = new Vector3(3f, 0f, 5f) }
         });
         var path = TemporaryPath();
@@ -63,10 +65,13 @@ public sealed class SceneFileTests
             var json = File.ReadAllText(path);
             var loaded = SceneFile.Load(path);
 
-            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 7", json, StringComparison.Ordinal);
             Assert.Equal(WorldEntityKind.Actor, loaded.Find(objectId)!.WorldEntity!.Kind);
             Assert.Equal("actors.town-guard", loaded.Find(objectId)!.WorldEntity!.DefinitionId);
             Assert.Equal(instanceId, loaded.Find(objectId)!.WorldEntity!.InstanceId);
+            Assert.Equal(templateId, loaded.Find(objectId)!.WorldEntity!.TemplateId);
+            Assert.Equal(PlacementTemplateOverrideFlags.Position | PlacementTemplateOverrideFlags.Scale,
+                loaded.Find(objectId)!.WorldEntity!.TemplateOverrides);
             Assert.Equal(new Vector3(3f, 0f, 5f), loaded.Find(objectId)!.Transform.Position);
         }
         finally
@@ -144,7 +149,7 @@ public sealed class SceneFileTests
             var loaded = SceneFile.Load(path);
             var lod = loaded.Find(objectId)!.StaticMeshLod!;
 
-            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 7", json, StringComparison.Ordinal);
             Assert.Equal(near.AssetId, lod.NearAsset.AssetId);
             Assert.Equal(near.SourcePath, lod.NearAsset.SourcePath);
             Assert.Equal(far.AssetId, lod.FarAsset.AssetId);
@@ -282,7 +287,7 @@ public sealed class SceneFileTests
             var first = loaded.Find(firstId)!.CharacterSettings!;
             var second = loaded.Find(secondId)!.CharacterSettings!;
 
-            Assert.Contains("\"Version\": 6", json, StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 7", json, StringComparison.Ordinal);
             Assert.Equal("Walk", first.ClipName);
             Assert.Equal(0.35f, first.Time);
             Assert.Equal(1.5f, first.Speed);
@@ -319,7 +324,7 @@ public sealed class SceneFileTests
 
             Assert.Null(loaded.Find(Guid.Parse("30303030-3030-3030-3030-303030303030"))!.CharacterSettings);
             SceneFile.SaveAtomic(loaded, path);
-            Assert.Contains("\"Version\": 6", File.ReadAllText(path), StringComparison.Ordinal);
+            Assert.Contains("\"Version\": 7", File.ReadAllText(path), StringComparison.Ordinal);
         }
         finally
         {
