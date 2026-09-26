@@ -28,6 +28,12 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _streamingSmokeRequested;
     private readonly bool _travelSmokeRequested;
     private readonly bool _persistenceSmokeRequested;
+    private readonly bool _transitionSoakRequested;
+    private readonly int _transitionSoakTarget;
+    private RpgSliceTransitionSoak? _transitionSoak;
+    private Stopwatch? _doorTravelTimer;
+    private float _transitionSoakSeconds;
+    private int _soakDoorCooldownFrames;
     private readonly bool _rpgIntegrationSmokeRequested;
     private readonly bool _questSmokeRequested;
     private readonly bool _settlementSmokeRequested;
@@ -102,13 +108,16 @@ public sealed class RpgSliceGame : EngineHost
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
         _travelSmokeRequested = HasArgument(args, "--travel-smoke");
         _persistenceSmokeRequested = HasArgument(args, "--persistence-smoke");
+        _transitionSoakRequested = HasArgument(args, "--transition-soak");
+        _transitionSoakTarget = int.TryParse(ParseOption(args, "--transitions"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetTransitions)
+            ? targetTransitions : RpgSliceTransitionSoak.DefaultTargetTransitions;
         _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
             + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
             + (_rpgIntegrationSmokeRequested ? 1 : 0) + (_questSmokeRequested ? 1 : 0)
             + (_settlementSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0)
-            + (_settlementBenchmarkRequested ? 1 : 0) > 1)
+            + (_settlementBenchmarkRequested ? 1 : 0) + (_transitionSoakRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
         var configuredSavePath = ParseOption(args, "--save");
         var smokeRequested = _persistenceSmokeRequested || _rpgIntegrationSmokeRequested || _questSmokeRequested
@@ -121,7 +130,7 @@ public sealed class RpgSliceGame : EngineHost
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Ember", "RpgSlice", "world-save.json"));
         _rpgSavePath = _worldSavePath + ".rpg.json";
-        if (_benchmarkRequested || _settlementBenchmarkRequested)
+        if (_benchmarkRequested || _settlementBenchmarkRequested || _transitionSoakRequested)
             _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
@@ -231,7 +240,10 @@ public sealed class RpgSliceGame : EngineHost
             _interiorOperation = _cellStreamer.LoadCell(initialCell.Id);
             _insideInterior = true;
         }
-        _player = new PhysicsCharacterController(_physics, initialLocation.Position);
+        var characterSettings = _transitionSoakRequested
+            ? new PhysicsCharacterSettings { MoveSpeed = 15f }
+            : null;
+        _player = new PhysicsCharacterController(_physics, initialLocation.Position, characterSettings);
         _renderPlayerPosition = _player.Pose.Position;
         _player.SetHorizontalMovementGate(initialCell.Kind == WorldCellKind.Exterior
             ? (current, proposed, clearance) => _collisionGate.Evaluate(current, proposed, clearance).CanMove
@@ -267,6 +279,11 @@ public sealed class RpgSliceGame : EngineHost
             _travelSmokePhase = TravelSmokePhase.ApproachExteriorDoor;
             Console.WriteLine("RpgSlice: door travel smoke started; walking to House A and using E at both doors.");
         }
+        else if (_transitionSoakRequested)
+        {
+            _transitionSoak = new RpgSliceTransitionSoak(_transitionSoakTarget);
+            Console.WriteLine($"RpgSlice: transition soak started; targeting {_transitionSoakTarget} interior/exterior transitions.");
+        }
         else if (_persistenceSmokeRequested)
         {
             if (loadedSave is not null)
@@ -289,14 +306,16 @@ public sealed class RpgSliceGame : EngineHost
                     _cellStreamer.Update(_player.Pose.Position);
                 if (_travel is not null)
                     AdvanceDoorTravel();
-                var keyboard = _travelSmokeRequested
-                    ? FindNearbyDoor() is not null ? new KeyboardState(Keys.E) : new KeyboardState()
+                if (_soakDoorCooldownFrames > 0)
+                    _soakDoorCooldownFrames--;
+                var keyboard = (_travelSmokeRequested || _transitionSoakRequested)
+                    ? FindNearbyDoor() is not null && _soakDoorCooldownFrames == 0 ? new KeyboardState(Keys.E) : new KeyboardState()
                     : _rpgIntegrationSmokeRequested ? new KeyboardState()
                     : _questSmokeRequested
                         ? _questSmoke!.CreateKeyboard(_player.Pose.Position, _camera, _rpgGameplay!)
                         : Keyboard.GetState();
                 var dt = RealSeconds(gameTime);
-                UpdateMovement(keyboard, dt, IsActive || _questSmokeRequested);
+                UpdateMovement(keyboard, dt, IsActive || _questSmokeRequested || _transitionSoakRequested);
                 if (_questSmokeRequested)
                 {
                     _questSmokeSeconds += dt;
@@ -306,6 +325,10 @@ public sealed class RpgSliceGame : EngineHost
                 {
                     _rpgIntegrationSmokeSeconds += dt;
                     _rpgIntegrationSmokeFrames++;
+                }
+                if (_transitionSoakRequested)
+                {
+                    _transitionSoakSeconds += dt;
                 }
                 if (_rpgIntegrationSmokeRequested && _rpgGameplay?.SmokeCompleted == true)
                 {
@@ -333,6 +356,10 @@ public sealed class RpgSliceGame : EngineHost
                 else if (_questSmokeRequested && _questSmokeSeconds > 90f)
                 {
                     throw new TimeoutException($"Quest smoke did not complete the Lost Delivery using normal player inputs within 90 seconds (elapsed={_questSmokeSeconds:F1}s, frames={_questSmokeFrames}).");
+                }
+                else if (_transitionSoakRequested && _transitionSoakSeconds > 300f)
+                {
+                    throw new TimeoutException($"Transition soak did not complete {_transitionSoakTarget} transitions within 300 seconds (completed={_transitionSoak?.CompletedTransitions ?? 0}, elapsed={_transitionSoakSeconds:F1}s).");
                 }
             }
             else if (_streamingSmoke.Tick())
@@ -401,11 +428,11 @@ public sealed class RpgSliceGame : EngineHost
             _player.RequestJump();
 
         var moveDirection = _camera.MoveDirection(input.ReadMovement());
-        if (_travelSmokeRequested && _travel is null
-            && _travelSmokePhase is TravelSmokePhase.ApproachExteriorDoor or TravelSmokePhase.ApproachInteriorDoor)
+        if ((_travelSmokeRequested || _transitionSoakRequested) && _travel is null
+            && (_travelSmokePhase is TravelSmokePhase.ApproachExteriorDoor or TravelSmokePhase.ApproachInteriorDoor || _transitionSoakRequested))
         {
             var targetDoor = FindSmokeTargetDoor()
-                ?? throw new InvalidOperationException("Travel smoke lost its target door.");
+                ?? throw new InvalidOperationException("Target door not found for smoke or transition soak.");
             var targetTransform = GetCurrentActiveCell().Scene.GetWorldMatrix(targetDoor.Id)
                 * GetCurrentActiveCell().WorldTransform;
             moveDirection = new Vector3(targetTransform.M41 - _player.Pose.Position.X, 0f,
@@ -481,6 +508,10 @@ public sealed class RpgSliceGame : EngineHost
             Window.Title = $"RPG Slice — {runningBenchmark.ProgressLabel}, leg {runningBenchmark.CurrentLeg}/{runningBenchmark.LegCount}, "
                 + $"target ({runningBenchmark.CurrentTarget.X:0}, {runningBenchmark.CurrentTarget.Y:0})";
         }
+        else if (_transitionSoak is { IsComplete: false } runningSoak)
+        {
+            Window.Title = $"RPG Slice — Transition soak {runningSoak.CompletedTransitions}/{runningSoak.TargetTransitions}, elapsed {runningSoak.TotalElapsedSeconds:F1}s";
+        }
         else if (_travel is { } travel)
         {
             Window.Title = travel.State == WorldCellTravelState.DestinationReady
@@ -554,6 +585,7 @@ public sealed class RpgSliceGame : EngineHost
             _cellStreamer.PrepareCellAsync,
             _cellStreamer.ActivatePreparedCell,
             PlacePlayerAtSpawn);
+        _doorTravelTimer = Stopwatch.StartNew();
         if (_travelSmokeRequested)
         {
             _travelSmokePhase = _insideInterior
@@ -580,8 +612,8 @@ public sealed class RpgSliceGame : EngineHost
         _travel = null;
         _travelDestination = null;
         Console.WriteLine($"RpgSlice: door travel failed: {failure}");
-        if (_travelSmokeRequested)
-            throw new InvalidOperationException("Door travel smoke failed.", failure);
+        if (_travelSmokeRequested || _transitionSoakRequested)
+            throw new InvalidOperationException("Door travel failed during smoke or soak.", failure);
     }
 
     private void CompleteDoorTravel(
@@ -624,6 +656,50 @@ public sealed class RpgSliceGame : EngineHost
         _travel = null;
         _travelDestination = null;
 
+        if (_transitionSoakRequested && _transitionSoak is not null)
+        {
+            _doorTravelTimer?.Stop();
+            var duration = _doorTravelTimer?.Elapsed.TotalSeconds ?? 0d;
+            var fromCellName = destination.Kind == WorldCellKind.Interior ? "Exterior (0, 0)" : "House A Interior";
+            var toCellName = destination.Kind == WorldCellKind.Interior ? "House A Interior" : "Exterior (0, 0)";
+            var activeCells = _insideInterior ? 1 : _cellStreamer.ActiveCellCount;
+            var terrainChunks = _insideInterior ? 0 : _terrain.CachedChunkCount;
+            var trackedResources = 2 + terrainChunks + 4
+                + (_foliageInstancer?.OwnedGraphicsResourceCount ?? 0)
+                + _staticAssets.OwnedGraphicsResourceCount;
+            long workingSet;
+            using (var process = Process.GetCurrentProcess())
+                workingSet = process.WorkingSet64;
+
+            _transitionSoak.RecordTransition(fromCellName, toCellName, duration,
+                activeCells, terrainChunks, trackedResources, workingSet);
+
+            _soakDoorCooldownFrames = 4;
+
+            Console.WriteLine($"RpgSlice: transition {_transitionSoak.CompletedTransitions}/{_transitionSoak.TargetTransitions} ({fromCellName} -> {toCellName}) completed in {duration * 1000d:F1}ms (WS: {workingSet / (1024d * 1024d):F1} MiB, Active: {activeCells}, Chunks: {terrainChunks})");
+
+            if (_transitionSoak.IsComplete)
+            {
+                var report = _transitionSoak.BuildReport(GraphicsDevice.Adapter.Description,
+                    GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
+                var tempPath = Path.Combine(Path.GetTempPath(), "ember-rpgslice-transition-soak.txt");
+                File.WriteAllText(tempPath, report, Encoding.UTF8);
+
+                var repoDocs = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Docs", "TRANSITION_SOAK.md"));
+                if (Directory.Exists(Path.GetDirectoryName(repoDocs)))
+                {
+                    File.WriteAllText(repoDocs, report, Encoding.UTF8);
+                    Console.WriteLine($"RpgSlice: transition soak report written to {repoDocs}");
+                }
+
+                Console.WriteLine(report);
+                Console.WriteLine($"RpgSlice: transition soak report saved to {tempPath}");
+                _smokeRan = true;
+                Exit();
+                return;
+            }
+        }
+
         if (!_travelSmokeRequested) return;
         if (_travelSmokePhase == TravelSmokePhase.Entering)
         {
@@ -647,7 +723,10 @@ public sealed class RpgSliceGame : EngineHost
 
     private void PlacePlayerAtSpawn(WorldSpawnLocation spawn)
     {
-        var nextPlayer = new PhysicsCharacterController(_physics, spawn.Position);
+        var characterSettings = _transitionSoakRequested
+            ? new PhysicsCharacterSettings { MoveSpeed = 15f }
+            : null;
+        var nextPlayer = new PhysicsCharacterController(_physics, spawn.Position, characterSettings);
         _player.Dispose();
         _player = nextPlayer;
         _playerFacing = spawn.Facing;
@@ -725,19 +804,70 @@ public sealed class RpgSliceGame : EngineHost
                 Scale = marker.Transform.Scale
             });
             _worldPersistence.SetEnabled(_currentCellId, marker, true);
-            var runtime = _worldPersistence.Spawn(_currentCellId, exterior.Scene,
-                new SceneObject(Guid.NewGuid(), "Persistence Smoke Gem")
-                {
-                    Transform = new Transform { Position = new Vector3(19f, 1f, 20f) }
-                });
 
+            // Action 1: Drop item
+            var appleId = new ContentId<ItemContentKind>("item.rpgslice.apple");
+            var appleDef = new ItemDef(appleId, "Apple", null, stackable: true);
+            var itemCatalogue = new ItemCatalogue();
+            itemCatalogue.Add(appleDef);
+            var playerBag = new Bag();
+            playerBag.Add(appleDef, 3);
+            var worldItems = new WorldItemStore();
+
+            var dropObject = new SceneObject(Guid.NewGuid(), "Persistence Smoke Dropped Apple")
+            {
+                Transform = new Transform { Position = new Vector3(19f, 0.8f, 20f) }
+            };
+            var droppedItem = _worldPersistence.Spawn(_currentCellId, exterior.Scene, dropObject);
+            if (!InventoryTransfer.TryDrop(droppedItem.InstanceId.Value, playerBag, worldItems, itemCatalogue, appleId, 1, out playerBag, out worldItems))
+                throw new InvalidOperationException("Persistence smoke could not drop item.");
+
+            // Action 2: Loot container
+            var containerObject = new SceneObject(Guid.NewGuid(), "Persistence Smoke Container")
+            {
+                Transform = new Transform { Position = new Vector3(20f, 0.8f, 20f) }
+            };
+            var containerItem = _worldPersistence.Spawn(_currentCellId, exterior.Scene, containerObject);
+            var initialContainerBag = new Bag();
+            initialContainerBag.Add(appleDef, 2);
+            var containers = new ContainerInventoryStore().SetContents(containerItem.InstanceId.Value, initialContainerBag);
+            if (!InventoryTransfer.TryMove(containers.GetContents(containerItem.InstanceId.Value)!, playerBag, itemCatalogue, appleId, 2, out var emptiedContainerBag, out playerBag))
+                throw new InvalidOperationException("Persistence smoke could not loot container.");
+            containers = containers.SetContents(containerItem.InstanceId.Value, emptiedContainerBag);
+
+            // Action 3: Kill enemy
+            var enemyId = new ContentId<ActorContentKind>("actor.rpgslice.raider");
+            var enemyObject = new SceneObject(Guid.NewGuid(), "Persistence Smoke Enemy")
+            {
+                Transform = new Transform { Position = new Vector3(21f, 1f, 21f) }
+            };
+            var enemyItem = _worldPersistence.Spawn(_currentCellId, exterior.Scene, enemyObject);
+            var spawnedEnemy = exterior.Scene.Find(enemyItem.SceneObjectId)!;
+            var actorStates = new ActorRuntimeStore().Set(new ActorRuntimeState(enemyItem.InstanceId.Value, enemyId, 0));
+            _worldPersistence.SetEnabled(_currentCellId, spawnedEnemy, false);
+
+            // Action 4: Move follower across cells
+            var neighborCell = _world.Cells.FirstOrDefault(c => c.Kind == WorldCellKind.Exterior && c.Id != _currentCellId)
+                ?? throw new InvalidOperationException("Persistence smoke requires an adjacent exterior cell.");
+            var neighborScene = SceneFile.Load(_world.ResolveScenePath(neighborCell.Id));
+            var followerObject = new SceneObject(Guid.NewGuid(), "Persistence Smoke Follower")
+            {
+                Transform = new Transform { Position = new Vector3(17f, 1f, 17f) }
+            };
+            var follower = _worldPersistence.Spawn(_currentCellId, exterior.Scene, followerObject);
+            var followerDestination = new Transform { Position = new Vector3(8f, 1f, 12f) };
+            _worldPersistence.Transfer(_currentCellId, neighborCell.Id, follower.InstanceId, exterior.Scene, neighborScene, followerDestination);
+
+            // Action 5: Enter interior
             var entryDoor = exterior.Scene.Objects.FirstOrDefault(item => item.Name == "Door to House A")
                 ?? throw new InvalidDataException("Persistence smoke needs the authored House A door.");
             var interiorScene = SceneFile.Load(_world.ResolveScenePath(entryDoor.Door!.DestinationCellId));
             var destinationSpawn = WorldTravelValidator.ResolveDestination(_world,
                 new Dictionary<Guid, SceneGraph> { [entryDoor.Door.DestinationCellId] = interiorScene }, entryDoor.Door);
-            _worldPersistence.RequestSave(_worldSavePath,
-                () => new WorldPlayerLocation(destinationSpawn.CellId, destinationSpawn.Position, destinationSpawn.Facing));
+            var playerLocation = new WorldPlayerLocation(destinationSpawn.CellId, destinationSpawn.Position, destinationSpawn.Facing);
+
+            // Action 6: Save and Restart
+            _worldPersistence.RequestSave(_worldSavePath, () => playerLocation);
             if (!_worldPersistence.ProcessStableBoundary(travelInProgress: false))
                 throw new InvalidOperationException("Persistence smoke save was not processed at the stable boundary.");
             if (!_worldPersistence.TryDequeueSaveResult(out var writeResult))
@@ -745,10 +875,23 @@ public sealed class RpgSliceGame : EngineHost
             if (writeResult.Failure is not null)
                 throw new InvalidOperationException($"Persistence smoke could not save: {writeResult.Failure}");
 
+            var rpgSave = new SaveState
+            {
+                Player = new PlayerRecord { Bag = playerBag },
+                ContainerInventories = containers,
+                WorldItems = worldItems,
+                ActorStates = actorStates,
+                ItemDefs = itemCatalogue
+            };
+            File.WriteAllText(_rpgSavePath, rpgSave.ToJson());
+
+            // Restart verification
             var snapshot = WorldSaveFile.Load(_worldSavePath, _world);
             if (snapshot.PlayerLocation.CellId != destinationSpawn.CellId)
                 throw new InvalidOperationException("Queued persistence smoke save did not capture the committed interior location.");
+            var restartedRpg = SaveState.FromJson(File.ReadAllText(_rpgSavePath));
             var restarted = new WorldPersistenceSession(_world, snapshot);
+
             using var verificationPhysics = new PhysicsWorld();
             var verificationGate = new ExteriorCellCollisionGate(_world);
             using var verificationStreamer = new RpgSliceCellStreamer(_world, verificationPhysics,
@@ -760,18 +903,51 @@ public sealed class RpgSliceGame : EngineHost
             if (!verificationStreamer.TryGetActiveCell(exteriorCell.Id, out _, out var restoredExterior)
                 || restoredExterior is null)
                 throw new InvalidOperationException("Persistence smoke did not reload the exterior cell.");
-            var restoredMarker = restoredExterior.Scene.Find(marker.Id)
-                ?? throw new InvalidOperationException("Saved authored marker disappeared after restart.");
-            if (!restoredMarker.Enabled || restoredMarker.Transform.Position != marker.Transform.Position)
-                throw new InvalidOperationException("Authored transform/enabled changes did not survive restart.");
-            var restoredRuntime = restoredExterior.Scene.Objects
-                .Where(item => item.Name == "Persistence Smoke Gem").ToArray();
-            if (restoredRuntime.Length != 1
-                || !restarted.Identities.TryGet(exteriorCell.Id, runtime.SceneObjectId, out var restoredRuntimeId)
-                || restoredRuntimeId != runtime.InstanceId
-                || restoredRuntimeId == restarted.Identities.GetOrCreate(exteriorCell.Id, restoredMarker))
-                throw new InvalidOperationException("Runtime object identity did not survive restart exactly once.");
 
+            // Verify Action 1: Dropped item
+            var restoredDrop = restoredExterior.Scene.Find(droppedItem.SceneObjectId);
+            if (restoredDrop is null)
+                throw new InvalidOperationException("Dropped item disappeared after restart.");
+            if (!restartedRpg.WorldItems.TryGet(droppedItem.InstanceId.Value, out var restoredDropStack) || restoredDropStack.Count != 1)
+                throw new InvalidOperationException("Dropped item was not restored in RPG WorldItems.");
+            if (restartedRpg.Player.Bag.Count(appleId) != 4) // 3 starting - 1 dropped + 2 looted = 4
+                throw new InvalidOperationException("Player bag does not reflect dropped and looted items.");
+
+            // Verify Action 2: Looted container
+            var restoredContainer = restoredExterior.Scene.Find(containerItem.SceneObjectId);
+            if (restoredContainer is null)
+                throw new InvalidOperationException("Container disappeared after restart.");
+            var restoredContainerBag = restartedRpg.ContainerInventories.GetContents(containerItem.InstanceId.Value);
+            if (restoredContainerBag is null || restoredContainerBag.Count(appleId) != 0)
+                throw new InvalidOperationException("Looted container was not emptied after restart.");
+
+            // Verify Action 3: Killed enemy
+            var restoredEnemy = restoredExterior.Scene.Find(enemyItem.SceneObjectId);
+            if (restoredEnemy is null || restoredEnemy.Enabled)
+                throw new InvalidOperationException("Killed enemy was not restored as disabled.");
+            if (!restartedRpg.ActorStates.TryGet(enemyItem.InstanceId.Value, out var restoredEnemyState) || !restoredEnemyState.IsDead || restoredEnemyState.CurrentHealth != 0)
+                throw new InvalidOperationException("Killed enemy state was not restored as dead.");
+
+            // Verify Action 4: Moved follower across cells
+            if (restoredExterior.Scene.Find(follower.SceneObjectId) is not null)
+                throw new InvalidOperationException("Moved follower still exists in source cell.");
+            var reloadedNeighbor = verificationStreamer.LoadCell(neighborCell.Id);
+            try
+            {
+                var reloadedNeighborScene = reloadedNeighbor.ActiveResources?.Scene
+                    ?? throw new InvalidOperationException("Could not load neighbor cell scene.");
+                var restoredFollower = reloadedNeighborScene.Find(follower.SceneObjectId);
+                if (restoredFollower is null)
+                    throw new InvalidOperationException("Moved follower was not found in destination cell.");
+                if (Vector3.Distance(restoredFollower.Transform.Position, followerDestination.Position) > 0.01f)
+                    throw new InvalidOperationException("Moved follower transform position did not match destination.");
+            }
+            finally
+            {
+                reloadedNeighbor.Unload();
+            }
+
+            // Verify Action 5: Enter interior
             var restoredInterior = verificationStreamer.LoadCell(destinationSpawn.CellId);
             try
             {
@@ -789,7 +965,18 @@ public sealed class RpgSliceGame : EngineHost
                 restoredInterior.Unload();
             }
 
-            Console.WriteLine("RpgSlice: world persistence smoke passed (authored changes, runtime identity, interior player location, restart reload).");
+            // Verify exactly-once persistence
+            var exportedRuntimes = restarted.RuntimeObjects.ExportSnapshot();
+            if (exportedRuntimes.Count(r => r.InstanceId == follower.InstanceId) != 1)
+                throw new InvalidOperationException("Follower does not exist exactly once in runtime store.");
+            if (exportedRuntimes.Count(r => r.InstanceId == droppedItem.InstanceId) != 1)
+                throw new InvalidOperationException("Dropped item does not exist exactly once in runtime store.");
+            if (exportedRuntimes.Count(r => r.InstanceId == containerItem.InstanceId) != 1)
+                throw new InvalidOperationException("Container does not exist exactly once in runtime store.");
+            if (exportedRuntimes.Count(r => r.InstanceId == enemyItem.InstanceId) != 1)
+                throw new InvalidOperationException("Enemy does not exist exactly once in runtime store.");
+
+            Console.WriteLine("RpgSlice: world persistence smoke passed (repeatable scenario: drop item, loot container, kill enemy, move follower across cells, enter interior, save/restart, verified exactly-once).");
         }
         finally
         {

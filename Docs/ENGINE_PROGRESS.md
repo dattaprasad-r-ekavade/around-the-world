@@ -1443,3 +1443,37 @@ Limit: the courtyard GLB is linked into the RpgSlice build output. A `--world` p
 | RpgSlice `--travel-smoke --windowed` | PASS — exterior to House A and back through authored doors |
 | RpgSlice `--persistence-smoke --windowed` | PASS — authored change, runtime identity, interior player location, and restart reload |
 | RpgSlice `--quest-smoke --windowed` | PASS — complete Lost Delivery quest played through E/1/F/F5; quest completion, dead raider, apple inventory, and satchel tombstone verified on restart |
+
+## Tasks 139–141 — repeatable persistence, failure recovery, and transition soak — 27 September 2026
+
+- **Task 139 (repeatable persistence scenario across cells):**
+  - Added atomic runtime instance transfer (`Transfer`), deletion tombstones (`MarkDeleted`), and deletion queries (`IsDeleted`) to `WorldPersistenceSession`.
+  - Authored headless unit test `tests/Ember.Engine.Tests/WorldPersistenceScenarioTests.cs` executing the full 6-action sequence: drop item in Exterior A, loot container in Exterior A, kill enemy in Exterior A, move follower across cell boundary into Exterior B, enter House A interior, write world save, simulate full restart, and reload. Asserted that every resulting state is correct and each persistent instance exists exactly once (no duplicates, no resurrection of killed enemies, no reappearance of looted items, correct cell ownership).
+  - Updated `--persistence-smoke` in `samples/RpgSlice/RpgSliceGame.cs` to execute the full 6-action scenario in the live game. Verified: `dotnet exec samples/RpgSlice/bin/Debug/net9.0-windows/win-x64/RpgSlice.dll --persistence-smoke --windowed` exits 0 with exact-once persistence verification.
+
+- **Task 140 (repeated travel/save/load with delayed or failed asset reads):**
+  - Created `tests/Ember.Engine.Tests/WorldTravelPersistenceFailureTests.cs` covering two comprehensive failure recovery scenarios:
+    1. `RepeatedTravelSaveLoad_WithDelayedAndFailedReads_RecoversWithoutDuplicateActorsOrLostItems`: Runs 5 repeated travel/save/load cycles with simulated asset read delays and `IOException` failures during travel preparation. Verifies that transactions fail cleanly, leaving source cells playable, and subsequent retry recovers successfully. Verifies that save failures (e.g. blocked save paths) preserve existing valid saves, corrupt saves throw actionable `InvalidDataException`, and actors and items maintain exactly-once identities without duplicates or loss.
+    2. `RepeatedStreaming_WithDelayedAndFailedReads_RecoversWithoutOrphanedObjectsOrDuplicateIdentities`: Runs cell streamer lifecycle under transient delays and read failures with exponential backoff retry, verifying clean activation and zero orphaned instances.
+
+- **Task 141 (documented route with at least 50 interior/exterior transitions):**
+  - Fixed roadmap review finding 572: added calls to `StoneTextures.Clear()`, `PropTextures.Clear()`, `ItemSprites.Clear()`, and `CharacterSprites.Clear()` in `src/Ember.Engine/Engine/EngineHost.cs` (`DisposeHost()`).
+  - Authored headless unit test `tests/Ember.Engine.Tests/WorldTransitionSoakTests.cs` executing 50 repeated interior/exterior transitions through `WorldCellTravelTransaction`, asserting single-cell active lifecycle, clean unloading, and zero errors.
+  - Authored `samples/RpgSlice/RpgSliceTransitionSoak.cs` to measure per-transition latency, active cells, terrain chunks, graphics resources, working set, and managed heap allocations, and generate structured markdown reports.
+  - Implemented automated transition soak in `samples/RpgSlice/RpgSliceGame.cs` (`--transition-soak`, `--transitions 50`), steering the player back and forth between Exterior (0, 0) and House A Interior, timing door travel, recording resource metrics, and outputting to `Docs/TRANSITION_SOAK.md`.
+  - Executed 50 live transitions: completed in 29.7 seconds with average latency 1.0 ms (max 8.1 ms), peak working set 164.0 MiB, post-warmup delta +0.5 MiB (162.0 MiB to 162.4 MiB), stable exterior resources (9 cells, 12 chunks, 22 gfx resources), stable interior resources (1 cell, 0 chunks, 10 gfx resources), 0 accumulated errors.
+  - The ordered checklist is now 166/169 (98.2%); task 142 is first unchecked. Broader Stage 9–12 and Release gates are unchanged.
+
+### Verification checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors across all projects |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --no-build --nologo` | PASS — 252 passed, 0 failed, 0 skipped |
+| `dotnet exec tests/Ember.Rpg.Check/bin/Debug/net9.0/Ember.Rpg.Check.dll` | PASS — save then load equals original |
+| RpgSlice `--persistence-smoke --windowed` | PASS — full 6-action persistence scenario (drop item, loot container, kill enemy, follower cell move, interior travel, save/restart) verified exactly-once |
+| RpgSlice `--transition-soak --transitions 50 --windowed` | PASS — 50 transitions completed, avg 1.0 ms, Δ post-warmup WS +0.5 MiB (stable), 0 errors; report saved to `Docs/TRANSITION_SOAK.md` |
+| RpgSlice `--travel-smoke --windowed` | PASS — exterior to House A and back through authored doors |
+| RpgSlice `--quest-smoke --windowed` | PASS — complete Lost Delivery quest played and verified on restart |
+| RpgSlice `--settlement-smoke --windowed` | PASS — settlement world validates, GLB mesh colliders activate, live NPC roles verified |
+| RpgSlice `--rpg-integration-smoke --windowed` | PASS — scheduled worker travels between cells, merchant trades pass, perception/AI decisions pass |

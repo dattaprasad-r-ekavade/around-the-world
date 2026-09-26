@@ -82,6 +82,33 @@ public sealed class WorldPersistenceSession
         return RuntimeObjects.Spawn(cellId, activeScene, definition, Identities);
     }
 
+    /// <summary>Atomically transfers a runtime object between cells, updating its scene parent and world store.</summary>
+    public WorldRuntimeObjectIdentity Transfer(Guid sourceCellId, Guid destinationCellId,
+        WorldInstanceId instanceId, SceneGraph sourceScene, SceneGraph destinationScene,
+        Transform destinationTransform)
+    {
+        EnsureOwnerThread();
+        EnsureCellExists(sourceCellId);
+        EnsureCellExists(destinationCellId);
+        return RuntimeObjects.Transfer(sourceCellId, destinationCellId, instanceId,
+            sourceScene, destinationScene, Identities, destinationTransform);
+    }
+
+    /// <summary>Records a persistent deletion tombstone for an authored or runtime object.</summary>
+    public void MarkDeleted(Guid cellId, WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        EnsureCellExists(cellId);
+        Changes.MarkDeleted(cellId, instanceId);
+    }
+
+    public bool IsDeleted(Guid cellId, WorldInstanceId instanceId)
+    {
+        EnsureOwnerThread();
+        EnsureCellExists(cellId);
+        return Changes.IsDeleted(cellId, instanceId);
+    }
+
     public WorldSaveSnapshot Capture(WorldPlayerLocation playerLocation)
     {
         EnsureOwnerThread();

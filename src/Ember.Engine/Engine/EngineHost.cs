@@ -1,4 +1,4 @@
-﻿using FontStashSharp;
+using FontStashSharp;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -278,6 +278,19 @@ public abstract class EngineHost : Game
         DisposeOne(_headingFontSystem, errors);
         DisposeOne(_white, errors);
         DisposeOne(_spriteBatch, errors);
+
+        try
+        {
+            Ember.Render.CharacterSprites.Clear();
+            Ember.Render.ItemSprites.Clear();
+            Ember.Render.PropTextures.Clear();
+            Ember.Render.StoneTextures.Clear();
+        }
+        catch (Exception exception)
+        {
+            errors.Add(exception);
+        }
+
         if (errors.Count > 0)
             throw new AggregateException("One or more Ember host resources failed to dispose.", errors);
     }
