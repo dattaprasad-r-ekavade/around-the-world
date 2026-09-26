@@ -24,6 +24,16 @@ internal sealed class RpgSliceGameplayIntegration
     private static readonly ContentId<ActorContentKind> WorkerActorId = new("actor.rpgslice.worker");
     private static readonly ContentId<ActorContentKind> MerchantActorId = new("actor.rpgslice.merchant");
     private static readonly ContentId<ActorContentKind> EnemyActorId = new("actor.rpgslice.raider");
+    private static readonly ContentId<QuestContentKind> LostDeliveryQuestId = new("quest.rpgslice.lost_delivery");
+    private static readonly Guid LostDeliveryNoticeInstanceId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07a14");
+    private static readonly Guid LostDeliveryRaiderInstanceId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07a12");
+    private static readonly Guid LostDeliverySatchelInstanceId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07a13");
+    private static readonly Guid NoticeInspectedEventId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07e01");
+    private static readonly Guid RaiderDefeatedEventId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07e02");
+    private static readonly Guid SatchelCollectedEventId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07e03");
+    private const string NoticeStageId = "read_road_notice";
+    private const string RaiderStageId = "defeat_raider";
+    private const string SatchelStageId = "recover_apples";
     private const double WorkStartSeconds = 6 * 60 * 60;
     private const double WorkEndSeconds = 18 * 60 * 60;
     private const float WorkerMoveSpeed = 3.2f;
@@ -44,6 +54,8 @@ internal sealed class RpgSliceGameplayIntegration
     private readonly ActorDef _workerDefinition;
     private readonly ActorDef _merchantDefinition;
     private readonly ActorDef _enemyDefinition;
+    private readonly QuestDef _lostDeliveryQuest;
+    private readonly DialogueTree _lostDeliveryDialogue;
 
     private SaveState _save;
     private WorldClock _clock;
@@ -69,6 +81,9 @@ internal sealed class RpgSliceGameplayIntegration
     private Guid _enemySceneObjectId;
     private WorldInstanceId _enemyInstanceId;
     private SceneObject? _enemyObject;
+    private Guid _noticeCellId;
+    private SceneObject? _noticeObject;
+    private SceneObject? _satchelObject;
     private EnemyCombatAiMemory _enemyMemory = new();
     private bool _initialized;
     private bool _smokeDepartedForWork;
@@ -93,11 +108,36 @@ internal sealed class RpgSliceGameplayIntegration
         _workerDefinition = GetActor(WorkerActorId);
         _merchantDefinition = GetActor(MerchantActorId);
         _enemyDefinition = GetActor(EnemyActorId);
+        _lostDeliveryQuest = _content.Quests.Get(LostDeliveryQuestId)
+            ?? throw new InvalidDataException($"RPG content pack does not define required quest '{LostDeliveryQuestId.Value}'.");
+        _lostDeliveryDialogue = _content.Dialogues.SingleOrDefault(dialogue => dialogue.Id == _lostDeliveryQuest.StartDialogueId)
+            ?? throw new InvalidDataException($"RPG quest '{LostDeliveryQuestId.Value}' has no start dialogue.");
     }
 
     public bool IsInitialized => _initialized;
     public bool SmokeCompleted => _smokeCompleted;
     public string? LastStatus => _lastStatus;
+    public QuestStatus LostDeliveryStatus => _lostDeliveryQuest.StatusIn(_save.Flags);
+    public QuestStage? LostDeliveryStage => _lostDeliveryQuest.StageIn(_save.Flags);
+    public bool HasOpenDialogue => CurrentDialogueNode is not null;
+    public DialogueNode? CurrentDialogueNode
+    {
+        get
+        {
+            if (_save.Dialogue.Tree != _lostDeliveryDialogue.Id || _save.Dialogue.Node is not { } nodeId)
+                return null;
+            return _lostDeliveryDialogue.Node(nodeId);
+        }
+    }
+    public IReadOnlyList<DialogueOption> CurrentDialogueOptions => CurrentDialogueNode is { } node
+        ? _lostDeliveryDialogue.Available(node.Id, _save.Flags)
+        : Array.Empty<DialogueOption>();
+    public string LostDeliveryJournal => LostDeliveryStatus switch
+    {
+        QuestStatus.NotStarted => "Talk to the market keeper about the missing delivery.",
+        QuestStatus.Complete => "The Lost Delivery — complete.",
+        _ => LostDeliveryStage?.Journal ?? "The Lost Delivery — active."
+    };
     public IReadOnlyList<(Guid CellId, Guid SceneObjectId, Guid InstanceId)> LiveActorInstances => !_initialized
         ? Array.Empty<(Guid, Guid, Guid)>()
         : new[]
@@ -200,6 +240,128 @@ internal sealed class RpgSliceGameplayIntegration
         return true;
     }
 
+    public bool TryInteractAt(Guid playerCellId, Vector3 playerPosition, out string message)
+    {
+        message = string.Empty;
+        if (!_initialized || HasOpenDialogue) return false;
+
+        if (playerCellId == _merchantCellId && _merchantObject is not null
+            && Vector3.Distance(playerPosition, GetWorldPosition(_merchantCellId, _merchantObject)) <= 4.5f)
+        {
+            if (LostDeliveryStatus != QuestStatus.NotStarted)
+            {
+                message = LostDeliveryStatus == QuestStatus.Complete
+                    ? "The market keeper thanks you for recovering the delivery."
+                    : LostDeliveryStage?.Journal ?? "The Lost Delivery is underway.";
+            }
+            else
+            {
+                _save.Dialogue.Tree = _lostDeliveryDialogue.Id;
+                _save.Dialogue.Node = _lostDeliveryDialogue.Nodes[0].Id;
+                message = _lostDeliveryDialogue.Nodes[0].Text;
+            }
+            _lastStatus = message;
+            return true;
+        }
+
+        if (playerCellId == _noticeCellId && _noticeObject is not null
+            && Vector3.Distance(playerPosition, GetWorldPosition(_noticeCellId, _noticeObject)) <= 2.8f)
+        {
+            if (LostDeliveryStage?.Id == NoticeStageId)
+            {
+                var applied = QuestEventSystem.Apply(_content.Quests, _save.Flags, new QuestEvent
+                {
+                    EventId = NoticeInspectedEventId,
+                    Kind = QuestEventKind.Interaction,
+                    WorldInstanceId = LostDeliveryNoticeInstanceId
+                });
+                if (applied != 1)
+                    throw new InvalidOperationException("Reading the authored delivery notice did not advance its active quest stage.");
+                TryCompleteDefeatedRaiderObjective();
+                message = "You read the delivery notice.";
+            }
+            else
+            {
+                message = LostDeliveryStatus == QuestStatus.NotStarted
+                    ? "The notice lists a missing delivery. Speak with the market keeper."
+                    : "The notice has no new information for your current objective.";
+            }
+            _lastStatus = message;
+            return true;
+        }
+
+        if (playerCellId == _homeCellId && _satchelObject is not null
+            && Vector3.Distance(playerPosition, GetWorldPosition(_homeCellId, _satchelObject)) <= 2.8f)
+        {
+            if (LostDeliveryStage?.Id != SatchelStageId)
+            {
+                message = "The supply satchel is still guarded by the road raider.";
+                _lastStatus = message;
+                return true;
+            }
+
+            if (!_save.WorldItems.TryGet(LostDeliverySatchelInstanceId, out var satchel)
+                || satchel.ItemId != AppleId)
+                throw new InvalidDataException("The authored supply satchel is missing its persistent apple stack.");
+            if (!InventoryTransfer.TryPickup(LostDeliverySatchelInstanceId, _save.Player.Bag,
+                _save.WorldItems, _save.ItemDefs, out var playerBag, out var remainingWorldItems))
+            {
+                message = "The supply satchel could not be collected.";
+                _lastStatus = message;
+                return true;
+            }
+            if (!TryGetActive(_homeCellId, out _, out var homeActive)
+                || homeActive is null || !homeActive.Scene.Remove(_satchelObject.Id))
+                throw new InvalidOperationException("The collected supply satchel was not present in its active cell.");
+
+            _persistence.Changes.MarkDeleted(_homeCellId,
+                new WorldInstanceId(LostDeliverySatchelInstanceId));
+            _satchelObject = null;
+            _save = _save with
+            {
+                Player = _save.Player with { Bag = playerBag },
+                WorldItems = remainingWorldItems
+            };
+            var collected = QuestEventSystem.Apply(_content.Quests, _save.Flags, new QuestEvent
+            {
+                EventId = SatchelCollectedEventId,
+                Kind = QuestEventKind.ItemCollected,
+                WorldInstanceId = LostDeliverySatchelInstanceId,
+                ItemId = AppleId
+            });
+            if (collected != 1)
+                throw new InvalidOperationException("Collecting the supply satchel did not advance its active quest stage.");
+            message = "Recovered the apples from the raider's satchel.";
+            _lastStatus = message;
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool TrySelectDialogueOption(int optionIndex, out string message)
+    {
+        message = string.Empty;
+        var node = CurrentDialogueNode;
+        var options = CurrentDialogueOptions;
+        if (node is null || (uint)optionIndex >= (uint)options.Count) return false;
+
+        var dialogueContext = new DialogueContext(_save.Flags, _playerDefinition.Stats);
+        _lostDeliveryDialogue.Pick(_save.Dialogue, dialogueContext, options[optionIndex]);
+        if (options[optionIndex].Id == "accept")
+        {
+            if (!_save.Flags.GetBool(_lostDeliveryQuest.StartFlag()))
+                throw new InvalidOperationException("Accepting the delivery quest did not set its start flag.");
+            message = "Quest started: " + (_lostDeliveryQuest.StageIn(_save.Flags)?.Journal ?? _lostDeliveryQuest.Title);
+        }
+        else
+        {
+            message = CurrentDialogueNode?.Text ?? "Conversation ended.";
+        }
+        _lastStatus = message;
+        return true;
+    }
+
     public bool TryPlayerAttack(Guid playerCellId, Vector3 playerPosition, out string message)
     {
         message = string.Empty;
@@ -224,24 +386,92 @@ internal sealed class RpgSliceGameplayIntegration
             {
                 ActorStates = _save.ActorStates.Set(nextPlayer).Set(nextEnemy)
             };
-            message = nextEnemy.IsDead ? "Raider defeated" : "Hit raider";
+            if (!enemy.IsDead && nextEnemy.IsDead)
+            {
+                TryCompleteDefeatedRaiderObjective();
+                message = "Raider defeated";
+            }
+            else message = nextEnemy.IsDead ? "The raider is already defeated" : "Hit raider";
         }
         else message = player.MeleeCooldownRemaining > 0 ? "Attack is recovering" : "No hit";
         _lastStatus = message;
         return true;
     }
 
+    private void TryCompleteDefeatedRaiderObjective()
+    {
+        if (LostDeliveryStage?.Id != RaiderStageId
+            || !_save.ActorStates.TryGet(LostDeliveryRaiderInstanceId, out var raider)
+            || !raider.IsDead)
+            return;
+
+        var applied = QuestEventSystem.Apply(_content.Quests, _save.Flags, new QuestEvent
+        {
+            EventId = RaiderDefeatedEventId,
+            Kind = QuestEventKind.ActorKilled,
+            WorldInstanceId = LostDeliveryRaiderInstanceId,
+            ActorId = EnemyActorId
+        });
+        if (applied != 1)
+            throw new InvalidOperationException("The defeated authored raider did not advance its active quest stage.");
+        _lastStatus = "The road is clear. Recover the apples from the raider's satchel.";
+    }
+
     public string? GetPrompt(Guid playerCellId, Vector3 playerPosition)
     {
         if (!_initialized) return null;
+        if (HasOpenDialogue)
+        {
+            var labels = CurrentDialogueOptions.Select((option, index) => $"[{index + 1}] {option.Label}");
+            return string.Join("   ", labels);
+        }
         if (playerCellId == _merchantCellId && _merchantObject is not null
             && Vector3.Distance(playerPosition, GetWorldPosition(_merchantCellId, _merchantObject)) <= 4.5f)
-            return "T buy / Y sell an apple";
+            return LostDeliveryStatus == QuestStatus.NotStarted
+                ? "E talk to the market keeper"
+                : "T buy / Y sell an apple";
+        if (playerCellId == _noticeCellId && _noticeObject is not null
+            && Vector3.Distance(playerPosition, GetWorldPosition(_noticeCellId, _noticeObject)) <= 2.8f)
+            return LostDeliveryStage?.Id == NoticeStageId ? "E read the delivery notice" : "The delivery notice is here";
+        if (playerCellId == _homeCellId && _satchelObject is not null
+            && Vector3.Distance(playerPosition, GetWorldPosition(_homeCellId, _satchelObject)) <= 2.8f)
+            return LostDeliveryStage?.Id == SatchelStageId
+                ? "E recover the apples"
+                : "The satchel is guarded by the raider";
         if (playerCellId == _enemyCellId && _enemyObject is not null
             && Vector3.Distance(playerPosition, GetWorldPosition(_enemyCellId, _enemyObject)) <= _playerAttack.Range)
-            return "F attack the road raider";
+        {
+            if (!_save.ActorStates.TryGet(_enemyInstanceId.Value, out var enemyState) || !enemyState.IsDead)
+                return "F attack the road raider";
+            return "The road raider is defeated";
+        }
         return null;
     }
+
+    public bool TryGetQuestSmokeTarget(string targetName, out Vector3 position)
+    {
+        position = Vector3.Zero;
+        if (!_initialized) return false;
+        var target = targetName switch
+        {
+            "keeper" => (_merchantCellId, _merchantObject),
+            "notice" => (_noticeCellId, _noticeObject),
+            "raider" => (_enemyCellId, _enemyObject),
+            "satchel" => (_homeCellId, _satchelObject),
+            _ => (Guid.Empty, (SceneObject?)null)
+        };
+        if (target.Item2 is null || !TryGetActive(target.Item1, out _, out _)) return false;
+        position = GetWorldPosition(target.Item1, target.Item2);
+        return true;
+    }
+
+    public bool IsLostDeliveryRaiderDead => _initialized
+        && _save.ActorStates.TryGet(_enemyInstanceId.Value, out var state) && state.IsDead;
+
+    public bool IsLostDeliverySatchelPresent => _initialized && _satchelObject is not null
+        && _save.WorldItems.TryGet(LostDeliverySatchelInstanceId, out _);
+
+    public int PlayerAppleCount => _save.Player.Bag.Count(AppleId);
 
     private bool TryInitialize()
     {
@@ -258,7 +488,7 @@ internal sealed class RpgSliceGameplayIntegration
         _workCellId = work.Id;
         _workerSchedule = new NpcDailySchedule(_homeCellId, _workCellId, WorkStartSeconds, WorkEndSeconds);
         if (!TryGetActive(_homeCellId, out _, out var homeActive)
-            || !TryGetActive(_workCellId, out _, out _)) return false;
+            || !TryGetActive(_workCellId, out _, out var workActive)) return false;
 
         var pathRoot = Path.Combine(_world.RootDirectory, "Paths");
         _homeGraph = CellPathGraphFile.Load(Path.Combine(pathRoot, "Exterior_0_0.paths.json"));
@@ -306,6 +536,7 @@ internal sealed class RpgSliceGameplayIntegration
 
         EnsureMerchant(homeActive!);
         EnsureEnemy(homeActive!);
+        EnsureQuestPlacements(homeActive!, workActive!);
         if (_workerScheduleState.PendingDestinationCellId is { } pending)
             BeginWorkerRoute(pending);
         _initialized = true;
@@ -314,6 +545,7 @@ internal sealed class RpgSliceGameplayIntegration
             WorldTimeSeconds = _clock.TotalSeconds,
             NpcSchedules = _save.NpcSchedules.Set(_workerInstanceId.Value, _workerScheduleState)
         };
+        TryCompleteDefeatedRaiderObjective();
         if (_smokeRequested)
         {
             RunMerchantSmoke();
@@ -489,6 +721,47 @@ internal sealed class RpgSliceGameplayIntegration
         if (_enemyObject is null) throw new InvalidDataException("RpgSlice road raider is not in an active cell.");
         if (!_save.ActorStates.TryGet(_enemyInstanceId.Value, out _))
             SetActor(ActorRuntimeState.Create(_enemyInstanceId.Value, _enemyDefinition));
+        if (authored is not null && _enemyInstanceId.Value != LostDeliveryRaiderInstanceId)
+            throw new InvalidDataException("The authored raider instance ID does not match the Lost Delivery quest target.");
+    }
+
+    private void EnsureQuestPlacements(RpgSliceCellStreamer.ActiveCell homeActive,
+        RpgSliceCellStreamer.ActiveCell workActive)
+    {
+        _noticeCellId = _workCellId;
+        _noticeObject = workActive.Scene.Objects.SingleOrDefault(sceneObject =>
+            sceneObject.WorldEntity?.InstanceId == LostDeliveryNoticeInstanceId);
+        if (_noticeObject is null) return;
+        if (_noticeObject.WorldEntity is not { Kind: WorldEntityKind.Item, DefinitionId: "item.rpgslice.delivery_notice" })
+            throw new InvalidDataException("The east-road cell must contain the authored Lost Delivery notice placement.");
+        if (_persistence.Identities.GetOrCreate(_noticeCellId, _noticeObject).Value != LostDeliveryNoticeInstanceId)
+            throw new InvalidDataException("The delivery notice does not retain its authored world-instance ID.");
+
+        var satchelIdentity = new WorldInstanceId(LostDeliverySatchelInstanceId);
+        var wasCollected = _persistence.Changes.IsDeleted(_homeCellId, satchelIdentity);
+        _satchelObject = homeActive.Scene.Objects.SingleOrDefault(sceneObject =>
+            sceneObject.WorldEntity?.InstanceId == LostDeliverySatchelInstanceId);
+        if (wasCollected)
+        {
+            if (_satchelObject is not null || _save.WorldItems.TryGet(LostDeliverySatchelInstanceId, out _))
+                throw new InvalidDataException("The saved supply satchel deletion conflicts with the RPG world-item save.");
+            return;
+        }
+
+        if (_satchelObject?.WorldEntity is not { Kind: WorldEntityKind.Item, DefinitionId: "item.rpgslice.apple" })
+            throw new InvalidDataException("The market cell must contain the authored Lost Delivery supply satchel.");
+        if (_persistence.Identities.GetOrCreate(_homeCellId, _satchelObject).Value != LostDeliverySatchelInstanceId)
+            throw new InvalidDataException("The supply satchel does not retain its authored world-instance ID.");
+        if (_save.WorldItems.TryGet(LostDeliverySatchelInstanceId, out var savedSatchel))
+        {
+            if (savedSatchel.ItemId != AppleId || savedSatchel.Count < 1)
+                throw new InvalidDataException("The saved supply satchel does not contain its authored apple item.");
+            return;
+        }
+        if (!_save.WorldItems.TryAdd(new WorldItemEntry(LostDeliverySatchelInstanceId, AppleId, 1),
+            out var seededWorldItems))
+            throw new InvalidDataException("The initial supply satchel could not be added to the RPG world-item store.");
+        _save = _save with { WorldItems = seededWorldItems };
     }
 
     private void TickEnemy(float elapsedSeconds, Guid playerCellId, Vector3 playerPosition)

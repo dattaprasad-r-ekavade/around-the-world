@@ -22,6 +22,65 @@
     }
   ],
   "items": [
-    { "id": "item.rpgslice.apple", "name": "Apple", "slot": null, "stackable": true }
+    { "id": "item.rpgslice.apple", "name": "Apple", "slot": null, "stackable": true },
+    { "id": "item.rpgslice.delivery_notice", "name": "Delivery Notice", "slot": null, "stackable": false }
+  ],
+  "dialogues": [
+    {
+      "id": "dialogue.rpgslice.lost_delivery",
+      "nodes": [
+        {
+          "id": "offer",
+          "speaker": "Market Keeper",
+          "speakerActorId": "actor.rpgslice.merchant",
+          "text": "A raider took a supply satchel east of town. Check the roadside notice, deal with the raider, and bring back the apples.",
+          "options": [
+            {
+              "id": "accept",
+              "label": "I will look into it.",
+              "next": "briefing",
+              "sets": { "quest.rpgslice.lost_delivery.started": true }
+            },
+            { "id": "later", "label": "Not now.", "next": null }
+          ]
+        },
+        {
+          "id": "briefing",
+          "speaker": "Market Keeper",
+          "speakerActorId": "actor.rpgslice.merchant",
+          "text": "The notice is on the east road. The satchel is near the raider; return here when you are done.",
+          "options": [ { "id": "understood", "label": "Understood.", "next": null } ]
+        }
+      ]
+    }
+  ],
+  "quests": [
+    {
+      "id": "quest.rpgslice.lost_delivery",
+      "title": "The Lost Delivery",
+      "startDialogueId": "dialogue.rpgslice.lost_delivery",
+      "stages": [
+        {
+          "id": "read_road_notice",
+          "journal": "Read the delivery notice on the east road.",
+          "completeOn": "Interaction",
+          "targetWorldInstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a14"
+        },
+        {
+          "id": "defeat_raider",
+          "journal": "Defeat the road raider.",
+          "completeOn": "ActorKilled",
+          "targetActorId": "actor.rpgslice.raider",
+          "targetWorldInstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a12"
+        },
+        {
+          "id": "recover_apples",
+          "journal": "Recover the apples from the raider's supply satchel.",
+          "completeOn": "ItemCollected",
+          "requiredItemId": "item.rpgslice.apple",
+          "targetWorldInstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a13"
+        }
+      ]
+    }
   ]
 }

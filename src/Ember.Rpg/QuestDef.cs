@@ -41,7 +41,9 @@ public sealed record QuestStage
     public IReadOnlyList<FlagCondition> DoneWhen { get; init; } = Array.Empty<FlagCondition>();
 
     public string CompletionFlag(ContentId<QuestContentKind> questId) =>
-        $"quest.{questId.Value}.stage.{Id}.done";
+        questId.Value.StartsWith("quest.", StringComparison.Ordinal)
+            ? $"{questId.Value}.stage.{Id}.done"
+            : $"quest.{questId.Value}.stage.{Id}.done";
 
     public bool IsDone(FlagStore flags, ContentId<QuestContentKind> questId)
     {
@@ -73,7 +75,10 @@ public sealed record QuestDef
 
     public IReadOnlyList<QuestStage> Stages { get; init; } = Array.Empty<QuestStage>();
 
-    public string StartFlag() => $"quest.{Id.Value}.started";
+    public string StartFlag() =>
+        Id.Value.StartsWith("quest.", StringComparison.Ordinal)
+            ? $"{Id.Value}.started"
+            : $"quest.{Id.Value}.started";
 
     public void Start(FlagStore flags)
     {

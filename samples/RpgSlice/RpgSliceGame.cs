@@ -29,11 +29,12 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _travelSmokeRequested;
     private readonly bool _persistenceSmokeRequested;
     private readonly bool _rpgIntegrationSmokeRequested;
+    private readonly bool _questSmokeRequested;
     private readonly bool _settlementSmokeRequested;
     private readonly bool _settlementBenchmarkRequested;
     private readonly string _rpgContentPath;
     private RpgContentSet _rpgContent = null!;
-    private int _travelSmokeApproachFrames;
+    private float _travelSmokeApproachSeconds;
     private readonly bool _benchmarkRequested;
     private readonly bool _timePaused;
     private readonly string _worldSavePath;
@@ -77,6 +78,10 @@ public sealed class RpgSliceGame : EngineHost
     private float _initialTimeOfDayHours = 12f;
     private bool _timeHoursSpecified;
     private int _rpgIntegrationSmokeFrames;
+    private float _rpgIntegrationSmokeSeconds;
+    private int _questSmokeFrames;
+    private float _questSmokeSeconds;
+    private RpgSliceQuestSmoke? _questSmoke;
 
     public RpgSliceGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: GameWindowTitle)
@@ -84,27 +89,29 @@ public sealed class RpgSliceGame : EngineHost
         _rpgContentPath = Path.Combine(AppContext.BaseDirectory, "Content", "RpgContent.json");
         if (GraphicsAdapter.DefaultAdapter.IsProfileSupported(GraphicsProfile.HiDef))
             _graphics.GraphicsProfile = GraphicsProfile.HiDef;
+        _rpgIntegrationSmokeRequested = HasArgument(args, "--rpg-integration-smoke");
         _settlementSmokeRequested = HasArgument(args, "--settlement-smoke");
         _settlementBenchmarkRequested = HasArgument(args, "--settlement-benchmark");
+        _questSmokeRequested = HasArgument(args, "--quest-smoke");
         _worldManifestPath = ParseOption(args, "--world")
             ?? Path.Combine(AppContext.BaseDirectory, "Content", "World",
-                _settlementSmokeRequested || _settlementBenchmarkRequested
+                _settlementSmokeRequested || _settlementBenchmarkRequested || _questSmokeRequested
+                || _rpgIntegrationSmokeRequested
                     ? "settlement.json" : WorldManifest.DefaultFileName);
         _smokeControls = HasArgument(args, "--smoke-controls");
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
         _travelSmokeRequested = HasArgument(args, "--travel-smoke");
         _persistenceSmokeRequested = HasArgument(args, "--persistence-smoke");
-        _rpgIntegrationSmokeRequested = HasArgument(args, "--rpg-integration-smoke");
         _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
             + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
-            + (_rpgIntegrationSmokeRequested ? 1 : 0)
+            + (_rpgIntegrationSmokeRequested ? 1 : 0) + (_questSmokeRequested ? 1 : 0)
             + (_settlementSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0)
             + (_settlementBenchmarkRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
         var configuredSavePath = ParseOption(args, "--save");
-        var smokeRequested = _persistenceSmokeRequested || _rpgIntegrationSmokeRequested
+        var smokeRequested = _persistenceSmokeRequested || _rpgIntegrationSmokeRequested || _questSmokeRequested
             || _settlementSmokeRequested;
         _deleteSmokeSaveOnExit = smokeRequested
             && configuredSavePath is null;
@@ -131,10 +138,13 @@ public sealed class RpgSliceGame : EngineHost
         _actions.Bind("TradeSell", Keys.Y);
         _actions.Bind("Attack", Keys.F);
         _actions.Bind("Save", Keys.F5);
+        _actions.Bind("DialogueChoice1", Keys.D1, Keys.NumPad1);
+        _actions.Bind("DialogueChoice2", Keys.D2, Keys.NumPad2);
     }
 
     protected override void LoadContent()
     {
+        AttachCanvas();
         _world = WorldManifest.Load(_worldManifestPath);
         _rpgContent = RpgContentJson.Load(_rpgContentPath);
         if (_settlementSmokeRequested) ValidateSettlementProject();
@@ -207,6 +217,7 @@ public sealed class RpgSliceGame : EngineHost
         _rpgGameplay = new RpgSliceGameplayIntegration(_world, _cellStreamer,
             _worldPersistence, _physics, rpgSave, _worldClock, _rpgSavePath,
             _rpgContent, _rpgIntegrationSmokeRequested);
+        if (_questSmokeRequested) _questSmoke = new RpgSliceQuestSmoke();
         _collisionGate.CollisionRequired += _cellStreamer.Request;
         if (initialCell.Kind == WorldCellKind.Exterior)
         {
@@ -280,10 +291,32 @@ public sealed class RpgSliceGame : EngineHost
                     AdvanceDoorTravel();
                 var keyboard = _travelSmokeRequested
                     ? FindNearbyDoor() is not null ? new KeyboardState(Keys.E) : new KeyboardState()
-                    : _rpgIntegrationSmokeRequested ? new KeyboardState() : Keyboard.GetState();
-                UpdateMovement(keyboard, RealSeconds(gameTime), IsActive);
+                    : _rpgIntegrationSmokeRequested ? new KeyboardState()
+                    : _questSmokeRequested
+                        ? _questSmoke!.CreateKeyboard(_player.Pose.Position, _camera, _rpgGameplay!)
+                        : Keyboard.GetState();
+                var dt = RealSeconds(gameTime);
+                UpdateMovement(keyboard, dt, IsActive || _questSmokeRequested);
+                if (_questSmokeRequested)
+                {
+                    _questSmokeSeconds += dt;
+                    _questSmokeFrames++;
+                }
+                if (_rpgIntegrationSmokeRequested)
+                {
+                    _rpgIntegrationSmokeSeconds += dt;
+                    _rpgIntegrationSmokeFrames++;
+                }
                 if (_rpgIntegrationSmokeRequested && _rpgGameplay?.SmokeCompleted == true)
                 {
+                    _smokeRan = true;
+                    Exit();
+                }
+                else if (_questSmokeRequested && _rpgGameplay is not null
+                    && _questSmoke!.SaveKeyIssued && _worldPersistence.PendingSaveCount == 0
+                    && File.Exists(_worldSavePath) && File.Exists(_rpgSavePath))
+                {
+                    VerifyQuestSmokeAfterRestart();
                     _smokeRan = true;
                     Exit();
                 }
@@ -293,9 +326,13 @@ public sealed class RpgSliceGame : EngineHost
                     _smokeRan = true;
                     Exit();
                 }
-                else if (_rpgIntegrationSmokeRequested && ++_rpgIntegrationSmokeFrames > 3600)
+                else if (_rpgIntegrationSmokeRequested && _rpgIntegrationSmokeSeconds > 90f)
                 {
-                    throw new TimeoutException("RPG integration smoke did not complete both scheduled worker trips within 60 seconds.");
+                    throw new TimeoutException("RPG integration smoke did not complete both scheduled worker trips within 90 seconds.");
+                }
+                else if (_questSmokeRequested && _questSmokeSeconds > 90f)
+                {
+                    throw new TimeoutException($"Quest smoke did not complete the Lost Delivery using normal player inputs within 90 seconds (elapsed={_questSmokeSeconds:F1}s, frames={_questSmokeFrames}).");
                 }
             }
             else if (_streamingSmoke.Tick())
@@ -318,9 +355,6 @@ public sealed class RpgSliceGame : EngineHost
             _worldClock = new WorldClock(Math.Max(0d, _worldClock.TotalSeconds - 3600d));
         if (_actions.ConsumePressed("TimeLater")) _worldClock = _worldClock.Advance(3600d);
         if (!_timePaused) _worldClock = _worldClock.Advance(elapsedSeconds * 60d);
-        if (_actions.ConsumePressed("Interact") && _travel is null
-            && FindNearbyDoor() is { } nearbyDoor)
-            BeginDoorTravel(nearbyDoor);
         if (_actions.ConsumePressed("Save"))
         {
             _rpgGameplay?.WriteSave(_worldClock);
@@ -330,15 +364,35 @@ public sealed class RpgSliceGame : EngineHost
         }
         if (_travel is null && _rpgGameplay is not null)
         {
-            if (_actions.ConsumePressed("TradeBuy")
+            if (_rpgGameplay.HasOpenDialogue)
+            {
+                if (_actions.ConsumePressed("DialogueChoice1")
+                    && _rpgGameplay.TrySelectDialogueOption(0, out var firstChoice))
+                    SetGameplayFeedback(firstChoice);
+                else if (_actions.ConsumePressed("DialogueChoice2")
+                    && _rpgGameplay.TrySelectDialogueOption(1, out var secondChoice))
+                    SetGameplayFeedback(secondChoice);
+                else if (_actions.ConsumePressed("Interact")
+                    && _rpgGameplay.TrySelectDialogueOption(0, out var defaultChoice))
+                    SetGameplayFeedback(defaultChoice);
+            }
+            else if (_actions.ConsumePressed("Interact"))
+            {
+                if (FindNearbyDoor() is { } nearbyDoor)
+                    BeginDoorTravel(nearbyDoor);
+                else if (_rpgGameplay.TryInteractAt(_currentCellId, _player.Pose.Position, out var interactionMessage))
+                    SetGameplayFeedback(interactionMessage);
+            }
+
+            if (!_rpgGameplay.HasOpenDialogue && _actions.ConsumePressed("TradeBuy")
                 && _rpgGameplay.TryTradeAt(_currentCellId, _player.Pose.Position,
                     sell: false, out var buyMessage))
                 SetGameplayFeedback(buyMessage);
-            if (_actions.ConsumePressed("TradeSell")
+            if (!_rpgGameplay.HasOpenDialogue && _actions.ConsumePressed("TradeSell")
                 && _rpgGameplay.TryTradeAt(_currentCellId, _player.Pose.Position,
                     sell: true, out var sellMessage))
                 SetGameplayFeedback(sellMessage);
-            if (_actions.ConsumePressed("Attack")
+            if (!_rpgGameplay.HasOpenDialogue && _actions.ConsumePressed("Attack")
                 && _rpgGameplay.TryPlayerAttack(_currentCellId, _player.Pose.Position,
                     out var attackMessage))
                 SetGameplayFeedback(attackMessage);
@@ -358,10 +412,11 @@ public sealed class RpgSliceGame : EngineHost
                 targetTransform.M43 - _player.Pose.Position.Z);
             if (moveDirection.LengthSquared() > 1e-6f) moveDirection.Normalize();
         }
-        _player.SetMoveInput(_travel is null ? moveDirection : Vector3.Zero);
+        _player.SetMoveInput(_travel is null && _rpgGameplay?.HasOpenDialogue != true
+            ? moveDirection : Vector3.Zero);
         if (_travelSmokeRequested && _travel is null
             && _travelSmokePhase is TravelSmokePhase.ApproachExteriorDoor or TravelSmokePhase.ApproachInteriorDoor
-            && ++_travelSmokeApproachFrames > 1200)
+            && (_travelSmokeApproachSeconds += elapsedSeconds) > 20f)
             throw new TimeoutException("Travel smoke could not reach the authored door within 20 seconds.");
         if (_benchmark is { IsComplete: false } routeBenchmark)
             _player.SetMoveInput(routeBenchmark.GetMoveDirection(_player.Pose.Position));
@@ -504,7 +559,7 @@ public sealed class RpgSliceGame : EngineHost
             _travelSmokePhase = _insideInterior
                 ? TravelSmokePhase.Returning
                 : TravelSmokePhase.Entering;
-            _travelSmokeApproachFrames = 0;
+            _travelSmokeApproachSeconds = 0f;
         }
     }
 
@@ -575,7 +630,7 @@ public sealed class RpgSliceGame : EngineHost
             if (!_insideInterior || Vector3.Distance(_player.Pose.Position, travel.DestinationSpawn.Position) > 0.01f)
                 throw new InvalidOperationException("Door travel smoke did not place the player in House A.");
             _travelSmokePhase = TravelSmokePhase.ApproachInteriorDoor;
-            _travelSmokeApproachFrames = 0;
+            _travelSmokeApproachSeconds = 0f;
         }
         else if (_travelSmokePhase == TravelSmokePhase.Returning)
         {
@@ -742,6 +797,60 @@ public sealed class RpgSliceGame : EngineHost
                 File.Delete(_worldSavePath);
             if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath))
                 File.Delete(_rpgSavePath);
+        }
+    }
+
+    private void VerifyQuestSmokeAfterRestart()
+    {
+        const string questId = "quest.rpgslice.lost_delivery";
+        const string appleId = "item.rpgslice.apple";
+        var satchelInstanceId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07a13");
+        var raiderInstanceId = Guid.Parse("c71f9da0-e2e9-4aae-bf2f-d70a06b07a12");
+        var satchelSceneObjectId = Guid.Parse("d71f9da0-e2e9-4aae-bf2f-d70a06b07a07");
+        try
+        {
+            if (!File.Exists(_worldSavePath) || !File.Exists(_rpgSavePath))
+                throw new InvalidOperationException("Quest smoke did not write both world and RPG saves through F5.");
+
+            var savedRpg = SaveState.Read(_rpgSavePath);
+            var quest = _rpgContent.Quests.Get(questId)
+                ?? throw new InvalidDataException($"Quest smoke cannot find '{questId}' in loaded content.");
+            var apple = new ContentId<ItemContentKind>(appleId);
+            if (quest.StatusIn(savedRpg.Flags) != QuestStatus.Complete
+                || quest.Stages.Any(stage => !stage.IsDone(savedRpg.Flags, quest.Id)))
+                throw new InvalidOperationException("The Lost Delivery quest did not remain complete after RPG save/load.");
+            if (!savedRpg.ActorStates.TryGet(raiderInstanceId, out var raider) || !raider.IsDead)
+                throw new InvalidOperationException("The defeated raider did not remain dead after RPG save/load.");
+            if (savedRpg.Player.Bag.Count(apple) != 2
+                || savedRpg.WorldItems.TryGet(satchelInstanceId, out _))
+                throw new InvalidOperationException("The recovered apples were lost or duplicated after RPG save/load.");
+            if (savedRpg.Dialogue.Tree is not null)
+                throw new InvalidOperationException("The completed quest save unexpectedly reopened its dialogue.");
+            var saveDiagnostics = _rpgContent.ValidateSaveReferences(savedRpg);
+            if (saveDiagnostics.Count > 0)
+                throw new InvalidDataException("Quest save references did not validate: "
+                    + string.Join(" ", saveDiagnostics));
+
+            var worldSnapshot = WorldSaveFile.Load(_worldSavePath, _world);
+            if (!worldSnapshot.Changes.Any(change => change.InstanceId.Value == satchelInstanceId && change.Deleted))
+                throw new InvalidOperationException("The collected satchel has no persistent world deletion tombstone.");
+            var restarted = new WorldPersistenceSession(_world, worldSnapshot);
+            var home = _world.TryGetExterior(new ExteriorCellCoordinate(0, 0), out var homeCell)
+                ? homeCell : null;
+            if (home is null) throw new InvalidDataException("Quest smoke cannot resolve the settlement market cell.");
+            var restoredScene = SceneFile.Load(_world.ResolveScenePath(home.Id));
+            var identities = restarted.PrepareCell(home.Id, restoredScene);
+            if (restoredScene.Find(satchelSceneObjectId) is not null
+                || !identities.TryGetValue(satchelSceneObjectId, out var satchelIdentity)
+                || satchelIdentity.Value != satchelInstanceId)
+                throw new InvalidOperationException("The collected satchel reappeared or changed identity after world restart.");
+
+            Console.WriteLine("RpgSlice: PASS Lost Delivery completed through E/1/F/F5; quest flags, dead raider, apple inventory, and satchel tombstone survived restart.");
+        }
+        finally
+        {
+            if (_deleteSmokeSaveOnExit && File.Exists(_worldSavePath)) File.Delete(_worldSavePath);
+            if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath)) File.Delete(_rpgSavePath);
         }
     }
 
@@ -946,8 +1055,42 @@ public sealed class RpgSliceGame : EngineHost
         _renderer.DrawCube(playerPosition, new Vector3(0.7f, 1.7f, 0.7f), new Color(65, 112, 178), 0f);
         if (!_insideInterior)
             _water.Draw(_camera.View, _camera.Projection, _camera.Position, environment, waterLevel: 0.4f);
+        DrawRpgQuestUi();
         base.Draw(gameTime);
         EndHostFrame(hold: false, exit: Exit);
+    }
+
+    private void DrawRpgQuestUi()
+    {
+        if (_rpgGameplay is null || _benchmark is not null) return;
+
+        _ui.Begin();
+        _ui.Panel(new Rectangle(24, 24, 610, 78), new Color(7, 13, 18, 220), new Color(117, 143, 131));
+        _ui.Text("THE LOST DELIVERY", new Vector2(42, 36), 16, new Color(237, 208, 139));
+        _ui.TextFit(_rpgGameplay.LostDeliveryJournal, new Vector2(42, 66), 574f, 15f, Color.White);
+
+        if (_rpgGameplay.CurrentDialogueNode is { } dialogueNode)
+        {
+            _ui.Panel(new Rectangle(24, 510, 900, 180), new Color(7, 13, 18, 232), new Color(156, 125, 78));
+            _ui.Text($"{dialogueNode.Speaker}", new Vector2(44, 526), 17, new Color(237, 208, 139));
+            _ui.TextWrapped(dialogueNode.Text, new Vector2(44, 556), 860f, 16f, Color.White);
+            var options = _rpgGameplay.CurrentDialogueOptions;
+            for (var i = 0; i < options.Count && i < 2; i++)
+                _ui.TextFit($"[{i + 1}] {options[i].Label}", new Vector2(44, 620 + (i * 26)), 850f, 15f,
+                    new Color(198, 211, 206));
+        }
+        else
+        {
+            var prompt = FindNearbyDoor() is { } door
+                ? $"E use {door.Name}"
+                : _rpgGameplay.GetPrompt(_currentCellId, _player.Pose.Position);
+            if (prompt is not null)
+            {
+                _ui.Panel(new Rectangle(24, 630, 700, 52), new Color(7, 13, 18, 210), new Color(117, 143, 131));
+                _ui.TextFit(prompt, new Vector2(42, 647), 664f, 15f, Color.White);
+            }
+        }
+        _ui.End();
     }
 
     protected override void OnDisplayChanged() =>

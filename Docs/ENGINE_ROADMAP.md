@@ -310,7 +310,10 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 137b | Load, render, and collide with supported static GLBs through RpgSlice's normal scene-asset pipeline. | A manifest-referenced courtyard asset renders and blocks movement with resources released when the game closes. |
 | [x] | 137c | Populate the settlement with authored props, RPG actor/item placements, and the live NPC roles. | The full content validates; merchant, hostile, and scheduled actors appear in the intended cells without duplicate identities. |
 | [x] | 137d | Measure the populated settlement against task 119's reproducible budgets. | A repeated route records content counts, frame time, activation, memory, and resource stability; any misses become named blockers. |
-| [ ] | 138 | Add one complete quest using dialogue, exploration, combat, and persistent loot. | It can be completed through normal play without debug commands. |
+| [x] | 138a | Author the complete settlement quest, dialogue, ordered objectives, and stable targets/loot placements. | The RPG content and settlement validate; every dialogue, actor, item, and world-instance reference resolves. |
+| [x] | 138b | Connect keeper dialogue and the exploration interaction to quest flags/events. | Normal interaction opens the conversation, accepting starts the quest, and inspecting its authored marker advances only the matching active stage. |
+| [x] | 138c | Connect raider defeat and cache pickup to ordered quest events and persistent inventory/world state. | A real kill advances combat once; a successful pickup advances loot once and survives save/load without recreating the cache. |
+| [x] | 138d | Present the dialogue/objective prompts and prove the whole quest through normal player controls. | A scripted input smoke uses the same controls as play, completes the quest, and confirms completed flags, actor death, and loot survive restart. |
 | [ ] | 139 | Add a repeatable persistence scenario: drop item, loot container, kill enemy, move follower across cells, enter interior, save/restart. | Every resulting state is correct and each persistent instance exists exactly once. |
 | [ ] | 140 | Run repeated travel/save/load with delayed or failed asset reads. | Failures remain recoverable; no duplicate actors, lost items, or partially restored scenes occur. |
 | [ ] | 141 | Run a documented hour-long route with at least 50 interior/exterior transitions. | Resource counts stabilize after warmup; no unbounded growth or accumulating errors occur. |
@@ -370,14 +373,14 @@ The broad Stage 9–12 gates remain Pending. Remaining data-safety work includes
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 137d — measured the populated settlement against the reproducible cell-streaming budgets.
-- First unchecked baseline task: 138 — add one complete quest using dialogue, exploration, combat, and persistent loot.
-- Current checklist: 159 of 166 ordered rows complete (95.8%); task 138 is first unchecked.
-- Current gates: Release A and D passed; Release B and C remain Pending. The targeted Stage 15 settlement proof and Stage 13 benchmark pass. Broader Stages 9–12, the Stage 14 editor-authorship gate, and Release E remain Pending or unproven. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: RpgSlice now loads a manifest-referenced courtyard GLB for rendering and triangle-mesh collision, authors three exterior cells and two connected interiors, adopts authored merchant/raider placements, and loads actor/item definitions from RPG content. A separate ten-lap settlement route records content counts and budget metrics without changing the fixed 3×3 benchmark.
-- Verification: `dotnet build Ember.sln --configuration Release --no-restore --nologo` passed with 0 warnings/errors; `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` passed 248 tests; the RPG save/load check, settlement smoke, RpgSlice RPG integration smoke, settlement screenshot, and ten-lap benchmark passed. See the 27 September 2026 progress entry.
-- Limits: The settlement benchmark recorded five frames over 50 ms and two over 100 ms, though average/p95, activation, memory, terrain, and repeated resource targets passed. The Stage 14 editor-authoring and complete quest proofs remain open. `test-assets/` has no source/license metadata and was left untracked and unused.
-- Next action: implement task 138's playable quest; keep the Stage 14 gate Pending until the quest and editor-authored settlement workflow pass.
+- Last completed task: 138d — presented dialogue and objective prompts and proved the full playable settlement quest 'The Lost Delivery' through normal player controls.
+- First unchecked baseline task: 139 — add a repeatable persistence scenario: drop item, loot container, kill enemy, move follower across cells, enter interior, save/restart.
+- Current checklist: 163 of 169 ordered rows complete (96.4%); task 139 is first unchecked.
+- Current gates: Release A and D passed; Release B and C remain Pending. The targeted Stage 15 settlement proof, quest completion proof, and Stage 13 benchmark pass. Broader Stages 9–12, the Stage 14 editor-authorship gate, and Release E remain Pending or unproven. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
+- Latest changes: Authored complete settlement quest "The Lost Delivery" with dialogue, notice item, placed entities (satchel and road notice), normalized QuestDef flag prefix handling, connected combat/loot to quest events and world persistence tombstones, and added waypoint navigation around courtyard and market props in RpgSliceQuestSmoke driven by standard player inputs (E, 1, F, E, F5).
+- Verification: `dotnet build Ember.sln --nologo` passed with 0 warnings/errors; `dotnet test tests/Ember.Engine.Tests` passed 248 tests; `Ember.Rpg.Check` passed; `--settlement-smoke`, `--rpg-integration-smoke`, `--travel-smoke`, `--persistence-smoke`, and `--quest-smoke` all passed cleanly.
+- Limits: The settlement benchmark recorded five frames over 50 ms and two over 100 ms. The Stage 14 editor-authoring workflow without handwritten reference wiring remains open. `test-assets/` and `games/` remain untracked user directories.
+- Next action: implement task 139 (repeatable persistence scenario across cells); then tasks 140–141 in the next batch.
 
 Suggested request to an implementing AI:
 

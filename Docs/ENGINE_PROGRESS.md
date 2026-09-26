@@ -1420,3 +1420,26 @@ The Stage 14 gate remains Pending. The next batch starts at task 135 (project-wi
 | RpgSlice `--settlement-benchmark --time-paused --windowed` | PASS — one warmup plus ten measured 166 m laps; all provisional budgets passed. See `OUTDOOR_BENCHMARK.md` |
 
 Limit: the courtyard GLB is linked into the RpgSlice build output. A `--world` path pointing directly at the source-tree settlement folder does not contain that linked file; use the built `Content/World/settlement.json` root for direct runtime runs. The default built app path and settlement smoke/benchmark pass.
+
+## Tasks 138a–138d — complete settlement quest "The Lost Delivery" — 27 September 2026
+
+- Split task 138 into four checkable outcomes (138a–138d). Authored the complete settlement quest `quest.rpgslice.lost_delivery`, dialogue `dialogue.rpgslice.lost_delivery`, notice item `item.rpgslice.delivery_notice`, notice placement in `Exterior_1_0.json`, and satchel placement in `Exterior_0_0.json`.
+- Connected market keeper dialogue (keys E and 1) to quest start flag `quest.rpgslice.lost_delivery.started`. Normalized quest flag prefixes in `QuestDef` to avoid duplicate `quest.` prefixes when resolving start and completion flags. Reading the delivery notice advances the active quest stage to `defeat_raider`.
+- Connected player melee combat (key F) to damage and defeat the authored road raider; killing the raider advances the quest to `recover_apples`. Collecting the raider's supply satchel (key E) transfers the authored apple into player inventory, applies `recover_apples` quest completion, and marks a persistent deletion tombstone in the world persistence store.
+- Authored `RpgSliceQuestSmoke` to drive standard player controls (E, 1, F, E, F5) through gameplay input. Navigates around the Stone Market Courtyard and market prop colliders using waypoints along the clear settlement paths and roads, avoiding static mesh wall obstructions. Upon F5, writes atomic world and RPG saves.
+- Verified on restart: `VerifyQuestSmokeAfterRestart()` confirms quest flags remain `Complete`, raider remains dead, player bag holds 2 apples without duplicate satchels in the world-item store, dialogue tree is closed, references validate, and the satchel deletion tombstone persists in the world save without reappearing in the loaded cell.
+- Fixed frame-rate dependent timeout in travel smoke by replacing 1200-frame counter with elapsed seconds (20s) so uncapped execution (>400 FPS) does not prematurely abort door travel.
+- The ordered checklist is now 163/169 (96.4%); task 139 is first unchecked. The Stage 15 settlement quest proof passes; broader Stage 9–12 and Release gates are unchanged.
+
+### Settlement quest checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors; all engine, RPG, authoring, samples, and test projects compiled |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --no-build --nologo` | PASS — 248 passed, 0 failed, 0 skipped |
+| `dotnet exec tests/Ember.Rpg.Check/bin/Debug/net9.0/Ember.Rpg.Check.dll` | PASS — save then load equals original |
+| RpgSlice `--settlement-smoke --windowed` | PASS — settlement world validates, GLB mesh colliders activate, live NPC roles verified |
+| RpgSlice `--rpg-integration-smoke --windowed` | PASS — scheduled worker travels between cells, merchant buy/sell trades pass, perception/AI decisions pass |
+| RpgSlice `--travel-smoke --windowed` | PASS — exterior to House A and back through authored doors |
+| RpgSlice `--persistence-smoke --windowed` | PASS — authored change, runtime identity, interior player location, and restart reload |
+| RpgSlice `--quest-smoke --windowed` | PASS — complete Lost Delivery quest played through E/1/F/F5; quest completion, dead raider, apple inventory, and satchel tombstone verified on restart |
