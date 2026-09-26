@@ -300,13 +300,16 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 136d | Add CharacterStudio autosave and recovery review into staging with a validation report. | The editor can create and stage a snapshot; invalid staged content reports errors and cannot be applied. |
 | [x] | 136e | Apply a valid staged recovery and reload the open editor safely. | Invalid content is blocked; valid content replaces authored files, the editor reloads it, and player saves remain unchanged. |
 
-**Gate: Pending.** CharacterStudio edits quest objectives and placement templates, reports project-wide reference errors with owning files/records, and now supports authored recovery capture, validation review, safe apply, and active-scene reload. Authoring the complete settlement/interiors/route/quest without handwritten reference wiring remains.
+**Gate: Pending.** CharacterStudio edits quest objectives and placement templates, reports project-wide reference errors with owning files/records, and supports authored recovery capture, validation review, safe apply, and active-scene reload. RpgSlice now has a validated multi-cell settlement, connected interiors, static courtyard rendering/collision, authored RPG placements, and measured content budgets. The complete quest and authoring the project through the editor without handwritten reference wiring remain.
 
 ## Stage 15 — Prove the intended RPG before enlarging it
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 137 | Assemble a compact settlement across several exterior cells with two interiors and representative props/NPCs. | It uses the normal asset pipeline and meets task 119's agreed budgets or records blocking failures. |
+| [x] | 137a | Author a named settlement across several exterior cells with two connected interiors. | Stable scene, door, and spawn references pass the world validator and both interior routes start from the settlement. |
+| [x] | 137b | Load, render, and collide with supported static GLBs through RpgSlice's normal scene-asset pipeline. | A manifest-referenced courtyard asset renders and blocks movement with resources released when the game closes. |
+| [x] | 137c | Populate the settlement with authored props, RPG actor/item placements, and the live NPC roles. | The full content validates; merchant, hostile, and scheduled actors appear in the intended cells without duplicate identities. |
+| [x] | 137d | Measure the populated settlement against task 119's reproducible budgets. | A repeated route records content counts, frame time, activation, memory, and resource stability; any misses become named blockers. |
 | [ ] | 138 | Add one complete quest using dialogue, exploration, combat, and persistent loot. | It can be completed through normal play without debug commands. |
 | [ ] | 139 | Add a repeatable persistence scenario: drop item, loot container, kill enemy, move follower across cells, enter interior, save/restart. | Every resulting state is correct and each persistent instance exists exactly once. |
 | [ ] | 140 | Run repeated travel/save/load with delayed or failed asset reads. | Failures remain recoverable; no duplicate actors, lost items, or partially restored scenes occur. |
@@ -367,14 +370,14 @@ The broad Stage 9–12 gates remain Pending. Remaining data-safety work includes
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 134c — CharacterStudio can create and apply reusable RPG placement templates with explicit instance override flags.
-- First unchecked baseline task: 135 — add project-wide reference validation for the authored world and RPG content.
-- Current checklist: 147 of 157 ordered rows complete (93.6%); task 135 is the first unchecked baseline row.
-- Current gates: Release A and D passed; Release B and C remain Pending. Stages 9–12 remain Pending or unproven, the Stage 14 settlement-authoring gate is Pending, and Release E has no recorded status. Stage 13 passed again on the 3×3 blockout: the canonical ten-lap route and all provisional frame-time, activation, memory, and resource targets passed on the additional i7-13650HX validation host. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: CharacterStudio now edits quest objectives and their typed event targets, and creates/saves/reloads/applies reusable RPG placement templates. Scene version 7 persists template IDs and explicit override masks; template updates preserve stable world-instance IDs and can be undone/redone. RpgSlice gameplay integrations from the previous batch remain in place.
-- Verification: `dotnet build Ember.sln --no-restore --nologo` passed with 0 warnings/errors; `dotnet test Ember.sln --no-restore --nologo` passed 239 tests; `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` passed. CharacterStudio Release build passed. See the 26 September 2026 progress entry for scoped checks.
-- Limits: The editor controls were compiled but could not be clicked through here because the desktop automation surface exposed no apps or native launch API. Project-wide validation and authored-content recovery are still pending. RPG state remains a non-transactional sidecar; broad Stage 9–12 gates remain Pending. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: implement task 135's project-wide validator, then task 136's authored-content autosave/recovery; keep the Stage 14 gate Pending until its full settlement authoring check passes.
+- Last completed task: 137d — measured the populated settlement against the reproducible cell-streaming budgets.
+- First unchecked baseline task: 138 — add one complete quest using dialogue, exploration, combat, and persistent loot.
+- Current checklist: 159 of 166 ordered rows complete (95.8%); task 138 is first unchecked.
+- Current gates: Release A and D passed; Release B and C remain Pending. The targeted Stage 15 settlement proof and Stage 13 benchmark pass. Broader Stages 9–12, the Stage 14 editor-authorship gate, and Release E remain Pending or unproven. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
+- Latest changes: RpgSlice now loads a manifest-referenced courtyard GLB for rendering and triangle-mesh collision, authors three exterior cells and two connected interiors, adopts authored merchant/raider placements, and loads actor/item definitions from RPG content. A separate ten-lap settlement route records content counts and budget metrics without changing the fixed 3×3 benchmark.
+- Verification: `dotnet build Ember.sln --configuration Release --no-restore --nologo` passed with 0 warnings/errors; `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` passed 248 tests; the RPG save/load check, settlement smoke, RpgSlice RPG integration smoke, settlement screenshot, and ten-lap benchmark passed. See the 27 September 2026 progress entry.
+- Limits: The settlement benchmark recorded five frames over 50 ms and two over 100 ms, though average/p95, activation, memory, terrain, and repeated resource targets passed. The Stage 14 editor-authoring and complete quest proofs remain open. `test-assets/` has no source/license metadata and was left untracked and unused.
+- Next action: implement task 138's playable quest; keep the Stage 14 gate Pending until the quest and editor-authored settlement workflow pass.
 
 Suggested request to an implementing AI:
 

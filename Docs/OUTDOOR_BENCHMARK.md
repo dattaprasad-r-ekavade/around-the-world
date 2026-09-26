@@ -89,3 +89,36 @@ were submitted in one batched draw. Average/p95/maximum frame times were 0.79/1.
 activation was 19.31 ms, peak working set was 163.0 MiB, and the active-cell/chunk/resource counts
 stayed at 9/16/26 on every lap. All provisional targets passed; the different CPU means these figures
 are additional evidence, not a direct comparison with the original i5 reference run.
+
+## Settlement measurements (task 137d)
+
+This is a separate populated-content scenario. It does not change the fixed 3×3 baseline above.
+Run a Release build with `--settlement-benchmark --windowed --time-paused` and a fresh `--save`
+path. The settlement manifest is selected by default. The route follows the perimeter of exterior
+cells `(0, 0)` and `(1, 0)` to avoid the market props and the east-gate courtyard GLB:
+
+1. `(16, 23)` to `(3, 23)`.
+2. `(3, 23)` to `(3, 3)`.
+3. `(3, 3)` to `(60, 3)` — cross into `(1, 0)`.
+4. `(60, 3)` to `(60, 29)`.
+5. `(60, 29)` to `(16, 29)` — cross back into `(0, 0)`.
+6. `(16, 29)` to `(16, 23)`.
+
+One measured lap is 166 m. The report includes all five manifest cells and their authored scene/RPG
+content counts; active-cell, terrain, resource, and working-set peaks are measured during the route.
+
+| Date | Build / host | Route and frames | Avg / p95 / max frame | Cell activation | Peak working set | Active cells / terrain chunks / tracked resources | Result |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| 2026-09-27 | Release x64 task 137 worktree; Core i7-13650HX, Intel UHD Graphics, 24,866,680 KiB visible memory | 10 × 166 m; 20 cell crossings; 336,918 frames | 1.01 / 2.72 / 104.70 ms; 5 frames >50 ms, 2 >100 ms | 24 attempts; longest 21.05 ms | 166.6 MiB | 3 / 16 / 31; identical on all ten laps | Provisional budgets pass |
+
+The settlement contained 5 cells, 33 scene objects (30 enabled), 2 actor placements, 1 item placement,
+2 GLB instances using 1 asset with 4 primitives, 4 RPG actor definitions, and 1 item definition.
+Per-lap tracked resources stayed at 31 and terrain chunks at 16. Working set rose from 157.8 MiB on
+lap 1 to 166.6 MiB on lap 10; this run does not establish a continuing memory leak. Two >100 ms
+frame spikes occurred, while average, p95, activation, working-set, terrain-chunk, and repeated
+resource-count limits passed.
+
+The first warmup route crossed the market stall/actors and stalled; the next crossed the east-gate
+courtyard and stalled. Both route obstructions were removed by moving the measured loop to the
+settlement perimeter. The final ten-lap run completed all 20 cell crossings. The route and these
+resolved setup blockers are retained here so future runs reproduce the measured scenario.

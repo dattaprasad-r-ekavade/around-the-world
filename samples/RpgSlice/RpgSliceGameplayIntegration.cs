@@ -4,6 +4,7 @@ using Ember.Scene;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NumericsVector3 = System.Numerics.Vector3;
@@ -33,14 +34,16 @@ internal sealed class RpgSliceGameplayIntegration
     private readonly RpgSliceCellStreamer _streamer;
     private readonly WorldPersistenceSession _persistence;
     private readonly PhysicsWorld _physics;
+    private readonly RpgContentSet _content;
     private readonly bool _smokeRequested;
     private readonly string _savePath;
     private NpcDailySchedule? _workerSchedule;
     private readonly MeleeAttackProfile _playerAttack = new(2.2, 12, 0.7);
     private readonly MeleeAttackProfile _enemyAttack = new(1.7, 4, 1.4);
-    private readonly ActorDef _workerDefinition = CreateActorDefinition(WorkerActorId, "Scheduled Worker");
-    private readonly ActorDef _merchantDefinition = CreateActorDefinition(MerchantActorId, "Market Keeper");
-    private readonly ActorDef _enemyDefinition = CreateActorDefinition(EnemyActorId, "Road Raider");
+    private readonly ActorDef _playerDefinition;
+    private readonly ActorDef _workerDefinition;
+    private readonly ActorDef _merchantDefinition;
+    private readonly ActorDef _enemyDefinition;
 
     private SaveState _save;
     private WorldClock _clock;
@@ -75,31 +78,48 @@ internal sealed class RpgSliceGameplayIntegration
 
     public RpgSliceGameplayIntegration(WorldManifest world, RpgSliceCellStreamer streamer,
         WorldPersistenceSession persistence, PhysicsWorld physics, SaveState save, WorldClock clock,
-        string savePath, bool smokeRequested)
+        string savePath, RpgContentSet content, bool smokeRequested)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _streamer = streamer ?? throw new ArgumentNullException(nameof(streamer));
         _persistence = persistence ?? throw new ArgumentNullException(nameof(persistence));
         _physics = physics ?? throw new ArgumentNullException(nameof(physics));
+        _content = content ?? throw new ArgumentNullException(nameof(content));
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
         _savePath = Path.GetFullPath(savePath);
         _smokeRequested = smokeRequested;
+        _playerDefinition = GetActor(PlayerActorId);
+        _workerDefinition = GetActor(WorkerActorId);
+        _merchantDefinition = GetActor(MerchantActorId);
+        _enemyDefinition = GetActor(EnemyActorId);
     }
 
     public bool IsInitialized => _initialized;
     public bool SmokeCompleted => _smokeCompleted;
     public string? LastStatus => _lastStatus;
+    public IReadOnlyList<(Guid CellId, Guid SceneObjectId, Guid InstanceId)> LiveActorInstances => !_initialized
+        ? Array.Empty<(Guid, Guid, Guid)>()
+        : new[]
+        {
+            (_workerCellId, _workerSceneObjectId, _workerInstanceId.Value),
+            (_merchantCellId, _merchantSceneObjectId, _merchantInstanceId.Value),
+            (_enemyCellId, _enemySceneObjectId, _enemyInstanceId.Value)
+        };
 
-    public static SaveState CreateInitialSave(double worldTimeSeconds)
+    public static SaveState CreateInitialSave(double worldTimeSeconds, RpgContentSet content)
     {
+        ArgumentNullException.ThrowIfNull(content);
         var items = new ItemCatalogue();
-        items.Add(new ItemDef(AppleId, "Apple", slot: null, stackable: true));
+        foreach (var item in content.Items.All.Values) items.Add(item);
+        if (items.Get(AppleId) is null)
+            throw new InvalidDataException($"RPG content pack does not define required item '{AppleId.Value}'.");
         var playerBag = new Bag();
         playerBag.Add(items.Get(AppleId)!, 1);
         var actors = new ActorRuntimeStore();
         actors = actors.Set(ActorRuntimeState.Create(PlayerWorldInstanceId,
-            CreateActorDefinition(PlayerActorId, "Player")));
+            content.Actors.Get(PlayerActorId)
+                ?? throw new InvalidDataException($"RPG content pack does not define required actor '{PlayerActorId.Value}'.")));
         return new SaveState
         {
             WorldTimeSeconds = worldTimeSeconds,
@@ -388,20 +408,39 @@ internal sealed class RpgSliceGameplayIntegration
     private void EnsureMerchant(RpgSliceCellStreamer.ActiveCell homeActive)
     {
         var entry = FindRuntimeObject("RpgSlice Merchant");
+        var authored = FindAuthoredActor(homeActive, "RpgSlice Merchant", MerchantActorId);
+        if (entry is not null && authored is not null)
+        {
+            RemoveLegacyRuntimeRole(entry, homeActive, authored, _merchantDefinition);
+            entry = null;
+        }
         if (entry is null)
         {
-            var identity = _persistence.Spawn(_homeCellId, homeActive.Scene,
-                new SceneObject(Guid.NewGuid(), "RpgSlice Merchant")
-                {
-                    Transform = new Transform { Position = new Vector3(20f, 1.1f, 23f), Scale = new Vector3(1f, 1.8f, 1f) }
-                });
-            entry = _persistence.RuntimeObjects.ExportSnapshot().Single(item => item.InstanceId == identity.InstanceId);
+            if (authored is not null)
+            {
+                _merchantCellId = _homeCellId;
+                _merchantSceneObjectId = authored.Id;
+                _merchantInstanceId = _persistence.Identities.GetOrCreate(_homeCellId, authored);
+                _merchantObject = authored;
+            }
+            else
+            {
+                var identity = _persistence.Spawn(_homeCellId, homeActive.Scene,
+                    new SceneObject(Guid.NewGuid(), "RpgSlice Merchant")
+                    {
+                        Transform = new Transform { Position = new Vector3(20f, 1.1f, 23f), Scale = new Vector3(1f, 1.8f, 1f) }
+                    });
+                entry = _persistence.RuntimeObjects.ExportSnapshot().Single(item => item.InstanceId == identity.InstanceId);
+            }
         }
-        _merchantCellId = entry.CellId;
-        _merchantSceneObjectId = entry.SceneObjectId;
-        _merchantInstanceId = entry.InstanceId;
-        if (TryGetActive(_merchantCellId, out _, out var active))
-            _merchantObject = active!.Scene.Find(_merchantSceneObjectId);
+        if (entry is not null)
+        {
+            _merchantCellId = entry.CellId;
+            _merchantSceneObjectId = entry.SceneObjectId;
+            _merchantInstanceId = entry.InstanceId;
+            if (TryGetActive(_merchantCellId, out _, out var active))
+                _merchantObject = active!.Scene.Find(_merchantSceneObjectId);
+        }
         if (_merchantObject is null) throw new InvalidDataException("RpgSlice merchant is not in an active cell.");
         if (!_save.ActorStates.TryGet(_merchantInstanceId.Value, out _))
         {
@@ -414,20 +453,39 @@ internal sealed class RpgSliceGameplayIntegration
     private void EnsureEnemy(RpgSliceCellStreamer.ActiveCell homeActive)
     {
         var entry = FindRuntimeObject("RpgSlice Road Raider");
+        var authored = FindAuthoredActor(homeActive, "RpgSlice Road Raider", EnemyActorId);
+        if (entry is not null && authored is not null)
+        {
+            RemoveLegacyRuntimeRole(entry, homeActive, authored, _enemyDefinition);
+            entry = null;
+        }
         if (entry is null)
         {
-            var identity = _persistence.Spawn(_homeCellId, homeActive.Scene,
-                new SceneObject(Guid.NewGuid(), "RpgSlice Road Raider")
-                {
-                    Transform = new Transform { Position = new Vector3(26f, 1.1f, 23f), Scale = new Vector3(0.8f, 1.7f, 0.8f) }
-                });
-            entry = _persistence.RuntimeObjects.ExportSnapshot().Single(item => item.InstanceId == identity.InstanceId);
+            if (authored is not null)
+            {
+                _enemyCellId = _homeCellId;
+                _enemySceneObjectId = authored.Id;
+                _enemyInstanceId = _persistence.Identities.GetOrCreate(_homeCellId, authored);
+                _enemyObject = authored;
+            }
+            else
+            {
+                var identity = _persistence.Spawn(_homeCellId, homeActive.Scene,
+                    new SceneObject(Guid.NewGuid(), "RpgSlice Road Raider")
+                    {
+                        Transform = new Transform { Position = new Vector3(26f, 1.1f, 23f), Scale = new Vector3(0.8f, 1.7f, 0.8f) }
+                    });
+                entry = _persistence.RuntimeObjects.ExportSnapshot().Single(item => item.InstanceId == identity.InstanceId);
+            }
         }
-        _enemyCellId = entry.CellId;
-        _enemySceneObjectId = entry.SceneObjectId;
-        _enemyInstanceId = entry.InstanceId;
-        if (TryGetActive(_enemyCellId, out _, out var active))
-            _enemyObject = active!.Scene.Find(_enemySceneObjectId);
+        if (entry is not null)
+        {
+            _enemyCellId = entry.CellId;
+            _enemySceneObjectId = entry.SceneObjectId;
+            _enemyInstanceId = entry.InstanceId;
+            if (TryGetActive(_enemyCellId, out _, out var active))
+                _enemyObject = active!.Scene.Find(_enemySceneObjectId);
+        }
         if (_enemyObject is null) throw new InvalidDataException("RpgSlice road raider is not in an active cell.");
         if (!_save.ActorStates.TryGet(_enemyInstanceId.Value, out _))
             SetActor(ActorRuntimeState.Create(_enemyInstanceId.Value, _enemyDefinition));
@@ -508,7 +566,7 @@ internal sealed class RpgSliceGameplayIntegration
             throw new InvalidOperationException("RpgSlice enemy smoke did not use physics line of sight correctly.");
 
         var smokeEnemy = ActorRuntimeState.Create(Guid.NewGuid(), _enemyDefinition);
-        var smokePlayer = ActorRuntimeState.Create(Guid.NewGuid(), CreateActorDefinition(PlayerActorId, "Smoke Player"));
+        var smokePlayer = ActorRuntimeState.Create(Guid.NewGuid(), _playerDefinition);
         var blockedDecision = EnemyCombatAi.Tick(new EnemyCombatAiMemory(), smokeEnemy, smokePlayer,
             ToNumerics(origin), ToNumerics(target), blocked.CanSee, _enemyAttack);
         var chaseDecision = EnemyCombatAi.Tick(blockedDecision.Memory, smokeEnemy, smokePlayer,
@@ -535,6 +593,40 @@ internal sealed class RpgSliceGameplayIntegration
     private WorldRuntimeObjectEntry? FindRuntimeObject(string name) =>
         _persistence.RuntimeObjects.ExportSnapshot().FirstOrDefault(entry => entry.SceneObject.Name == name);
 
+    private SceneObject? FindAuthoredActor(RpgSliceCellStreamer.ActiveCell active, string name,
+        ContentId<ActorContentKind> definitionId)
+    {
+        var namedObjects = active.Scene.Objects
+            .Where(item => item.Name == name && item.WorldEntity is not null).ToArray();
+        if (namedObjects.Length > 1)
+            throw new InvalidDataException($"Cell {_homeCellId} contains multiple actors named '{name}'.");
+        if (namedObjects.Length == 0 || namedObjects[0].WorldEntity is null) return null;
+        var placement = namedObjects[0].WorldEntity!;
+        if (placement.Kind != WorldEntityKind.Actor || placement.DefinitionId != definitionId.Value)
+            throw new InvalidDataException($"Authored actor '{name}' must reference '{definitionId.Value}'.");
+        return namedObjects[0];
+    }
+
+    private void RemoveLegacyRuntimeRole(WorldRuntimeObjectEntry entry,
+        RpgSliceCellStreamer.ActiveCell active, SceneObject authored, ActorDef definition)
+    {
+        if (entry.CellId != _homeCellId || active.Scene.Find(entry.SceneObjectId) is null
+            || !active.Scene.Remove(entry.SceneObjectId)
+            || !_persistence.RuntimeObjects.Remove(entry.CellId, entry.InstanceId, _persistence.Identities))
+            throw new InvalidDataException($"Could not replace legacy runtime actor '{entry.SceneObject.Name}' with its authored placement.");
+
+        var authoredInstanceId = authored.WorldEntity!.InstanceId;
+        if (_save.ActorStates.TryGet(entry.InstanceId.Value, out var previousState))
+        {
+            var entries = _save.ActorStates.Entries
+                .Where(state => state.WorldInstanceId != entry.InstanceId.Value
+                    && state.WorldInstanceId != authoredInstanceId)
+                .ToList();
+            entries.Add(previousState with { WorldInstanceId = authoredInstanceId, ActorId = definition.Id });
+            _save = _save with { ActorStates = new ActorRuntimeStore { Entries = entries } };
+        }
+    }
+
     private void EnsureItemDefinition()
     {
         if (_save.ItemDefs.Get(AppleId) is null)
@@ -544,8 +636,7 @@ internal sealed class RpgSliceGameplayIntegration
     private void EnsurePlayerActor()
     {
         if (!_save.ActorStates.TryGet(PlayerWorldInstanceId, out _))
-            SetActor(ActorRuntimeState.Create(PlayerWorldInstanceId,
-                CreateActorDefinition(PlayerActorId, "Player")));
+            SetActor(ActorRuntimeState.Create(PlayerWorldInstanceId, _playerDefinition));
     }
 
     private void SetActor(ActorRuntimeState actor) =>
@@ -609,19 +700,6 @@ internal sealed class RpgSliceGameplayIntegration
 
     private static NumericsVector3 ToNumerics(Vector3 value) => new(value.X, value.Y, value.Z);
 
-    private static ActorDef CreateActorDefinition(ContentId<ActorContentKind> id, string name) =>
-        new(id, name, stats: new ActorStats
-        {
-            Attributes = new ActorAttributes
-            {
-                Strength = 10,
-                Intelligence = 8,
-                Willpower = 8,
-                Agility = 8,
-                Speed = 8,
-                Endurance = 10,
-                Personality = 6,
-                Luck = 5
-            }
-        });
+    private ActorDef GetActor(ContentId<ActorContentKind> id) => _content.Actors.Get(id)
+        ?? throw new InvalidDataException($"RPG content pack does not define required actor '{id.Value}'.");
 }

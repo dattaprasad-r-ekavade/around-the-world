@@ -1395,3 +1395,28 @@ The Stage 14 gate remains Pending. The next batch starts at task 135 (project-wi
 | Authored recovery interruption test | PASS — in-memory scene edits round-trip; semantically invalid RPG drafts stage with diagnostics and are blocked from apply; valid recovery applies; source files remain untouched during review and player saves remain unchanged |
 | CharacterStudio `--screenshot ... --warmup 8` via `dotnet exec` | PASS — 1280×720 capture shows the recovery autosave and review controls in the World Cells panel |
 | CharacterStudio direct recovery button interaction | Not automated — the current desktop automation surface does not expose direct native-app button input; editor code builds, and capture/stage/validate/apply behavior is covered by the service integration test |
+
+## Tasks 137a–137d — settlement runtime and measured route — 27 September 2026
+
+- Split task 137 into four checkable outcomes. `settlement.json` defines three exterior cells and two interiors; the market cell has authored doors to both houses, and both interiors return to its authored exterior spawn. The project validator accepts every scene, door, spawn, path graph, and RPG placement.
+- RpgSlice now loads unique manifest GLB references through `GltfSceneImporter`, shares static GPU meshes/textures, draws the supported courtyard material, and adds each primitive as a streamed triangle-mesh collider. The tracked CharacterStudio courtyard asset is linked into RpgSlice output without duplicating the source file. The GLB appears in the settlement capture and its four primitive colliders activate in the live market cell.
+- Added a content pack with four actor definitions and an apple item definition. The merchant and raider are authored actor placements with stable world-instance IDs; RpgSlice adopts them instead of spawning duplicate runtime actors. The scheduled worker continues to use the runtime object store and the authored cross-cell path graph.
+- `--settlement-smoke` validates the project, loads the GLB and collider meshes, and confirms three live NPC roles with unique instance identities. The full settlement validator reports 3 exterior cells, 2 interiors, 4 actors, and 1 item; the runtime smoke reports 4 GLB primitives/colliders and 22 unique loaded scene identities.
+- Added a separate six-waypoint perimeter route for `--settlement-benchmark`; the fixed 3×3 baseline route and report remain unchanged. The ten-lap Release run crossed cell boundaries 20 times. Average/p95/max frame time was 1.01/2.72/104.70 ms, longest activation 21.05 ms, peak working set 166.6 MiB, and active-cell/chunk/tracked-resource peaks stayed at 3/16/31 on every lap. All agreed budgets passed. Five measured frames exceeded 50 ms, including two over 100 ms; working set rose from 157.8 to 166.6 MiB over the run. Results and setup-route fixes are recorded in `OUTDOOR_BENCHMARK.md`.
+- Audited the untracked `test-assets/`: 37 GLBs and 388 PNGs (~455 MB), split between modern Japanese street props/vehicles and two dense city models. Nine standalone vehicle GLBs are the best current importer fit; most houses/props use matrix transforms, vending machines require GPU instancing, and the dense city models require mesh quantization. GLB images are embedded, so the loose PNGs are not required for these files. No source, license, or attribution metadata is present; none of these assets were added to tracked content.
+- The ordered checklist is now 159/166 (95.8%); task 138 is first unchecked. Stage 14 remains Pending because the complete quest and editor-authored, no-handwritten-reference workflow have not passed. The broader Stage 9–12 and Release gates are unchanged.
+
+### Settlement checks
+
+| Check | Result |
+| --- | --- |
+| `git pull --ff-only` | PASS — already up to date; `master` and `origin/master` both at `2f7c186` before this batch |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings and 0 errors; FirstLight, Campaign, RpgSlice, CharacterStudio, authoring, engine, RPG, and check projects compiled |
+| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 248 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check/Ember.Rpg.Check.csproj --configuration Release --no-build --no-restore` | PASS — save then load equals original |
+| RpgSlice `--settlement-smoke --windowed` | PASS — authored content validates; courtyard GLB loads/renders, four mesh colliders activate, merchant/raider/worker identities are unique |
+| RpgSlice `--rpg-integration-smoke --windowed` | PASS — merchant trade, physics perception/combat, and scheduled worker trip/return still pass with data-driven RPG definitions |
+| Settlement screenshot, 1280×720 | PASS — courtyard GLB rendered with its cell props in Release output |
+| RpgSlice `--settlement-benchmark --time-paused --windowed` | PASS — one warmup plus ten measured 166 m laps; all provisional budgets passed. See `OUTDOOR_BENCHMARK.md` |
+
+Limit: the courtyard GLB is linked into the RpgSlice build output. A `--world` path pointing directly at the source-tree settlement folder does not contain that linked file; use the built `Content/World/settlement.json` root for direct runtime runs. The default built app path and settlement smoke/benchmark pass.

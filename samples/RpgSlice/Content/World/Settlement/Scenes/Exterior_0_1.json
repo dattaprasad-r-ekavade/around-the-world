@@ -1,0 +1,10 @@
+{
+  "Version": 7,
+  "Objects": [
+    { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a11", "Name": "Ground", "Position": [16,-0.5,16], "Rotation": [0,0,0,1], "Scale": [32,1,32] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a21", "Name": "North Garden Tree Trunk", "Position": [8,1.7,22], "Rotation": [0,0,0,1], "Scale": [0.8,3.4,0.8] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a22", "Name": "North Garden Foliage", "Position": [8,4,22], "Rotation": [0,0,0,1], "Scale": [3.4,3,3.4] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a23", "Name": "Garden Bench", "Position": [20,0.7,20], "Rotation": [0,0,0,1], "Scale": [2.2,0.5,0.7] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a24", "Name": "Garden Planter", "Position": [25,0.5,12], "Rotation": [0,0,0,1], "Scale": [1.4,1,1.4] }
+  ]
+}

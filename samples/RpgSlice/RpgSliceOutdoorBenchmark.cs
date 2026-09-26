@@ -13,7 +13,7 @@ internal sealed class RpgSliceOutdoorBenchmark
     public const int MeasuredLapCount = 10;
     private const float ArrivalRadius = 0.2f;
     private static readonly TimeSpan LegStallTimeout = TimeSpan.FromSeconds(20);
-    private static readonly Vector2[] Route =
+    private static readonly Vector2[] OutdoorRoute =
     {
         new(48f, 23f),
         new(48f, 48f),
@@ -22,6 +22,16 @@ internal sealed class RpgSliceOutdoorBenchmark
         new(16f, 52f),
         new(16f, 23f)
     };
+    private static readonly Vector2[] SettlementRoute =
+    {
+        new(3f, 23f),
+        new(3f, 3f),
+        new(60f, 3f),
+        new(60f, 29f),
+        new(16f, 29f),
+        new(16f, 23f),
+    };
+    private readonly Vector2[] _route;
 
     private readonly List<double> _frameMilliseconds = new();
     private readonly List<double> _lapMilliseconds = new(MeasuredLapCount);
@@ -46,13 +56,16 @@ internal sealed class RpgSliceOutdoorBenchmark
     private int _lapPeakTrackedGraphicsResources;
     private long _lapPeakWorkingSetBytes;
 
-    public RpgSliceOutdoorBenchmark(Vector3 startPosition)
+    public RpgSliceOutdoorBenchmark(Vector3 startPosition, bool settlementRoute = false)
     {
+        _route = settlementRoute ? SettlementRoute : OutdoorRoute;
+        ScenarioName = settlementRoute ? "settlement" : "outdoor";
         _legStart = new Vector2(startPosition.X, startPosition.Z);
-        _legTarget = Route[0];
+        _legTarget = _route[0];
         _lapClock.Start();
     }
 
+    public string ScenarioName { get; }
     public bool IsMeasuring { get; private set; }
     public bool IsComplete { get; private set; }
     public bool IsFailed { get; private set; }
@@ -62,7 +75,7 @@ internal sealed class RpgSliceOutdoorBenchmark
         : IsMeasuring ? $"lap {_lapMilliseconds.Count + 1}/{MeasuredLapCount}"
         : "warmup lap";
     public int CurrentLeg => _legIndex + 1;
-    public int LegCount => Route.Length;
+    public int LegCount => _route.Length;
     public Vector2 CurrentTarget => _legTarget;
     public int CellBoundaryCrossings { get; private set; }
     public int PeakActiveCells { get; private set; }
@@ -166,7 +179,8 @@ internal sealed class RpgSliceOutdoorBenchmark
     }
 
     public string BuildReport(double longestActivationMilliseconds, int activationAttempts,
-        bool instancingEnabled, int graphicsWidth, int graphicsHeight, string adapter)
+        bool instancingEnabled, int graphicsWidth, int graphicsHeight, string adapter,
+        string? contentSummary = null)
     {
         if (!IsComplete) throw new InvalidOperationException("The outdoor benchmark has not completed.");
         var ordered = _frameMilliseconds.OrderBy(value => value).ToArray();
@@ -179,14 +193,15 @@ internal sealed class RpgSliceOutdoorBenchmark
             ? "PASS"
             : "TARGETS MISSED";
 
-        return $"RpgSlice outdoor benchmark: {outcome}\n"
+        return $"RpgSlice {ScenarioName} benchmark: {outcome}\n"
             + (FailureReason is null ? string.Empty : $"Route failure: {FailureReason}.\n")
             + $"Adapter/resolution: {adapter}, {graphicsWidth}x{graphicsHeight}; instancing={(instancingEnabled ? "on" : "fallback")}.\n"
-            + $"Route: 1 warmup lap + {MeasuredLapCount} measured laps; measured time={_measuredClock.Elapsed.TotalSeconds:0.0}s; frames={ordered.Length}.\n"
+            + $"Route: {_route.Length} waypoints per lap; 1 warmup lap + {MeasuredLapCount} measured laps; measured time={_measuredClock.Elapsed.TotalSeconds:0.0}s; frames={ordered.Length}.\n"
             + $"Frame time ms: average={average:0.00}, p95={p95:0.00}, max={maximum:0.00}; >50ms={FramesOver50Milliseconds}, >100ms={FramesOver100Milliseconds}.\n"
             + $"Cell activation over startup, warmup, and route: attempts={activationAttempts}, longest-main-thread={longestActivationMilliseconds:0.00}ms.\n"
             + $"Peaks: active-cells={PeakActiveCells}, terrain-chunks={PeakTerrainChunks}, tracked-renderer-resources={PeakTrackedGraphicsResources}, working-set={PeakWorkingSetBytes / (1024d * 1024d):0.0}MiB.\n"
             + $"Foliage batching peak: instances={PeakFoliageInstances}, previous individual submissions={PeakEquivalentIndividualDrawSubmissions}, batched submissions={PeakBatchedDrawSubmissions}.\n"
+            + (string.IsNullOrWhiteSpace(contentSummary) ? string.Empty : $"Content: {contentSummary}\n")
             + $"Measured cell-boundary crossings={CellBoundaryCrossings}; lap ms=[{string.Join(", ", _lapMilliseconds.Select(value => value.ToString("0", System.Globalization.CultureInfo.InvariantCulture)))}].\n"
             + $"Per-lap peak resources: {string.Join("; ", _lapResourceTrend)}.\n"
             + $"Crossings: {string.Join("; ", _cellCrossings)}";
@@ -200,14 +215,14 @@ internal sealed class RpgSliceOutdoorBenchmark
         _legIndex++;
         _furthestLegProgress = 0f;
         _legClock.Restart();
-        if (_legIndex < Route.Length)
+        if (_legIndex < _route.Length)
         {
-            _legTarget = Route[_legIndex];
+            _legTarget = _route[_legIndex];
             return;
         }
 
         _legIndex = 0;
-        _legTarget = Route[0];
+        _legTarget = _route[0];
         _completedLaps++;
         if (_completedLaps == 1)
         {

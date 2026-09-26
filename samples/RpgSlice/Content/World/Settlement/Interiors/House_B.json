@@ -1,0 +1,11 @@
+{
+  "Version": 7,
+  "Objects": [
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a20", "Name": "Ground", "Position": [16,-0.5,16], "Rotation": [0,0,0,1], "Scale": [32,1,32] },
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a23", "Name": "House B North Wall", "Position": [16,2.5,28], "Rotation": [0,0,0,1], "Scale": [32,5,0.5] },
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a24", "Name": "House B East Wall", "Position": [31.75,2.5,16], "Rotation": [0,0,0,1], "Scale": [0.5,5,24] },
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a25", "Name": "House B West Wall", "Position": [0.25,2.5,16], "Rotation": [0,0,0,1], "Scale": [0.5,5,24] },
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a21", "Name": "Return Door", "Door": { "DestinationCellId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a01", "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a30", "Facing": [0,1,0,0] }, "Position": [16,1,1], "Rotation": [0,0,0,1], "Scale": [1,2,0.25] },
+    { "Id": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a22", "Name": "House B Entry Spawn", "Enabled": false, "SpawnPoint": { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a32" }, "Position": [16,1.1,4], "Rotation": [0,0,0,1], "Scale": [1,1,1] }
+  ]
+}

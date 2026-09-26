@@ -1,0 +1,27 @@
+{
+  "actors": [
+    {
+      "id": "actor.rpgslice.player",
+      "name": "Player",
+      "stats": { "attributes": { "strength": 12, "intelligence": 10, "willpower": 10, "agility": 12, "speed": 12, "endurance": 12, "personality": 10, "luck": 10 } }
+    },
+    {
+      "id": "actor.rpgslice.worker",
+      "name": "Scheduled Worker",
+      "stats": { "attributes": { "strength": 8, "intelligence": 9, "willpower": 8, "agility": 10, "speed": 10, "endurance": 9, "personality": 12, "luck": 10 } }
+    },
+    {
+      "id": "actor.rpgslice.merchant",
+      "name": "Market Keeper",
+      "stats": { "attributes": { "strength": 8, "intelligence": 12, "willpower": 10, "agility": 9, "speed": 9, "endurance": 9, "personality": 15, "luck": 10 } }
+    },
+    {
+      "id": "actor.rpgslice.raider",
+      "name": "Road Raider",
+      "stats": { "attributes": { "strength": 14, "intelligence": 7, "willpower": 8, "agility": 11, "speed": 10, "endurance": 14, "personality": 6, "luck": 8 } }
+    }
+  ],
+  "items": [
+    { "id": "item.rpgslice.apple", "name": "Apple", "slot": null, "stackable": true }
+  ]
+}

@@ -14,9 +14,12 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Ember.Authoring\Ember.Authoring.csproj" />
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
     <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
     <None Update="Content\World\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <None Update="Content\RpgContent.json" CopyToOutputDirectory="PreserveNewest" />
+    <None Include="..\CharacterStudio\Assets\ReleaseACourtyard.glb" Link="Content\World\Assets\ReleaseACourtyard.glb" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

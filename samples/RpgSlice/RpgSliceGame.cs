@@ -1,4 +1,5 @@
 using Ember;
+using Ember.Authoring;
 using Ember.Input;
 using Ember.Physics;
 using Ember.Render;
@@ -28,6 +29,10 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _travelSmokeRequested;
     private readonly bool _persistenceSmokeRequested;
     private readonly bool _rpgIntegrationSmokeRequested;
+    private readonly bool _settlementSmokeRequested;
+    private readonly bool _settlementBenchmarkRequested;
+    private readonly string _rpgContentPath;
+    private RpgContentSet _rpgContent = null!;
     private int _travelSmokeApproachFrames;
     private readonly bool _benchmarkRequested;
     private readonly bool _timePaused;
@@ -42,6 +47,7 @@ public sealed class RpgSliceGame : EngineHost
     private SceneRenderer _renderer = null!;
     private InstancedStaticMeshRenderer? _foliageInstancer;
     private WorldManifest _world = null!;
+    private RpgSliceStaticAssets _staticAssets = null!;
     private WorldPersistenceSession _worldPersistence = null!;
     private HeightmapTerrainRenderer _terrain = null!;
     private WaterSurfaceRenderer _water = null!;
@@ -75,10 +81,15 @@ public sealed class RpgSliceGame : EngineHost
     public RpgSliceGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: GameWindowTitle)
     {
+        _rpgContentPath = Path.Combine(AppContext.BaseDirectory, "Content", "RpgContent.json");
         if (GraphicsAdapter.DefaultAdapter.IsProfileSupported(GraphicsProfile.HiDef))
             _graphics.GraphicsProfile = GraphicsProfile.HiDef;
+        _settlementSmokeRequested = HasArgument(args, "--settlement-smoke");
+        _settlementBenchmarkRequested = HasArgument(args, "--settlement-benchmark");
         _worldManifestPath = ParseOption(args, "--world")
-            ?? Path.Combine(AppContext.BaseDirectory, "Content", "World", WorldManifest.DefaultFileName);
+            ?? Path.Combine(AppContext.BaseDirectory, "Content", "World",
+                _settlementSmokeRequested || _settlementBenchmarkRequested
+                    ? "settlement.json" : WorldManifest.DefaultFileName);
         _smokeControls = HasArgument(args, "--smoke-controls");
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
         _travelSmokeRequested = HasArgument(args, "--travel-smoke");
@@ -89,18 +100,22 @@ public sealed class RpgSliceGame : EngineHost
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
             + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
             + (_rpgIntegrationSmokeRequested ? 1 : 0)
-            + (_benchmarkRequested ? 1 : 0) > 1)
+            + (_settlementSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0)
+            + (_settlementBenchmarkRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
         var configuredSavePath = ParseOption(args, "--save");
-        _deleteSmokeSaveOnExit = (_persistenceSmokeRequested || _rpgIntegrationSmokeRequested)
+        var smokeRequested = _persistenceSmokeRequested || _rpgIntegrationSmokeRequested
+            || _settlementSmokeRequested;
+        _deleteSmokeSaveOnExit = smokeRequested
             && configuredSavePath is null;
         _worldSavePath = configuredSavePath
-            ?? (_persistenceSmokeRequested || _rpgIntegrationSmokeRequested
+            ?? (smokeRequested
                 ? Path.Combine(Path.GetTempPath(), $"ember-rpgslice-smoke-{Guid.NewGuid():N}.json")
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Ember", "RpgSlice", "world-save.json"));
         _rpgSavePath = _worldSavePath + ".rpg.json";
-        if (_benchmarkRequested) _graphics.SynchronizeWithVerticalRetrace = false;
+        if (_benchmarkRequested || _settlementBenchmarkRequested)
+            _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
             if (!float.TryParse(timeText, NumberStyles.Float, CultureInfo.InvariantCulture, out _initialTimeOfDayHours)
@@ -121,6 +136,9 @@ public sealed class RpgSliceGame : EngineHost
     protected override void LoadContent()
     {
         _world = WorldManifest.Load(_worldManifestPath);
+        _rpgContent = RpgContentJson.Load(_rpgContentPath);
+        if (_settlementSmokeRequested) ValidateSettlementProject();
+        _staticAssets = RpgSliceStaticAssets.Load(GraphicsDevice, _world);
         var originCell = _world.GetExteriorCoordinate(Vector3.Zero);
         if (!_world.TryGetExterior(originCell, out var originDefinition) || originDefinition is null)
             throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
@@ -130,12 +148,12 @@ public sealed class RpgSliceGame : EngineHost
         var initialWorldTime = Math.Max(0d, _initialTimeOfDayHours) * 3600d;
         var rpgSave = File.Exists(_rpgSavePath)
             ? SaveState.Read(_rpgSavePath)
-            : RpgSliceGameplayIntegration.CreateInitialSave(initialWorldTime);
+            : RpgSliceGameplayIntegration.CreateInitialSave(initialWorldTime, _rpgContent);
         if (_rpgIntegrationSmokeRequested)
         {
             if (loadedSave is not null)
                 throw new InvalidOperationException("RPG integration smoke requires a fresh world save path.");
-            rpgSave = RpgSliceGameplayIntegration.CreateInitialSave((6 * 60 * 60) - 2);
+            rpgSave = RpgSliceGameplayIntegration.CreateInitialSave((6 * 60 * 60) - 2, _rpgContent);
         }
         else if (_timeHoursSpecified)
         {
@@ -184,10 +202,11 @@ public sealed class RpgSliceGame : EngineHost
         _collisionGate.CollisionRequired += coordinate => Console.WriteLine(
             $"RpgSlice: waiting for collision at cell ({coordinate.X}, {coordinate.Z}); movement is held at the boundary.");
         _cellStreamer = new RpgSliceCellStreamer(
-            _world, _physics, _collisionGate, _terrainSource, _terrainSettings, _worldPersistence);
+            _world, _physics, _collisionGate, _terrainSource, _terrainSettings, _worldPersistence,
+            _staticAssets);
         _rpgGameplay = new RpgSliceGameplayIntegration(_world, _cellStreamer,
             _worldPersistence, _physics, rpgSave, _worldClock, _rpgSavePath,
-            _rpgIntegrationSmokeRequested);
+            _rpgContent, _rpgIntegrationSmokeRequested);
         _collisionGate.CollisionRequired += _cellStreamer.Request;
         if (initialCell.Kind == WorldCellKind.Exterior)
         {
@@ -225,10 +244,10 @@ public sealed class RpgSliceGame : EngineHost
         {
             _streamingSmoke = new RpgSliceStreamingSmoke(_world);
         }
-        else if (_benchmarkRequested)
+        else if (_benchmarkRequested || _settlementBenchmarkRequested)
         {
-            _benchmark = new RpgSliceOutdoorBenchmark(_player.Pose.Position);
-            Console.WriteLine($"RpgSlice: outdoor benchmark started on {GraphicsDevice.Adapter.Description}, "
+            _benchmark = new RpgSliceOutdoorBenchmark(_player.Pose.Position, _settlementBenchmarkRequested);
+            Console.WriteLine($"RpgSlice: {(_settlementBenchmarkRequested ? "settlement" : "outdoor")} benchmark started on {GraphicsDevice.Adapter.Description}, "
                 + $"{GraphicsDevice.Viewport.Width}x{GraphicsDevice.Viewport.Height}, "
                 + $"{GraphicsDevice.GraphicsProfile}; complete one warmup and ten measured laps.");
         }
@@ -265,6 +284,12 @@ public sealed class RpgSliceGame : EngineHost
                 UpdateMovement(keyboard, RealSeconds(gameTime), IsActive);
                 if (_rpgIntegrationSmokeRequested && _rpgGameplay?.SmokeCompleted == true)
                 {
+                    _smokeRan = true;
+                    Exit();
+                }
+                else if (_settlementSmokeRequested && _rpgGameplay?.IsInitialized == true)
+                {
+                    RunSettlementRuntimeSmoke();
                     _smokeRan = true;
                     Exit();
                 }
@@ -374,7 +399,8 @@ public sealed class RpgSliceGame : EngineHost
                 workingSetBytes = process.WorkingSet64;
             }
             var trackedResources = 2 + _terrain.CachedChunkCount + 4
-                + (_foliageInstancer?.OwnedGraphicsResourceCount ?? 0);
+                + (_foliageInstancer?.OwnedGraphicsResourceCount ?? 0)
+                + _staticAssets.OwnedGraphicsResourceCount;
             benchmark.ObserveRuntime(_world.GetExteriorCoordinate(position), _cellStreamer.ActiveCellCount,
                 _terrain.CachedChunkCount, trackedResources, workingSetBytes, benchmarkElapsedSeconds);
         }
@@ -384,8 +410,12 @@ public sealed class RpgSliceGame : EngineHost
             var report = _benchmark.BuildReport(_cellStreamer.LongestActivationMilliseconds,
                 _cellStreamer.ActivationAttemptCount, _foliageInstancer is not null,
                 GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height,
-                GraphicsDevice.Adapter.Description);
-            var reportPath = Path.Combine(Path.GetTempPath(), "ember-rpgslice-outdoor-benchmark.txt");
+                GraphicsDevice.Adapter.Description,
+                _settlementBenchmarkRequested ? BuildSettlementContentSummary() : null);
+            var reportFileName = _settlementBenchmarkRequested
+                ? "ember-rpgslice-settlement-benchmark.txt"
+                : "ember-rpgslice-outdoor-benchmark.txt";
+            var reportPath = Path.Combine(Path.GetTempPath(), reportFileName);
             File.WriteAllText(reportPath, report, Encoding.UTF8);
             Console.WriteLine(report);
             Console.WriteLine($"RpgSlice benchmark report saved to {reportPath}");
@@ -667,7 +697,7 @@ public sealed class RpgSliceGame : EngineHost
             using var verificationPhysics = new PhysicsWorld();
             var verificationGate = new ExteriorCellCollisionGate(_world);
             using var verificationStreamer = new RpgSliceCellStreamer(_world, verificationPhysics,
-                verificationGate, _terrainSource, _terrainSettings, restarted);
+                verificationGate, _terrainSource, _terrainSettings, restarted, _staticAssets);
             verificationGate.CollisionRequired += verificationStreamer.Request;
             verificationStreamer.Start(Vector3.Zero);
 
@@ -713,6 +743,96 @@ public sealed class RpgSliceGame : EngineHost
             if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath))
                 File.Delete(_rpgSavePath);
         }
+    }
+
+    private void ValidateSettlementProject()
+    {
+        var validation = AuthoredProjectValidator.Validate(_worldManifestPath, _rpgContentPath);
+        if (!validation.IsValid)
+            throw new InvalidDataException("Settlement authored content failed validation: "
+                + string.Join(Environment.NewLine, validation.Diagnostics));
+
+        var exteriorCells = _world.Cells.Where(cell => cell.Kind == WorldCellKind.Exterior).ToArray();
+        var interiorCells = _world.Cells.Where(cell => cell.Kind == WorldCellKind.Interior).ToArray();
+        if (exteriorCells.Length < 3 || interiorCells.Length != 2)
+            throw new InvalidDataException("Settlement requires at least three exterior cells and exactly two interiors.");
+        if (!_world.TryGetExterior(new ExteriorCellCoordinate(0, 0), out var home) || home is null)
+            throw new InvalidDataException("Settlement is missing its market cell at (0, 0).");
+
+        var homeScene = SceneFile.Load(_world.ResolveScenePath(home.Id));
+        var interiorIds = interiorCells.Select(cell => cell.Id).ToHashSet();
+        var entryDestinations = homeScene.Objects
+            .Where(item => item.Door is not null && interiorIds.Contains(item.Door.DestinationCellId))
+            .Select(item => item.Door!.DestinationCellId)
+            .ToHashSet();
+        if (entryDestinations.Count != interiorIds.Count)
+            throw new InvalidDataException("Both settlement interiors need a connected door from the market cell.");
+        foreach (var interior in interiorCells)
+        {
+            var scene = SceneFile.Load(_world.ResolveScenePath(interior.Id));
+            if (!scene.Objects.Any(item => item.Door?.DestinationCellId == home.Id))
+                throw new InvalidDataException($"Interior {interior.Id} needs a return door to the market cell.");
+        }
+        Console.WriteLine($"RpgSlice: settlement world validated ({exteriorCells.Length} exterior cells, {interiorCells.Length} interiors, "
+            + $"{_rpgContent.Actors.Count} actors, {_rpgContent.Items.Count} items).");
+    }
+
+    private string BuildSettlementContentSummary()
+    {
+        var totalObjects = 0;
+        var enabledObjects = 0;
+        var actorPlacements = 0;
+        var itemPlacements = 0;
+        var glbInstances = 0;
+        foreach (var cell in _world.Cells)
+        {
+            var scene = SceneFile.Load(_world.ResolveScenePath(cell.Id));
+            totalObjects += scene.Objects.Count;
+            enabledObjects += scene.Objects.Count(item => item.Enabled);
+            actorPlacements += scene.Objects.Count(item => item.WorldEntity?.Kind == WorldEntityKind.Actor);
+            itemPlacements += scene.Objects.Count(item => item.WorldEntity?.Kind == WorldEntityKind.Item);
+            glbInstances += scene.Objects.Count(item => item.GltfAsset is not null);
+        }
+        return $"cells={_world.Cells.Count}, scene-objects={totalObjects}, enabled-objects={enabledObjects}, "
+            + $"actor-placements={actorPlacements}, item-placements={itemPlacements}, GLB-instances={glbInstances}, "
+            + $"static-assets={_staticAssets.AssetCount}, GLB-primitives={_staticAssets.PrimitiveCount}, "
+            + $"RPG-actors={_rpgContent.Actors.Count}, RPG-items={_rpgContent.Items.Count}";
+    }
+
+    private void RunSettlementRuntimeSmoke()
+    {
+        if (_staticAssets.AssetCount != 1 || _staticAssets.PrimitiveCount < 1)
+            throw new InvalidOperationException("Settlement did not load its manifest-referenced static GLB.");
+        var home = _world.FindCell(_world.TryGetExterior(new ExteriorCellCoordinate(0, 0), out var cell)
+                ? cell!.Id : Guid.Empty)
+            ?? throw new InvalidDataException("Settlement market cell was not found after validation.");
+        if (!_cellStreamer.TryGetActiveCell(home.Id, out _, out var active) || active is null)
+            throw new InvalidOperationException("Settlement market cell did not activate.");
+        var glbInstances = active.Scene.Objects.Where(item => item.Enabled && item.GltfAsset is not null).ToArray();
+        var expectedMeshColliders = glbInstances.Sum(item => _staticAssets.GetCollisionPrimitiveCount(item.GltfAsset!.AssetId));
+        if (expectedMeshColliders == 0 || active.StaticMeshColliderCount < expectedMeshColliders)
+            throw new InvalidOperationException("Settlement static GLB geometry was not added to the physics world.");
+
+        var roles = _rpgGameplay?.LiveActorInstances
+            ?? throw new InvalidOperationException("Settlement RPG runtime did not initialize.");
+        if (roles.Count != 3 || roles.Select(role => role.InstanceId).Distinct().Count() != roles.Count)
+            throw new InvalidOperationException("Settlement worker, merchant, and hostile must have unique world identities.");
+        if (!_world.TryGetExterior(new ExteriorCellCoordinate(1, 0), out var work) || work is null
+            || roles[1].CellId != home.Id || roles[2].CellId != home.Id
+            || (roles[0].CellId != home.Id && roles[0].CellId != work.Id))
+            throw new InvalidOperationException("Settlement merchant, hostile, or scheduled worker is assigned to the wrong cell.");
+        foreach (var role in roles)
+        {
+            if (!_cellStreamer.TryGetActiveCell(role.CellId, out _, out var roleCell) || roleCell is null
+                || roleCell.Scene.Find(role.SceneObjectId) is null)
+                throw new InvalidOperationException($"Settlement actor instance {role.InstanceId} is not present in its active cell.");
+        }
+        var identities = _worldPersistence.Identities.ExportSnapshot();
+        if (identities.Select(entry => entry.InstanceId.Value).Distinct().Count() != identities.Count)
+            throw new InvalidOperationException("Settlement loaded cells contain duplicate world instance identities.");
+        Console.WriteLine($"RpgSlice: settlement smoke passed (GLB primitives={expectedMeshColliders}, "
+            + $"static mesh colliders={active.StaticMeshColliderCount}, live NPC roles={roles.Count}, "
+            + $"unique loaded instance identities={identities.Count}).");
     }
 
     private WorldPlayerLocation CapturePlayerLocation() =>
@@ -798,6 +918,12 @@ public sealed class RpgSliceGame : EngineHost
                     _ when sceneObject.Door is not null => new Color(139, 84, 49),
                     _ => new Color(137, 125, 108)
                 };
+                if (sceneObject.GltfAsset is not null)
+                {
+                    _staticAssets.Draw(activeCell.Scene, sceneObject, activeCell.WorldTransform,
+                        _camera.View, _camera.Projection, environment, !_insideInterior);
+                    continue;
+                }
                 var world = activeCell.Scene.GetWorldMatrix(sceneObject.Id) * activeCell.WorldTransform;
                 if (sceneObject.Name == "Foliage" && _foliageInstancer is not null)
                     _foliageInstances.Add(new StaticMeshInstance(world, colour));
@@ -842,6 +968,7 @@ public sealed class RpgSliceGame : EngineHost
         _streamingSmoke?.Dispose();
         _streamingSmoke = null;
         _cellStreamer?.Dispose();
+        _staticAssets?.Dispose();
         _foliageInstancer?.Dispose();
         _water?.Dispose();
         _terrain?.Dispose();

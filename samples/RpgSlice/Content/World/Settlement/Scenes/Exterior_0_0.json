@@ -1,0 +1,16 @@
+{
+  "Version": 7,
+  "Objects": [
+    { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a11", "Name": "Ground", "Position": [16,-0.5,16], "Rotation": [0,0,0,1], "Scale": [32,1,32] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a01", "Name": "Stone Market Courtyard", "GltfAssetId": "e6f9b9ab-8037-4bb4-b532-3fa9f1ac7b01", "GltfAssetPath": "Assets/ReleaseACourtyard.glb", "Position": [16,0.3,15], "Rotation": [0,0,0,1], "Scale": [0.1,0.1,0.1] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a02", "Name": "Market Stall", "Position": [20,0.7,24], "Rotation": [0,0,0,1], "Scale": [2.4,1.4,1.6] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a03", "Name": "Market Awning", "Position": [20,2.4,24], "Rotation": [0,0,0,1], "Scale": [3.4,0.25,2.5] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a04", "Name": "Market Lantern", "Position": [22.5,3.2,23.5], "Rotation": [0,0,0,1], "Scale": [0.25,0.6,0.25] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a05", "Name": "RpgSlice Merchant", "WorldEntity": { "Kind": 0, "DefinitionId": "actor.rpgslice.merchant", "InstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a11" }, "Position": [20,1.1,22], "Rotation": [0,0,0,1], "Scale": [1,1.8,1] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a06", "Name": "RpgSlice Road Raider", "WorldEntity": { "Kind": 0, "DefinitionId": "actor.rpgslice.raider", "InstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a12" }, "Position": [26,1.1,23], "Rotation": [0,0,0,1], "Scale": [0.8,1.7,0.8] },
+    { "Id": "d71f9da0-e2e9-4aae-bf2f-d70a06b07a07", "Name": "Apple Basket", "WorldEntity": { "Kind": 1, "DefinitionId": "item.rpgslice.apple", "InstanceId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a13" }, "Position": [18,0.8,25], "Rotation": [0,0,0,1], "Scale": [0.7,0.8,0.7] },
+    { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a40", "Name": "Door to House A", "Door": { "DestinationCellId": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a01", "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a31", "Facing": [0,0,0,1] }, "Position": [6,1,6], "Rotation": [0,0,0,1], "Scale": [1,2,0.25] },
+    { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a41", "Name": "Door to House B", "Door": { "DestinationCellId": "b71f9da0-e2e9-4aae-bf2f-d70a06b07a02", "DestinationSpawnId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a32", "Facing": [0,0,0,1] }, "Position": [26,1,6], "Rotation": [0,0,0,1], "Scale": [1,2,0.25] },
+    { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a42", "Name": "Exterior Return Spawn", "Enabled": false, "SpawnPoint": { "Id": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a30" }, "Position": [16,1.1,23], "Rotation": [0,0,0,1], "Scale": [0.5,0.5,0.5] }
+  ]
+}
