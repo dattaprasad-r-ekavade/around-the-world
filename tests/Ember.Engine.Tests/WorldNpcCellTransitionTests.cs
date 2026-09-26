@@ -177,6 +177,74 @@ public sealed class WorldNpcCellTransitionTests
         Assert.Equal(sourceCellId, Assert.Single(runtimeObjects.ExportSnapshot()).CellId);
     }
 
+    [Fact]
+    public void ActiveDestinationIsReusedAndRemainsActiveAfterNpcTransfer()
+    {
+        var sourceCellId = Guid.NewGuid();
+        var destinationCellId = Guid.NewGuid();
+        var sourceScene = new SceneGraph();
+        var destinationScene = new SceneGraph();
+        var identities = new WorldInstanceIdentityMap();
+        identities.CreateCellIdentities(sourceCellId, sourceScene);
+        identities.CreateCellIdentities(destinationCellId, destinationScene);
+        var runtimeObjects = new WorldRuntimeObjectStore();
+        var npc = runtimeObjects.Spawn(sourceCellId, sourceScene,
+            new SceneObject(Guid.NewGuid(), "Active Destination Follower"), identities);
+        var destination = new WorldCellLoadOperation<PreparedCell, ActiveCell>();
+        var preparation = destination.PrepareAsync(_ => Task.FromResult(new PreparedCell(destinationCellId)));
+        WaitForPreparation(preparation);
+        destination.PumpCompletions();
+        destination.Activate(prepared => new ActiveCell(prepared.CellId, destinationScene));
+        var transition = new WorldPathTransition(Guid.NewGuid(), WorldPathConnectionKind.ExteriorBoundary,
+            new WorldPathNodeRef(sourceCellId, Guid.NewGuid()),
+            new WorldPathNodeRef(destinationCellId, Guid.NewGuid()), null);
+
+        var travel = WorldNpcCellTransition<PreparedCell, ActiveCell>.ReuseActiveDestination(
+            transition, npc.InstanceId, runtimeObjects, identities, sourceScene, destination,
+            active => active.Scene, new Transform { Position = new Vector3(12f, 1f, 4f) });
+
+        Assert.True(travel.Tick());
+        Assert.Equal(WorldNpcCellTransitionState.Completed, travel.State);
+        Assert.Equal(CellLifecycleState.Active, destination.State);
+        Assert.Null(sourceScene.Find(npc.SceneObjectId));
+        Assert.Equal(new Vector3(12f, 1f, 4f), destinationScene.Find(npc.SceneObjectId)!.Transform.Position);
+        Assert.Equal(destinationCellId, Assert.Single(runtimeObjects.ExportSnapshot()).CellId);
+    }
+
+    [Fact]
+    public void FailedTransferToActiveDestinationDoesNotUnloadPlayerCell()
+    {
+        var sourceCellId = Guid.NewGuid();
+        var destinationCellId = Guid.NewGuid();
+        var sourceScene = new SceneGraph();
+        var destinationScene = new SceneGraph();
+        var identities = new WorldInstanceIdentityMap();
+        identities.CreateCellIdentities(sourceCellId, sourceScene);
+        var runtimeObjects = new WorldRuntimeObjectStore();
+        var npc = runtimeObjects.Spawn(sourceCellId, sourceScene,
+            new SceneObject(Guid.NewGuid(), "Conflicted Follower"), identities);
+        var destination = new WorldCellLoadOperation<PreparedCell, ActiveCell>();
+        var preparation = destination.PrepareAsync(_ => Task.FromResult(new PreparedCell(destinationCellId)));
+        WaitForPreparation(preparation);
+        destination.PumpCompletions();
+        destination.Activate(prepared => new ActiveCell(prepared.CellId, destinationScene));
+        destinationScene.Add(new SceneObject(npc.SceneObjectId, "Player-owned object"));
+        var transition = new WorldPathTransition(Guid.NewGuid(), WorldPathConnectionKind.ExteriorBoundary,
+            new WorldPathNodeRef(sourceCellId, Guid.NewGuid()),
+            new WorldPathNodeRef(destinationCellId, Guid.NewGuid()), null);
+
+        var travel = WorldNpcCellTransition<PreparedCell, ActiveCell>.ReuseActiveDestination(
+            transition, npc.InstanceId, runtimeObjects, identities, sourceScene, destination,
+            active => active.Scene, new Transform());
+
+        Assert.False(travel.Tick());
+        Assert.Equal(WorldNpcCellTransitionState.Failed, travel.State);
+        Assert.Equal(CellLifecycleState.Active, destination.State);
+        Assert.NotNull(sourceScene.Find(npc.SceneObjectId));
+        Assert.Equal("Player-owned object", destinationScene.Find(npc.SceneObjectId)!.Name);
+        Assert.Equal(sourceCellId, Assert.Single(runtimeObjects.ExportSnapshot()).CellId);
+    }
+
     private static CellPathNode Node(float x, float y, float z) => new(Guid.NewGuid(), new NavigationPoint(x, y, z));
 
     private static CellPathGraph Graph(Guid cellId, WorldCellKind kind, CellPathNode first,

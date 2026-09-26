@@ -101,6 +101,39 @@ public sealed class WorldRuntimeObjectStore
         return new WorldRuntimeObjectIdentity(cellId, instance.Id, worldInstanceId);
     }
 
+    /// <summary>Updates persistent transform data for a loaded runtime-created object.</summary>
+    public bool SetTransform(Guid cellId, Guid sceneObjectId, WorldInstanceId instanceId, Transform transform)
+    {
+        ArgumentNullException.ThrowIfNull(transform);
+        EnsureOwnerThread();
+        EnsureValidIdentity(cellId, sceneObjectId, instanceId);
+        if (!_cells.TryGetValue(cellId, out var records) || !records.TryGetValue(instanceId, out var record))
+            return false;
+        if (record.SceneObjectId != sceneObjectId)
+            throw new InvalidOperationException("Runtime object identity does not match its scene object ID.");
+
+        var updated = SceneObjectCopy.Copy(record.Object);
+        updated.Transform = WorldTransformState.FromTransform(transform).ToTransform();
+        records[instanceId] = record with { Object = updated };
+        return true;
+    }
+
+    /// <summary>Updates persistent enabled-state data for a loaded runtime-created object.</summary>
+    public bool SetEnabled(Guid cellId, Guid sceneObjectId, WorldInstanceId instanceId, bool enabled)
+    {
+        EnsureOwnerThread();
+        EnsureValidIdentity(cellId, sceneObjectId, instanceId);
+        if (!_cells.TryGetValue(cellId, out var records) || !records.TryGetValue(instanceId, out var record))
+            return false;
+        if (record.SceneObjectId != sceneObjectId)
+            throw new InvalidOperationException("Runtime object identity does not match its scene object ID.");
+
+        var updated = SceneObjectCopy.Copy(record.Object);
+        updated.Enabled = enabled;
+        records[instanceId] = record with { Object = updated };
+        return true;
+    }
+
     /// <summary>Atomically changes a runtime object's cell owner while preserving both stable IDs.</summary>
     public WorldRuntimeObjectIdentity Transfer(Guid sourceCellId, Guid destinationCellId,
         WorldInstanceId instanceId, SceneGraph sourceScene, SceneGraph destinationScene,
@@ -235,6 +268,12 @@ public sealed class WorldRuntimeObjectStore
         if (currentThreadId != _ownerThreadId)
             throw new InvalidOperationException(
                 $"Runtime objects must be accessed on owning thread {_ownerThreadId}; current thread is {currentThreadId}.");
+    }
+
+    private static void EnsureValidIdentity(Guid cellId, Guid sceneObjectId, WorldInstanceId instanceId)
+    {
+        if (cellId == Guid.Empty || sceneObjectId == Guid.Empty || instanceId.Value == Guid.Empty)
+            throw new ArgumentException("Updating a runtime object requires nonempty cell, scene, and instance IDs.");
     }
 
     private static Transform CopyValidatedTransform(Transform source)

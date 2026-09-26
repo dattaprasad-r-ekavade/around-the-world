@@ -49,6 +49,11 @@ public sealed class WorldPersistenceSession
         ArgumentNullException.ThrowIfNull(transform);
         EnsureCellExists(cellId);
         var identity = Identities.GetOrCreate(cellId, sceneObject);
+        if (RuntimeObjects.SetTransform(cellId, sceneObject.Id, identity, transform))
+        {
+            sceneObject.Transform = Copy(transform);
+            return;
+        }
         Changes.SetTransform(cellId, identity, transform);
         sceneObject.Transform = Copy(transform);
     }
@@ -60,6 +65,11 @@ public sealed class WorldPersistenceSession
         ArgumentNullException.ThrowIfNull(sceneObject);
         EnsureCellExists(cellId);
         var identity = Identities.GetOrCreate(cellId, sceneObject);
+        if (RuntimeObjects.SetEnabled(cellId, sceneObject.Id, identity, enabled))
+        {
+            sceneObject.Enabled = enabled;
+            return;
+        }
         Changes.SetEnabled(cellId, identity, enabled);
         sceneObject.Enabled = enabled;
     }

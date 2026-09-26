@@ -64,6 +64,14 @@ public sealed class WorldPersistenceSessionTests
             {
                 Transform = new Transform { Position = new Vector3(-3f, 1f, 5f) }
             });
+            var runtimeObject = activeScene.Find(runtime.SceneObjectId)!;
+            session.SetTransform(exteriorId, runtimeObject, new Transform
+            {
+                Position = new Vector3(4f, 2f, 7f),
+                Rotation = Quaternion.Identity,
+                Scale = Vector3.One
+            });
+            session.SetEnabled(exteriorId, runtimeObject, false);
 
             var committedLocation = new WorldPlayerLocation(exteriorId, new Vector3(10f, 1f, 9f), Quaternion.Identity);
             var pendingLocation = committedLocation;
@@ -88,6 +96,8 @@ public sealed class WorldPersistenceSessionTests
             Assert.Equal(moved.Scale, restoredMarker.Transform.Scale);
             Assert.Equal(Quaternion.Normalize(moved.Rotation), restoredMarker.Transform.Rotation);
             Assert.Equal(runtime.InstanceId, reloadedIdentities[runtime.SceneObjectId]);
+            Assert.Equal(new Vector3(4f, 2f, 7f), reloadedScene.Find(runtime.SceneObjectId)!.Transform.Position);
+            Assert.False(reloadedScene.Find(runtime.SceneObjectId)!.Enabled);
             Assert.Equal(1, restarted.RuntimeObjects.Count);
             Assert.NotSame(activeScene.Find(runtime.SceneObjectId), reloadedScene.Find(runtime.SceneObjectId));
 
