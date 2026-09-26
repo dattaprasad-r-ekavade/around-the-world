@@ -15,6 +15,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
     <None Update="Content\World\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 

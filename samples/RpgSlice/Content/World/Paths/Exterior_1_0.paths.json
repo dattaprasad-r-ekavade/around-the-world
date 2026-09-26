@@ -1,0 +1,14 @@
+{
+  "version": 1,
+  "graph": {
+    "cellId": "a71f9da0-e2e9-4aae-bf2f-d70a06b07a06",
+    "kind": "Exterior",
+    "nodes": [
+      { "id": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a03", "position": { "x": 1, "y": 1.1, "z": 14 } },
+      { "id": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a04", "position": { "x": 6, "y": 1.1, "z": 14 } }
+    ],
+    "edges": [
+      { "fromNodeId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a03", "toNodeId": "c71f9da0-e2e9-4aae-bf2f-d70a06b07a04", "clearanceRadius": 1.2, "bidirectional": true }
+    ]
+  }
+}

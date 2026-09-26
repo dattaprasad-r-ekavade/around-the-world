@@ -33,6 +33,7 @@ internal static class Program
             MeleeAndActorPersistenceChecks(problems);
             EnemyCombatAiChecks(problems);
             WorldClockAndScheduleChecks(problems);
+            NpcScheduleSaveChecks(problems);
             SpellAndFactionChecks(problems);
             QuestEventChecks(problems);
             MerchantTradeChecks(problems);
@@ -470,6 +471,21 @@ internal static class Program
             || duplicate.State.PendingDestinationCellId != workCellId)
             problems.Add("daily schedule boundaries should select the right cell and issue one pending travel request");
 
+        var missedDeparture = NpcScheduleSystem.Evaluate(schedule,
+            new WorldClock(18 * 60 * 60), startWork.State);
+        if (missedDeparture.DesiredCellId != homeCellId || missedDeparture.NewTravelRequestCellId.HasValue
+            || missedDeparture.State.PendingDestinationCellId.HasValue
+            || missedDeparture.State.CurrentCellId != homeCellId)
+            problems.Add("a schedule change before departure should cancel the stale pending route");
+
+        var enteredWorkCell = NpcScheduleSystem.RecordCellEntered(startWork.State, workCellId);
+        var changedMidTrip = NpcScheduleSystem.Evaluate(schedule,
+            new WorldClock(18 * 60 * 60), enteredWorkCell);
+        if (changedMidTrip.DesiredCellId != homeCellId || changedMidTrip.NewTravelRequestCellId != homeCellId
+            || changedMidTrip.State.CurrentCellId != workCellId
+            || changedMidTrip.State.PendingDestinationCellId != homeCellId)
+            problems.Add("a schedule change mid-route should replace the pending destination from the actor's current cell");
+
         state = NpcScheduleSystem.CompleteTravel(duplicate.State, workCellId);
         clock = sunrise.Advance(12 * 60 * 60);
         var returnHome = NpcScheduleSystem.Evaluate(schedule, clock, state);
@@ -486,6 +502,43 @@ internal static class Program
             || caughtUp.Actor.MeleeCooldownRemaining != 0 || caughtUp.Actor.SpellCooldownRemaining != 0
             || caughtUp.BoundariesCollapsed != 201 || caughtUp.WorkItemsProcessed != 1)
             problems.Add("dormant schedule catch-up should materialize the current work cell and advance timers in bounded work");
+    }
+
+    private static void NpcScheduleSaveChecks(List<string> problems)
+    {
+        var npcInstanceId = Guid.Parse("8da48350-0472-4f88-a542-f408f7dc06a1");
+        var homeCellId = Guid.Parse("c4a17e31-ae23-4804-9aa8-d69b6a1ce101");
+        var workCellId = Guid.Parse("c4a17e31-ae23-4804-9aa8-d69b6a1ce102");
+        var scheduleState = new NpcScheduleRuntimeState
+        {
+            CurrentCellId = workCellId,
+            PendingDestinationCellId = homeCellId,
+            LastEvaluatedSeconds = 65_000
+        };
+        var save = new SaveState
+        {
+            WorldTimeSeconds = 65_000,
+            NpcSchedules = new NpcScheduleStore().Set(npcInstanceId, scheduleState)
+        };
+        var loaded = SaveState.FromJson(save.ToJson());
+        if (loaded.WorldTimeSeconds != save.WorldTimeSeconds
+            || !loaded.NpcSchedules.TryGet(npcInstanceId, out var restored)
+            || restored != scheduleState)
+            problems.Add("world time and pending NPC schedule destinations should survive an RPG save round trip");
+
+        var migrated = SaveState.FromJson("{\"Version\":1}");
+        if (migrated.Version != SaveState.CurrentVersion || migrated.WorldTimeSeconds != 0
+            || migrated.NpcSchedules.Entries.Count != 0)
+            problems.Add("version 1 RPG saves should migrate to version 2 with an empty clock and schedule state");
+
+        try
+        {
+            SaveState.FromJson("{\"Version\":2,\"UnknownField\":true}");
+            problems.Add("RPG saves should reject unmapped fields instead of silently ignoring them");
+        }
+        catch (System.Text.Json.JsonException)
+        {
+        }
     }
 
     private static void SpellAndFactionChecks(List<string> problems)
@@ -860,6 +913,15 @@ internal static class Program
     {
         var state = new SaveState
         {
+            WorldTimeSeconds = 43_200,
+            NpcSchedules = new NpcScheduleStore().Set(
+                Guid.Parse("8da48350-0472-4f88-a542-f408f7dc06a1"),
+                new NpcScheduleRuntimeState
+                {
+                    CurrentCellId = Guid.Parse("c4a17e31-ae23-4804-9aa8-d69b6a1ce101"),
+                    PendingDestinationCellId = Guid.Parse("c4a17e31-ae23-4804-9aa8-d69b6a1ce102"),
+                    LastEvaluatedSeconds = 43_100
+                }),
             Entities = new[]
             {
                 EntityRecord.Create("elder_01", "npc")
@@ -1052,6 +1114,17 @@ internal static class Program
     {
         if (expected.Version != actual.Version)
             problems.Add($"Version {expected.Version} != {actual.Version}");
+        if (expected.WorldTimeSeconds != actual.WorldTimeSeconds)
+            problems.Add($"World time {expected.WorldTimeSeconds} != {actual.WorldTimeSeconds}");
+        if (expected.NpcSchedules.Entries.Count != actual.NpcSchedules.Entries.Count)
+            problems.Add($"NPC schedule count {expected.NpcSchedules.Entries.Count} != {actual.NpcSchedules.Entries.Count}");
+        foreach (var entry in expected.NpcSchedules.Entries)
+        {
+            if (!actual.NpcSchedules.TryGet(entry.WorldInstanceId, out var actualSchedule))
+                problems.Add($"NPC schedule for {entry.WorldInstanceId} is missing");
+            else if (actualSchedule != entry.State)
+                problems.Add($"NPC schedule for {entry.WorldInstanceId} differs after save/load");
+        }
 
         if (expected.Entities.Count != actual.Entities.Count)
         {

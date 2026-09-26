@@ -119,7 +119,17 @@ public static class NpcScheduleSystem
         var desired = schedule.ResolveDestination(clock);
         var next = state with { LastEvaluatedSeconds = clock.TotalSeconds };
         if (state.PendingDestinationCellId.HasValue)
-            return new NpcScheduleDecision(next, desired, null);
+        {
+            if (state.PendingDestinationCellId.Value == desired)
+                return new NpcScheduleDecision(next, desired, null);
+
+            next = next with
+            {
+                PendingDestinationCellId = desired == state.CurrentCellId ? null : desired
+            };
+            return new NpcScheduleDecision(next, desired,
+                next.PendingDestinationCellId.HasValue ? desired : null);
+        }
         if (desired == state.CurrentCellId)
             return new NpcScheduleDecision(next, desired, null);
 
@@ -134,6 +144,16 @@ public static class NpcScheduleSystem
         if (destinationCellId == Guid.Empty || state.PendingDestinationCellId != destinationCellId)
             throw new ArgumentException("Completed NPC travel must match its pending schedule destination.", nameof(destinationCellId));
         return state with { CurrentCellId = destinationCellId, PendingDestinationCellId = null };
+    }
+
+    /// <summary>Records an intermediate cell reached while following a multi-cell scheduled route.</summary>
+    public static NpcScheduleRuntimeState RecordCellEntered(NpcScheduleRuntimeState state, Guid cellId)
+    {
+        ArgumentNullException.ThrowIfNull(state);
+        state.Validate();
+        if (!state.PendingDestinationCellId.HasValue || cellId == Guid.Empty)
+            throw new ArgumentException("Intermediate NPC travel needs a pending destination and a nonempty cell ID.", nameof(cellId));
+        return state with { CurrentCellId = cellId };
     }
 
     /// <summary>

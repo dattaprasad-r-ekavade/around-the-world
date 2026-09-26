@@ -195,7 +195,7 @@ Start after task 72. Put reusable cell/loading code in `Ember.Engine/World`; kee
 | [x] | 83 | Add a door component with destination cell ID, spawn ID, and facing. | Validation catches invalid destinations; a door enters an interior at its authored spawn. |
 | [x] | 84 | Add transactional interior/exterior travel: preserve the source until destination activation succeeds. | Exit returns to the intended exterior; failed destination loading leaves the source playable. |
 
-**Integration gate: Pending.** Engine tests cover two interior trips and explicit returns, plus preparation, activation, placement, and cancellation failures. RpgSlice still needs player door interaction and live destination activation before the gate can pass. Then walk through a 3×3 exterior test grid, enter two independent interiors, and return. Test slow loads, failed loads, and rapid changes of direction. Record frame-time spikes and resource counts.
+**Integration gate: Pending.** RpgSlice now exercises player door interaction and live destination activation, and a scheduled NPC crosses an active exterior boundary. The complete gate still needs a 3×3 exterior walk, two independent interior trips and returns, slow and failed loads, rapid direction changes, and recorded frame-time spikes/resource counts.
 
 ## Stage 10 — A persistent world
 
@@ -213,7 +213,7 @@ Authored definitions are immutable. Save changes by stable world-instance ID, no
 | [x] | 92 | Queue save requests until a stable simulation boundary, including during travel. | A save requested mid-transition restores one complete location, not mixed source/destination state. |
 | [x] | 93 | Add explicit cell reset policy, defaulting to no reset. | Resettable content resets only under its rule; persistent/quest-marked instances remain unchanged. |
 
-**Gate: Pending.** CPU fixtures now cover object edits, deletion, runtime objects, cell transfer, and save/restart. The world loader and RpgSlice still need to connect these stores for a live two-cell gameplay pass. Then move, create, and delete objects across two cells; travel inside; save and restart. Every instance must have the expected location/state exactly once.
+**Gate: Pending.** CPU fixtures cover object edits, deletion, runtime objects, cell transfer, and save/restart. RpgSlice now restores persistent edits/runtime objects and player locations, and its persistence smoke passes a restart. The full gate still needs a live move/create/delete pass across two cells, interior travel, save/restart, and an exactly-once check for every instance.
 
 ## Stage 11 — RPG records and interactions
 
@@ -237,7 +237,7 @@ Extend existing `Ember.Rpg` records, flags, inventory, dialogue, and quests wher
 | [x] | 107 | Add ownership checks and one witnessed theft event affecting reputation. | Unwitnessed and witnessed test cases follow documented rules without duplicate penalties. |
 | [x] | 108 | Add data-driven skill-use progression. | Repeated qualifying actions advance only the intended skill; progress survives restart. |
 
-**Gate:** complete one branching quest involving dialogue, an item, a merchant, and an enemy. Equipment, effects, faction changes, loot, and progression survive a save/restart.
+**Gate: Pending.** RpgSlice now exercises merchant transactions and enemy perception/combat through `Ember.Rpg`. Complete one branching quest involving dialogue, an item, a merchant, and an enemy; verify equipment, effects, faction changes, loot, and progression survive a save/restart.
 
 ## Stage 12 — NPC navigation and simulation
 
@@ -256,7 +256,7 @@ Begin with authored path nodes rather than a navmesh generator. Implement the na
 | [x] | 117 | Add a world clock and a two-destination daily NPC schedule. | Time changes select the correct destination without creating duplicate travel requests. |
 | [x] | 118 | Define dormant schedule catch-up without replaying every missed frame. | Returning after a time skip produces the expected NPC location/state with bounded work. |
 
-**Gate:** several NPCs follow schedules while one enemy uses combat AI. A follower travels through a door and survives restart; dormant actors do not require their full scenes to remain active.
+**Gate: Pending.** RpgSlice now follows one scheduled NPC across an authored exterior boundary and back, and runs an enemy through the RPG perception/combat AI. The full gate still needs several scheduled NPCs, a follower traveling through a door and resuming after restart, and evidence that dormant actors do not require their full scenes to stay active.
 
 ## Stage 13 — Outdoor presentation and budgets
 
@@ -331,16 +331,42 @@ These remain outside the required 143-task baseline. Cell streaming, persistent 
 
 For each chosen feature, append tasks with the same four columns. Each task needs one observable result, named code area, and an acceptance check. Keep speculative implementation details out until prerequisites exist.
 
+## Integration follow-up — scheduled RPG gameplay — 26 September 2026
+
+No ordered roadmap rows were added or marked complete. The checklist remains 143/155 (92.3%); task 133 is the first unchecked baseline row.
+
+| Integration proof | Status | Evidence and remaining scope |
+| --- | --- | --- |
+| Live RpgSlice door travel through `WorldCellTravelTransaction` | PASS for this integration proof | `--travel-smoke` walks to House A and returns through both authored doors. The complete Stage 9 gate remains Pending. |
+| World persistence wiring, cell activation, stable-boundary save, and restart restore | PASS for this integration proof | `--persistence-smoke` restores an authored edit, runtime identity, and interior player location. The complete Stage 10 cross-cell move/create/delete acceptance remains Pending. |
+| Scheduled NPC on authored world paths | PASS for this integration proof | `--rpg-integration-smoke` follows the worker from exterior (0, 0) to (1, 0), changes its schedule, returns home, and keeps one runtime instance. Schedule state and world clock also pass RPG save round-trip/migration checks. The complete Stage 12 gate remains Pending. |
+| Merchant and enemy using `Ember.Rpg` in live RpgSlice | PASS for this integration proof | The smoke covers insufficient funds, empty stock, buy/sell state, physics line-of-sight obstruction, and idle/chase/attack/dead AI decisions. The complete Stage 11 quest/save-restart and Stage 12 multi-actor gates remain Pending. |
+
+`SaveState` is now version 2: it persists monotonic world time and NPC schedule state, migrates version 1 saves, rejects unmapped fields, and writes through a flushed temporary file plus replacement. RpgSlice stores this RPG state in a sidecar next to the engine world save; the two files are not a transactional pair. Other persisted formats and atomic world-save restore remain separate follow-ups.
+
+### Integration checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build samples/RpgSlice/RpgSlice.csproj --configuration Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` | PASS — save round-trip, schedule cancellation/replacement, world-clock/schedule persistence, v1 migration, and strict unknown-field rejection |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --configuration Release --no-restore --nologo` | PASS — 237 passed, 0 failed, 0 skipped |
+| RpgSlice `--rpg-integration-smoke --windowed` | PASS — merchant trades, physics perception/AI states, and scheduled cross-cell trip plus return |
+| RpgSlice `--travel-smoke --windowed` | PASS — exterior to House A and back through authored doors |
+| RpgSlice `--persistence-smoke --windowed` | PASS — authored change, runtime identity, interior player location, and restart reload |
+
+The broad Stage 9–12 gates remain Pending. Remaining data-safety work includes atomic world-save restore/travel composition and strict unmapped-field handling in the other persisted formats. Continue with the first unchecked task after deciding how to sequence those outstanding review items.
+
 ## Handoff — update after every implementation session
 
 - Last completed task: 132 — CharacterStudio can author cell-local paths and branching RPG dialogue records with validated atomic content-pack saves.
 - First unchecked baseline task: 133 — add a quest objective/event-reference panel. Integration follow-up from the code review comes first.
 - Current checklist: 143 of 155 ordered rows complete (92.3%); task 133 is the first unchecked baseline row.
 - Current gates: Release A and D passed; Release B and C remain Pending. Stages 9–12 remain Pending or unproven, the Stage 14 settlement-authoring gate is Pending, and Release E has no recorded status. Stage 13 passed again on the 3×3 blockout: the canonical ten-lap route and all provisional frame-time, activation, memory, and resource targets passed on the additional i7-13650HX validation host. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: `Ember.Engine.WorldCellStreamer<TPrepared, TActive>` owns reusable cell preparation, bounded activation, retry, collision notifications, and retirement. RpgSlice now restores persistent edits and runtime objects as cells activate, loads a saved exterior or interior player location at startup, and supports stable-boundary saves with F5. The persistence smoke covers save/restart restoration of an authored edit, runtime identity, and interior player location.
-- Verification: see the 24–25 September 2026 follow-ups in `ENGINE_PROGRESS.md` for the 235-test Release suite, full Release build, live door-travel smoke, and persistence restart smoke. Stage 13 benchmark evidence remains in `OUTDOOR_BENCHMARK.md`.
-- Limits: The live door route and persistence restart smoke pass, but the broader Stage 9 and Stage 10 acceptance gates remain Pending. Scheduled NPC movement and merchant/enemy use of `Ember.Rpg` are still unintegrated. Path following currently uses a flat preview floor and does not import scene collision geometry, slope traversal, or cross-cell navigation; direct mouse-driven authoring was not automated in this session. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
-- Next action: integrate one scheduled NPC on the world path network, then a merchant and enemy using `Ember.Rpg`; record evidence for the Stage 9–12 gates before starting task 133.
+- Latest changes: RpgSlice now wires one scheduled NPC to authored cross-cell paths, merchant transactions to `Ember.Rpg`, and enemy perception/combat to engine physics and RPG AI. `SaveState` version 2 persists world time and NPC schedule state. The live gameplay smoke completes the worker's work trip and return.
+- Verification: see the 24–26 September 2026 follow-ups in `ENGINE_PROGRESS.md` for the 237-test Release suite, RpgSlice build, live door/persistence/RPG integration smokes, and Stage 13 benchmark. Full Stage 9–12 gates remain Pending.
+- Limits: RPG state is stored in a sidecar separate from the engine world save; the pair is not transactional. The broader Stage 9–12 acceptance checks remain open. Path following still uses a flat path preview and does not import scene collision geometry or handle slopes; direct mouse-driven authoring was not automated. glTF BLEND materials remain unsupported, and RpgSlice blockout props are cubes.
+- Next action: continue with the first unchecked roadmap task, while scheduling the outstanding atomic world-save/restore and broader stage-gate checks before claiming the gates passed.
 
 Suggested request to an implementing AI:
 
@@ -692,7 +718,7 @@ Credit where due: `WorldCellWorkspace.RenameCell` keeps IDs and coordinates stab
 ### Recommended order before task 133
 
 1. Resolved 24 September 2026: `RpgSliceCellStreamer` uses the engine `WorldCellStreamer`, `CellActivationQueue`, and `CellAssetReferencePool`, with retry and a passing Stage 13 benchmark rerun.
-2. Add the remaining Stage 9–12 integration evidence. Live door travel and persistence save/restart wiring are implemented in RpgSlice; next integrate a scheduled NPC on the world path network, then a merchant and enemy using `Ember.Rpg`. Keep the broader gates Pending until their full acceptance checks pass.
-3. Fix the data-safety items: extract `SafeFile.WriteAtomic` (with flush) and use it for `SaveState.Write`; persist the clock and schedules; make the travel commit and save restore atomic. Turn on `UnmappedMemberHandling.Disallow` for every persisted format.
+2. Resolved for the targeted integration proofs on 26 September 2026: RpgSlice now exercises live doors, persistence restart, a scheduled NPC crossing authored paths, and merchant/enemy RPG behavior. Keep the broader stage gates Pending until their full acceptance checks pass.
+3. Partly resolved on 26 September 2026: `SaveState` persists the clock and schedules, migrates v1, rejects unmapped fields, and uses flushed atomic replacement. Remaining data-safety work: make world-save restore atomic, review travel/save composition, and apply strict unmapped-member handling to the other persisted formats.
 4. Extend packaging to world manifests and cell scenes before task 142.
 5. Add CI: `Ember.Rpg` tests on Linux now; the engine on a Windows runner.

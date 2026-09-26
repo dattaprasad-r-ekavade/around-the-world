@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using System.Text;
 
 namespace Ember.Rpg;
 
@@ -17,6 +18,7 @@ namespace Ember.Rpg;
 /// </summary>
 public sealed record SaveState
 {
+    public const int CurrentVersion = 2;
     /// <summary>
     /// How a save is written and read. Public so a game embedding SaveState in its own file
     /// (Campaign's SaveFile) can reuse the same converters instead of rediscovering them.
@@ -24,6 +26,7 @@ public sealed record SaveState
     public static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         Converters =
         {
             new FlagStoreJson(),
@@ -38,7 +41,13 @@ public sealed record SaveState
     /// Bumped when the shape of a save changes on purpose. What to do about an old version is
     /// the game's call; this type only carries the number.
     /// </summary>
-    public int Version { get; init; } = 1;
+    public int Version { get; init; } = CurrentVersion;
+
+    /// <summary>Monotonic simulation time in seconds, shared by schedules and timed effects.</summary>
+    public double WorldTimeSeconds { get; init; }
+
+    /// <summary>Schedule state keyed by stable world-instance ID.</summary>
+    public NpcScheduleStore NpcSchedules { get; init; } = new();
 
     /// <summary>Who is here. Order is preserved on save and load; identity is the id, not the position.</summary>
     public IReadOnlyList<EntityRecord> Entities { get; init; } = Array.Empty<EntityRecord>();
@@ -65,6 +74,7 @@ public sealed record SaveState
     public string ToJson()
     {
         if (Player is null) throw new InvalidDataException("Save state has no player record.");
+        Validate();
         Player.Validate();
         ContainerInventories.Validate();
         WorldItems.Validate();
@@ -76,7 +86,12 @@ public sealed record SaveState
     {
         var state = JsonSerializer.Deserialize<SaveState>(json, JsonOptions)
             ?? throw new JsonException("The save was empty.");
+        if (state.Version == 1)
+            state = state with { Version = CurrentVersion };
+        else if (state.Version != CurrentVersion)
+            throw new InvalidDataException($"Unsupported RPG save version {state.Version}; expected 1 or {CurrentVersion}.");
         if (state.Player is null) throw new InvalidDataException("Save state has no player record.");
+        state.Validate();
         state.Player.Validate();
         state.ContainerInventories.Validate();
         state.WorldItems.Validate();
@@ -84,7 +99,40 @@ public sealed record SaveState
         return state;
     }
 
-    public void Write(string path) => File.WriteAllText(path, ToJson());
+    public void Write(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        var fullPath = Path.GetFullPath(path);
+        var directory = Path.GetDirectoryName(fullPath)
+            ?? throw new InvalidDataException("RPG save file has no parent directory.");
+        Directory.CreateDirectory(directory);
+        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
+        try
+        {
+            var bytes = new UTF8Encoding(false).GetBytes(ToJson());
+            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
+                stream.Write(bytes);
+                stream.Flush(flushToDisk: true);
+            }
+            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
+            else File.Move(temporaryPath, fullPath);
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
+        }
+    }
 
     public static SaveState Read(string path) => FromJson(File.ReadAllText(path));
+
+    private void Validate()
+    {
+        if (Version != CurrentVersion)
+            throw new InvalidDataException($"RPG save version must be {CurrentVersion} before writing.");
+        if (!double.IsFinite(WorldTimeSeconds) || WorldTimeSeconds < 0)
+            throw new InvalidDataException("RPG save world time must be finite and nonnegative.");
+        if (NpcSchedules is null) throw new InvalidDataException("RPG save has no NPC schedule store.");
+        NpcSchedules.Validate();
+    }
 }

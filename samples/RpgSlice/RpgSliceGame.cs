@@ -2,6 +2,7 @@ using Ember;
 using Ember.Input;
 using Ember.Physics;
 using Ember.Render;
+using Ember.Rpg;
 using Ember.Scene;
 using Ember.World;
 using Microsoft.Xna.Framework;
@@ -26,10 +27,12 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _streamingSmokeRequested;
     private readonly bool _travelSmokeRequested;
     private readonly bool _persistenceSmokeRequested;
+    private readonly bool _rpgIntegrationSmokeRequested;
     private int _travelSmokeApproachFrames;
     private readonly bool _benchmarkRequested;
     private readonly bool _timePaused;
     private readonly string _worldSavePath;
+    private readonly string _rpgSavePath;
     private readonly bool _deleteSmokeSaveOnExit;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
@@ -49,7 +52,6 @@ public sealed class RpgSliceGame : EngineHost
     private ExteriorCellCollisionGate _collisionGate = null!;
     private RpgSliceCellStreamer _cellStreamer = null!;
     private ThirdPersonFollowCamera _camera = null!;
-    private float _timeOfDayHours = 12f;
     private Vector3 _renderPlayerPosition;
     private RpgSliceStreamingSmoke? _streamingSmoke;
     private RpgSliceOutdoorBenchmark? _benchmark;
@@ -64,6 +66,11 @@ public sealed class RpgSliceGame : EngineHost
     private WorldCellLoadOperation<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _interiorOperation;
     private WorldCellLoadOperation<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _travelDestination;
     private WorldCellTravelTransaction<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>? _travel;
+    private RpgSliceGameplayIntegration? _rpgGameplay;
+    private WorldClock _worldClock = new();
+    private float _initialTimeOfDayHours = 12f;
+    private bool _timeHoursSpecified;
+    private int _rpgIntegrationSmokeFrames;
 
     public RpgSliceGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: GameWindowTitle)
@@ -76,30 +83,38 @@ public sealed class RpgSliceGame : EngineHost
         _streamingSmokeRequested = HasArgument(args, "--streaming-smoke");
         _travelSmokeRequested = HasArgument(args, "--travel-smoke");
         _persistenceSmokeRequested = HasArgument(args, "--persistence-smoke");
+        _rpgIntegrationSmokeRequested = HasArgument(args, "--rpg-integration-smoke");
         _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
             + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
+            + (_rpgIntegrationSmokeRequested ? 1 : 0)
             + (_benchmarkRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
         var configuredSavePath = ParseOption(args, "--save");
-        _deleteSmokeSaveOnExit = _persistenceSmokeRequested && configuredSavePath is null;
+        _deleteSmokeSaveOnExit = (_persistenceSmokeRequested || _rpgIntegrationSmokeRequested)
+            && configuredSavePath is null;
         _worldSavePath = configuredSavePath
-            ?? (_persistenceSmokeRequested
-                ? Path.Combine(Path.GetTempPath(), $"ember-rpgslice-persistence-{Guid.NewGuid():N}.json")
+            ?? (_persistenceSmokeRequested || _rpgIntegrationSmokeRequested
+                ? Path.Combine(Path.GetTempPath(), $"ember-rpgslice-smoke-{Guid.NewGuid():N}.json")
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Ember", "RpgSlice", "world-save.json"));
+        _rpgSavePath = _worldSavePath + ".rpg.json";
         if (_benchmarkRequested) _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
-            if (!float.TryParse(timeText, NumberStyles.Float, CultureInfo.InvariantCulture, out _timeOfDayHours)
-                || !float.IsFinite(_timeOfDayHours))
+            if (!float.TryParse(timeText, NumberStyles.Float, CultureInfo.InvariantCulture, out _initialTimeOfDayHours)
+                || !float.IsFinite(_initialTimeOfDayHours))
                 throw new ArgumentException("--time-hours must be a finite number.", nameof(args));
+            _timeHoursSpecified = true;
         }
         _actions.Bind("Exit", Keys.Escape);
         _actions.Bind("TimeEarlier", Keys.PageDown);
         _actions.Bind("TimeLater", Keys.PageUp);
         _actions.Bind("Interact", Keys.E);
+        _actions.Bind("TradeBuy", Keys.T);
+        _actions.Bind("TradeSell", Keys.Y);
+        _actions.Bind("Attack", Keys.F);
         _actions.Bind("Save", Keys.F5);
     }
 
@@ -112,6 +127,21 @@ public sealed class RpgSliceGame : EngineHost
         var loadedSave = File.Exists(_worldSavePath)
             ? WorldSaveFile.Load(_worldSavePath, _world)
             : null;
+        var initialWorldTime = Math.Max(0d, _initialTimeOfDayHours) * 3600d;
+        var rpgSave = File.Exists(_rpgSavePath)
+            ? SaveState.Read(_rpgSavePath)
+            : RpgSliceGameplayIntegration.CreateInitialSave(initialWorldTime);
+        if (_rpgIntegrationSmokeRequested)
+        {
+            if (loadedSave is not null)
+                throw new InvalidOperationException("RPG integration smoke requires a fresh world save path.");
+            rpgSave = RpgSliceGameplayIntegration.CreateInitialSave((6 * 60 * 60) - 2);
+        }
+        else if (_timeHoursSpecified)
+        {
+            rpgSave = rpgSave with { WorldTimeSeconds = initialWorldTime };
+        }
+        _worldClock = new WorldClock(rpgSave.WorldTimeSeconds);
         _worldPersistence = new WorldPersistenceSession(_world, loadedSave);
         var initialLocation = _worldPersistence.RestoredPlayerLocation
             ?? new WorldPlayerLocation(originDefinition.Id, new Vector3(16f, 1.1f, 23f), Quaternion.Identity);
@@ -155,6 +185,9 @@ public sealed class RpgSliceGame : EngineHost
             $"RpgSlice: waiting for collision at cell ({coordinate.X}, {coordinate.Z}); movement is held at the boundary.");
         _cellStreamer = new RpgSliceCellStreamer(
             _world, _physics, _collisionGate, _terrainSource, _terrainSettings, _worldPersistence);
+        _rpgGameplay = new RpgSliceGameplayIntegration(_world, _cellStreamer,
+            _worldPersistence, _physics, rpgSave, _worldClock, _rpgSavePath,
+            _rpgIntegrationSmokeRequested);
         _collisionGate.CollisionRequired += _cellStreamer.Request;
         if (initialCell.Kind == WorldCellKind.Exterior)
         {
@@ -228,8 +261,17 @@ public sealed class RpgSliceGame : EngineHost
                     AdvanceDoorTravel();
                 var keyboard = _travelSmokeRequested
                     ? FindNearbyDoor() is not null ? new KeyboardState(Keys.E) : new KeyboardState()
-                    : Keyboard.GetState();
+                    : _rpgIntegrationSmokeRequested ? new KeyboardState() : Keyboard.GetState();
                 UpdateMovement(keyboard, RealSeconds(gameTime), IsActive);
+                if (_rpgIntegrationSmokeRequested && _rpgGameplay?.SmokeCompleted == true)
+                {
+                    _smokeRan = true;
+                    Exit();
+                }
+                else if (_rpgIntegrationSmokeRequested && ++_rpgIntegrationSmokeFrames > 3600)
+                {
+                    throw new TimeoutException("RPG integration smoke did not complete both scheduled worker trips within 60 seconds.");
+                }
             }
             else if (_streamingSmoke.Tick())
             {
@@ -247,18 +289,34 @@ public sealed class RpgSliceGame : EngineHost
     {
         var input = _actions.Sample(keyboard, focused, uiCapturesKeyboard: false);
         if (_actions.ConsumePressed("Exit")) Exit();
-        if (_actions.ConsumePressed("TimeEarlier")) _timeOfDayHours -= 1f;
-        if (_actions.ConsumePressed("TimeLater")) _timeOfDayHours += 1f;
-        if (!_timePaused) _timeOfDayHours = (_timeOfDayHours + elapsedSeconds / 60f) % 24f;
-        if (_timeOfDayHours < 0f) _timeOfDayHours += 24f;
+        if (_actions.ConsumePressed("TimeEarlier"))
+            _worldClock = new WorldClock(Math.Max(0d, _worldClock.TotalSeconds - 3600d));
+        if (_actions.ConsumePressed("TimeLater")) _worldClock = _worldClock.Advance(3600d);
+        if (!_timePaused) _worldClock = _worldClock.Advance(elapsedSeconds * 60d);
         if (_actions.ConsumePressed("Interact") && _travel is null
             && FindNearbyDoor() is { } nearbyDoor)
             BeginDoorTravel(nearbyDoor);
         if (_actions.ConsumePressed("Save"))
         {
+            _rpgGameplay?.WriteSave(_worldClock);
             _worldPersistence.RequestSave(_worldSavePath, CapturePlayerLocation);
             _saveFeedback = "Save queued";
             _saveFeedbackSeconds = 2f;
+        }
+        if (_travel is null && _rpgGameplay is not null)
+        {
+            if (_actions.ConsumePressed("TradeBuy")
+                && _rpgGameplay.TryTradeAt(_currentCellId, _player.Pose.Position,
+                    sell: false, out var buyMessage))
+                SetGameplayFeedback(buyMessage);
+            if (_actions.ConsumePressed("TradeSell")
+                && _rpgGameplay.TryTradeAt(_currentCellId, _player.Pose.Position,
+                    sell: true, out var sellMessage))
+                SetGameplayFeedback(sellMessage);
+            if (_actions.ConsumePressed("Attack")
+                && _rpgGameplay.TryPlayerAttack(_currentCellId, _player.Pose.Position,
+                    out var attackMessage))
+                SetGameplayFeedback(attackMessage);
         }
         if (_actions.ConsumePressed(GameplayActionNames.Jump) && _travel is null)
             _player.RequestJump();
@@ -282,6 +340,9 @@ public sealed class RpgSliceGame : EngineHost
             throw new TimeoutException("Travel smoke could not reach the authored door within 20 seconds.");
         if (_benchmark is { IsComplete: false } routeBenchmark)
             _player.SetMoveInput(routeBenchmark.GetMoveDirection(_player.Pose.Position));
+        if (_rpgGameplay is not null)
+            _worldClock = _rpgGameplay.Update(elapsedSeconds, _worldClock,
+                _currentCellId, _player.Pose.Position);
         var result = _physicsStepper.Advance(elapsedSeconds, seconds => _physics.Step(seconds));
         var position = _physics.GetInterpolatedPose(_player.PhysicsBodyId, result.InterpolationAlpha).Position;
         _renderPlayerPosition = position;
@@ -348,6 +409,14 @@ public sealed class RpgSliceGame : EngineHost
         else if (FindNearbyDoor() is { } promptDoor)
         {
             Window.Title = $"RPG Slice — Press E to use {promptDoor.Name}";
+        }
+        else if (_rpgGameplay?.GetPrompt(_currentCellId, _player.Pose.Position) is { } gameplayPrompt)
+        {
+            Window.Title = $"RPG Slice — {gameplayPrompt}";
+        }
+        else if (_rpgGameplay?.LastStatus is { } gameplayStatus)
+        {
+            Window.Title = $"RPG Slice — {gameplayStatus}";
         }
         else
         {
@@ -641,11 +710,19 @@ public sealed class RpgSliceGame : EngineHost
         {
             if (_deleteSmokeSaveOnExit && File.Exists(_worldSavePath))
                 File.Delete(_worldSavePath);
+            if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath))
+                File.Delete(_rpgSavePath);
         }
     }
 
     private WorldPlayerLocation CapturePlayerLocation() =>
         new(_currentCellId, _player.Pose.Position, _playerFacing);
+
+    private void SetGameplayFeedback(string message)
+    {
+        _saveFeedback = message;
+        _saveFeedbackSeconds = 2f;
+    }
 
     private static float CameraYaw(Quaternion facing)
     {
@@ -681,7 +758,7 @@ public sealed class RpgSliceGame : EngineHost
 
     protected override void Draw(GameTime gameTime)
     {
-        var environment = OutdoorEnvironmentProfile.Evaluate(_timeOfDayHours,
+        var environment = OutdoorEnvironmentProfile.Evaluate((float)(_worldClock.TimeOfDaySeconds / 3600d),
             fogStart: _world.ExteriorCellWidth * 1.25f,
             fogEnd: _world.ExteriorCellWidth * 3f);
         GraphicsDevice.Clear(environment.SkyColor);
@@ -715,6 +792,9 @@ public sealed class RpgSliceGame : EngineHost
                 {
                     "Foliage" => new Color(60, 111, 71),
                     "Trunk" => new Color(117, 82, 54),
+                    "Scheduled Worker" => new Color(212, 174, 90),
+                    "RpgSlice Merchant" => new Color(77, 166, 128),
+                    "RpgSlice Road Raider" => new Color(174, 67, 58),
                     _ when sceneObject.Door is not null => new Color(139, 84, 49),
                     _ => new Color(137, 125, 108)
                 };

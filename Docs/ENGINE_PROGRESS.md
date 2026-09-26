@@ -1308,3 +1308,31 @@ No ordered roadmap rows were added or marked complete. The checklist remains 143
 | RpgSlice `--travel-smoke` after persistence integration | PASS — walked to House A, traveled through both doors, and returned to the authored exterior spawn |
 
 No ordered roadmap rows were added or marked complete. Stage 9–12 gameplay work remains in progress; the next integration step is a scheduled NPC using the world path network.
+
+## Stage 11–12 integration follow-up — scheduled RPG gameplay — 26 September 2026
+
+- RpgSlice now loads two authored exterior path graphs and their world connection, spawns a scheduled worker with a stable world-instance ID, and follows the daily schedule across an active exterior boundary. The integration smoke advances time past the evening boundary and verifies the worker returns home without creating a duplicate runtime object.
+- RpgSlice now uses `MerchantTrade` for nearby buy/sell actions and stores actor inventory/currency state. A nearby road raider uses `ActorPerception` against the engine physics world and `EnemyCombatAi` to update chase/attack behavior; player attacks use the RPG melee rules.
+- `SaveState` is now version 2 and stores monotonic world time plus per-instance NPC schedule state. Version 1 saves migrate with empty schedule data, unknown save members are rejected, and RPG saves write through a flushed temporary file and replacement. RpgSlice writes the RPG data to a sidecar next to its world save; the two files are not a transactional pair.
+- Fixed a schedule correctness issue found during integration: a time change now cancels or replaces a stale pending destination, and crossing an intermediate cell updates the NPC's current cell while preserving its final scheduled destination.
+- No ordered roadmap rows were added or marked complete; the checklist remains 143/155 (92.3%), with task 133 first unchecked. Targeted integration proofs now pass, while the full Stage 9–12 gates remain Pending.
+
+### Scheduled gameplay integration checks
+
+| Check | Result |
+| --- | --- |
+| `git fetch origin` and revision check | PASS — `master` and `origin/master` both at `712a360` before this batch |
+| `dotnet build samples/RpgSlice/RpgSlice.csproj --configuration Release --no-restore --nologo` | PASS — 0 warnings and 0 errors |
+| `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` | PASS — save round-trip, schedule destination cancellation/replacement, clock/schedule persistence, v1 migration, and strict unknown-field rejection |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --configuration Release --no-restore --nologo` | PASS — 237 passed, 0 failed, 0 skipped |
+| RpgSlice `--rpg-integration-smoke --windowed` | PASS — merchant failure/success cases, save round trip, physics line of sight, idle/chase/attack/dead AI, scheduled trip across cells (0, 0) and (1, 0), and return home |
+| RpgSlice `--travel-smoke --windowed` | PASS — House A exterior/interior round trip through authored doors |
+| RpgSlice `--persistence-smoke --windowed` | PASS — authored edit, runtime identity, interior player location, and restart reload |
+
+### Remaining acceptance scope
+
+- Stage 9 still needs the 3×3 player walk, two separate interior routes, slow/failed loads, rapid direction changes, and frame/resource measurements.
+- Stage 10 still needs a live cross-cell move/create/delete plus interior save/restart and exactly-once checks.
+- Stage 11 still needs the full branching quest and save/restart coverage for equipment, effects, faction changes, loot, and progression.
+- Stage 12 still needs several scheduled NPCs, a follower through an interior door and restart, and dormant actor scene-retention evidence.
+- The RPG sidecar and engine world save can disagree after an interrupted two-file write. Atomic world-save restore and strict unmapped-member handling in the other persisted formats are also open.
