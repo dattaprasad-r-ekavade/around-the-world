@@ -1358,3 +1358,21 @@ No ordered roadmap rows were added or marked complete. Stage 9–12 gameplay wor
 | CharacterStudio direct UI interaction | Not automated — the desktop automation surface returned no app inventory and no native launch API; editor code compiled, while model/reference/event behavior has automated coverage |
 
 The Stage 14 gate remains Pending. The next batch starts at task 135 (project-wide reference validation), then task 136 (authored-content autosave/recovery). The remaining Stage 9–12 and Release gates are unchanged.
+
+## Tasks 135a–135c and 136a — project validation and recovery foundation — 26 September 2026
+
+- Split task 135 into three independently checked rows. `WorldProjectValidator` loads each cell scene and local path graph, checks duplicate spawns and door destinations, validates the world path network, and retains diagnostics with source file and record. A validation-only manifest load lets the audit report missing scene files individually; runtime `WorldManifest.Load` stays strict.
+- `RpgContentJson.ParseForValidation` returns structured RPG reference diagnostics while `FromJson` and `Load` keep rejecting invalid packs. `RpgProjectValidator` adds scene actor/item placement checks with the owning scene and object.
+- Added `Ember.Authoring` to combine world, dialogue/quest/content, and placement diagnostics. CharacterStudio's World Cells panel has a **Validate project** action and shows the aggregated report. Validation only reads project files.
+- Task 136a adds a versioned atomic snapshot store with per-file SHA-256 checksums, path validation, and a per-project default directory under local application data, outside the project tree. Corrupt or unsupported snapshots fail to load. Autosave capture, recovery staging, and editor apply controls are still pending.
+- Roadmap rows 135a–135c and 136a are checked. The checklist is now 151/161 (93.8%); task 136b is first unchecked. The Stage 14 gate remains Pending, and Stage 9–12 and Release gates are unchanged.
+
+### Project validation and recovery checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors; FirstLight, Campaign, RpgSlice, CharacterStudio, Ember.Authoring, engine, RPG, and check projects compiled |
+| `dotnet test Ember.sln --no-restore --nologo` | PASS — 247 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` | PASS — save/load check |
+| CharacterStudio `--screenshot ... --warmup 8` via `dotnet exec` | PASS — 1280×720 capture; World Cells panel and validation action rendered |
+| CharacterStudio direct button interaction | Not automated — the desktop automation surface still exposes no app inventory or native launch API; project validation is covered by an integration fixture |

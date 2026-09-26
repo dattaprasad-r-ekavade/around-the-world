@@ -566,6 +566,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (ImGui.Button("Open manifest")) LoadWorldManifest();
         ImGui.SameLine();
         if (ImGui.Button("Create world")) CreateWorldManifest();
+        if (ImGui.Button("Validate project")) ValidateAuthoredProject();
+        DrawProjectValidationReport();
         ImGui.Text("Exterior cell width (used for new worlds)");
         if (_worldManifest is not null) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-1f);

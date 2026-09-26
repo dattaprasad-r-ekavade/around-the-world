@@ -291,10 +291,14 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 134a | Persist a placement template ID and explicit override-field mask on an RPG placement. | Scene save/reopen preserves template references and masks while older scenes still load. |
 | [x] | 134b | Add reusable placement-template data and update semantics. | Updating a template refreshes inherited values while explicit overrides, stable world-instance IDs, and undo/redo are preserved. |
 | [x] | 134c | Add CharacterStudio controls to create, save, load, apply, and update placement templates. | A template library reopens and can place instances; editor controls mark per-instance overrides explicitly. |
-| [ ] | 135 | Add project-wide reference validation for cells, doors, paths, actors, items, dialogue, and quests. | A deliberately broken fixture reports every known error with its owning file/record. |
-| [ ] | 136 | Add autosave/recovery for authored content, separate from player saves. | Interrupted editing can be recovered without replacing a valid player save or silently accepting invalid content. |
+| [x] | 135a | Validate world-manifest cells, scene doors/spawns, local path graphs, and world path connections as a diagnostic set. | A broken multi-cell fixture reports all cell, door, spawn, and path errors with the owning file and record. |
+| [x] | 135b | Validate actor/item placements against RPG definitions and retain structured actor/item/dialogue/quest reference diagnostics. | A broken content fixture reports each missing target with its content file and record; broken placements identify their scene and object. |
+| [x] | 135c | Add a project-wide validation command and report to CharacterStudio. | One validation run reports all known world and RPG reference errors; a valid project reports none and validation does not mutate authored files. |
+| [x] | 136a | Add a versioned, integrity-checked authored-content snapshot store outside the project root. | Snapshot bytes round-trip, corrupt/unknown versions are rejected, and the recovery store never writes to authored or player-save paths. |
+| [ ] | 136b | Capture authored scenes, paths, world manifests, and RPG content into recoverable autosaves. | An interruption-style test restores a complete snapshot to a staging area without changing the source files. |
+| [ ] | 136c | Add CharacterStudio recovery review, validation, and apply controls. | Invalid recovered content cannot be applied, a valid snapshot can be recovered, and a player save remains unchanged. |
 
-**Gate: Pending.** CharacterStudio now edits quest objectives and placement templates. Project-wide validation, autosave/recovery, and authoring the complete settlement/interiors/route/quest without handwritten reference wiring remain.
+**Gate: Pending.** CharacterStudio edits quest objectives and placement templates and now reports project-wide reference errors with owning files/records. Authored-content autosave/recovery and authoring the complete settlement/interiors/route/quest without handwritten reference wiring remain.
 
 ## Stage 15 — Prove the intended RPG before enlarging it
 

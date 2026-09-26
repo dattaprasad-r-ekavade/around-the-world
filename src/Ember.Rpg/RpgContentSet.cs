@@ -370,6 +370,15 @@ public static class RpgContentJson
 
     public static RpgContentSet FromJson(string json)
     {
+        var result = ParseForValidation(json);
+        if (result.Diagnostics.Count > 0)
+            throw new InvalidDataException("RPG content validation failed: " + string.Join(" ", result.Diagnostics));
+        return result.Content;
+    }
+
+    /// <summary>Parses a content pack and returns every semantic diagnostic without rejecting the parsed records.</summary>
+    public static RpgContentValidationResult ParseForValidation(string json)
+    {
         ArgumentNullException.ThrowIfNull(json);
         var document = JsonSerializer.Deserialize<ContentDocument>(json, CreateJsonOptions())
             ?? throw new JsonException("The RPG content document was empty.");
@@ -396,13 +405,16 @@ public static class RpgContentJson
             Dialogues = document.Dialogues is null ? Array.Empty<DialogueTree>() : document.Dialogues,
             Quests = quests
         };
-        var errors = content.Validate();
-        if (errors.Count > 0)
-            throw new InvalidDataException("RPG content validation failed: " + string.Join(" ", errors));
-        return content;
+        return new RpgContentValidationResult(content, content.Validate());
     }
 
     public static RpgContentSet Load(string path) => FromJson(File.ReadAllText(path));
+
+    public static RpgContentValidationResult LoadForValidation(string path)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        return ParseForValidation(File.ReadAllText(path));
+    }
 
     public static string ToJson(RpgContentSet content)
     {

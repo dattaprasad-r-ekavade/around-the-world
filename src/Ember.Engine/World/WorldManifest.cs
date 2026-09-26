@@ -80,7 +80,12 @@ public sealed class WorldManifest
         return ResolveScenePath(RootDirectory, cell.ScenePath);
     }
 
-    public static WorldManifest Load(string path)
+    public static WorldManifest Load(string path) => LoadCore(path, requireSceneFiles: true);
+
+    /// <summary>Loads manifest structure for tooling that needs to report missing scene files individually.</summary>
+    public static WorldManifest LoadForValidation(string path) => LoadCore(path, requireSceneFiles: false);
+
+    private static WorldManifest LoadCore(string path, bool requireSceneFiles)
     {
         if (string.IsNullOrWhiteSpace(path))
             throw new ArgumentException("A world manifest path is required.", nameof(path));
@@ -123,7 +128,7 @@ public sealed class WorldManifest
 
         try
         {
-            return new WorldManifest(fullPath, cellWidth, cells, requireSceneFiles: true);
+            return new WorldManifest(fullPath, cellWidth, cells, requireSceneFiles);
         }
         catch (ArgumentException exception)
         {

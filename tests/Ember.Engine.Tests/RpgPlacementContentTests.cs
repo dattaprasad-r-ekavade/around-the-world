@@ -149,4 +149,58 @@ public sealed class RpgPlacementContentTests
         Assert.Contains(diagnostics, diagnostic => diagnostic.MissingTarget.Contains("minimum cannot exceed maximum", StringComparison.Ordinal));
         Assert.Contains(diagnostics, diagnostic => diagnostic.MissingTarget.Contains("missing-node", StringComparison.Ordinal));
     }
+
+    [Fact]
+    public void ProjectValidationKeepsAllContentAndPlacementReferencesWithFileOwners()
+    {
+        const string json = """
+            {
+              "actors": [{ "id": "actors.guard", "name": "Guard" }],
+              "items": [],
+              "dialogues": [{
+                "id": "dialogue.guard",
+                "nodes": [{ "id": "greeting", "speaker": "Guard", "speakerActorId": "actors.missing", "text": "Hello." }]
+              }],
+              "quests": [{
+                "id": "quests.find-item",
+                "title": "Find the item",
+                "startDialogueId": "dialogue.missing",
+                "stages": [{ "id": "find", "targetActorId": "actors.absent", "requiredItemId": "items.absent" }]
+              }]
+            }
+            """;
+        var contentPath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "rpg-definitions.json"));
+        var scenePath = Path.GetFullPath(Path.Combine(Path.GetTempPath(), "exterior.json"));
+        var parsed = RpgContentJson.ParseForValidation(json);
+
+        var diagnostics = RpgProjectValidator.Validate(parsed, contentPath,
+        [
+            new RpgPlacementReference(scenePath, "object 'GuardPlacement' (11111111-1111-1111-1111-111111111111)",
+                RpgPlacementDefinitionKind.Actor, "actors.unknown"),
+            new RpgPlacementReference(scenePath, "object 'PotionPlacement' (22222222-2222-2222-2222-222222222222)",
+                RpgPlacementDefinitionKind.Item, "items.unknown")
+        ]);
+
+        Assert.Equal(6, diagnostics.Count);
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == contentPath
+            && diagnostic.SourceRecord.Contains("dialogue 'dialogue.guard'", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("actors.missing", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == contentPath
+            && diagnostic.SourceRecord.Contains("quests.find-item", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("dialogue.missing", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == contentPath
+            && diagnostic.SourceRecord.Contains("stage 'find'", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("actors.absent", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == contentPath
+            && diagnostic.SourceRecord.Contains("stage 'find'", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("items.absent", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == scenePath
+            && diagnostic.SourceRecord.Contains("GuardPlacement", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("actors.unknown", StringComparison.Ordinal));
+        Assert.Contains(diagnostics, diagnostic => diagnostic.SourceFile == scenePath
+            && diagnostic.SourceRecord.Contains("PotionPlacement", StringComparison.Ordinal)
+            && diagnostic.Message.Contains("items.unknown", StringComparison.Ordinal));
+
+        Assert.Throws<InvalidDataException>(() => RpgContentJson.FromJson(json));
+    }
 }
