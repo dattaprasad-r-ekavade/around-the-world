@@ -295,10 +295,12 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 135b | Validate actor/item placements against RPG definitions and retain structured actor/item/dialogue/quest reference diagnostics. | A broken content fixture reports each missing target with its content file and record; broken placements identify their scene and object. |
 | [x] | 135c | Add a project-wide validation command and report to CharacterStudio. | One validation run reports all known world and RPG reference errors; a valid project reports none and validation does not mutate authored files. |
 | [x] | 136a | Add a versioned, integrity-checked authored-content snapshot store outside the project root. | Snapshot bytes round-trip, corrupt/unknown versions are rejected, and the recovery store never writes to authored or player-save paths. |
-| [ ] | 136b | Capture authored scenes, paths, world manifests, and RPG content into recoverable autosaves. | An interruption-style test restores a complete snapshot to a staging area without changing the source files. |
-| [ ] | 136c | Add CharacterStudio recovery review, validation, and apply controls. | Invalid recovered content cannot be applied, a valid snapshot can be recovered, and a player save remains unchanged. |
+| [x] | 136b | Capture authored scenes, paths, world manifests, and RPG content into recoverable autosaves. | An interruption-style test restores a complete snapshot to a staging area without changing the source files. |
+| [x] | 136c | Snapshot current in-memory scene and RPG edits alongside disk-authored project files. | Unsaved editor state round-trips, including semantically invalid drafts, without changing source or player-save files. |
+| [x] | 136d | Add CharacterStudio autosave and recovery review into staging with a validation report. | The editor can create and stage a snapshot; invalid staged content reports errors and cannot be applied. |
+| [x] | 136e | Apply a valid staged recovery and reload the open editor safely. | Invalid content is blocked; valid content replaces authored files, the editor reloads it, and player saves remain unchanged. |
 
-**Gate: Pending.** CharacterStudio edits quest objectives and placement templates and now reports project-wide reference errors with owning files/records. Authored-content autosave/recovery and authoring the complete settlement/interiors/route/quest without handwritten reference wiring remain.
+**Gate: Pending.** CharacterStudio edits quest objectives and placement templates, reports project-wide reference errors with owning files/records, and now supports authored recovery capture, validation review, safe apply, and active-scene reload. Authoring the complete settlement/interiors/route/quest without handwritten reference wiring remains.
 
 ## Stage 15 — Prove the intended RPG before enlarging it
 

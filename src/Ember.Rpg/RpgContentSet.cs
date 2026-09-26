@@ -423,6 +423,18 @@ public static class RpgContentJson
         if (errors.Count > 0)
             throw new InvalidDataException("RPG content validation failed: " + string.Join(" ", errors));
 
+        return SerializeContent(content);
+    }
+
+    /// <summary>Serializes an editor recovery draft, even when it has semantic validation errors.</summary>
+    public static string ToJsonForRecovery(RpgContentSet content)
+    {
+        ArgumentNullException.ThrowIfNull(content);
+        return SerializeContent(content);
+    }
+
+    private static string SerializeContent(RpgContentSet content)
+    {
         return JsonSerializer.Serialize(new ContentDocument
         {
             Actors = content.Actors.All.Values.OrderBy(value => value.Id.Value, StringComparer.Ordinal).ToList(),

@@ -4,6 +4,8 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
+using System.Text;
+using Ember.Authoring;
 using Ember.Assets;
 using Ember.Audio;
 using Ember;
@@ -13,6 +15,7 @@ using Ember.Physics;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
+using Ember.Rpg;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -217,6 +220,7 @@ public sealed class CharacterStudioGame : EngineHost
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
                 SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
+                CaptureAuthoringRecovery, ApplyAuthoringRecovery,
                 StartPathFollow, GetPathFollowStatus, StopPathFollow);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
@@ -1476,6 +1480,101 @@ public sealed class CharacterStudioGame : EngineHost
             attachmentCandidate?.Dispose();
             _reimportStatus = $"Could not open cell: {exception.Message}";
             return _reimportStatus;
+        }
+    }
+
+    private string CaptureAuthoringRecovery(SceneGraph scene, string worldManifestPath,
+        string rpgContentPath, string? currentScenePath, RpgContentSet? content)
+    {
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before capturing an authoring recovery snapshot.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before capturing recovery.");
+        if (currentScenePath is null)
+            throw new InvalidOperationException("Save the active scene in the world manifest before capturing recovery.");
+
+        _editorUi?.CompletePendingEdit(scene);
+        CaptureCharacterSettings();
+        var recoveryDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
+            worldManifestPath, rpgContentPath);
+        var sceneJson = Encoding.UTF8.GetBytes(SceneFile.ToJson(scene));
+        var contentJson = content is null
+            ? null
+            : Encoding.UTF8.GetBytes(RpgContentJson.ToJsonForRecovery(content));
+        var snapshot = AuthoredProjectRecoveryService.Capture(worldManifestPath, rpgContentPath,
+            recoveryDirectory, currentScenePath: currentScenePath, currentSceneJson: sceneJson,
+            currentRpgContentJson: contentJson);
+        return $"Autosaved {snapshot.Files.Count} authored files outside the project.";
+    }
+
+    private string ApplyAuthoringRecovery(AuthoredProjectRecoveryStaging staging)
+    {
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before applying an authoring recovery.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before applying recovery.");
+        if (_preview is null || _sceneSavePath is null)
+            throw new InvalidOperationException("The active scene preview is not ready for recovery.");
+
+        var sourceScenePath = Path.GetFullPath(_sceneSavePath);
+        var relativeScenePath = Path.GetRelativePath(Path.GetFullPath(staging.ProjectRoot), sourceScenePath);
+        if (Path.IsPathRooted(relativeScenePath) || relativeScenePath == ".."
+            || relativeScenePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || relativeScenePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException("The active scene is outside the recovered project.");
+        var stagedScenePath = Path.GetFullPath(Path.Combine(staging.StagingRoot, relativeScenePath));
+        var stagedRelative = Path.GetRelativePath(Path.GetFullPath(staging.StagingRoot), stagedScenePath);
+        if (Path.IsPathRooted(stagedRelative) || stagedRelative == ".."
+            || stagedRelative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || stagedRelative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException("The active scene path escapes recovery staging.");
+
+        // Prepare the recovered scene and every GPU resource before modifying the project files.
+        var candidate = SceneFile.Load(stagedScenePath);
+        var loadedPreview = PreviewResources.Load(GraphicsDevice,
+            ResolveSceneAssets(candidate, _sceneAssetRoot), candidate);
+        AttachmentBoxRenderer? attachmentCandidate = null;
+        var previewTransferred = false;
+        try
+        {
+            if (loadedPreview.HasSkinnedCharacters)
+            {
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    loadedPreview.MaximumJointCount);
+                if (loadedPreview.AttachmentsByInstanceId.Count > 0 && _attachmentRenderer is null)
+                    attachmentCandidate = new AttachmentBoxRenderer(GraphicsDevice);
+            }
+
+            AuthoredProjectRecoveryService.ApplyValidatedStaging(staging);
+            var cleanupError = _preview.Reload(() => loadedPreview);
+            previewTransferred = true;
+            if (attachmentCandidate is not null)
+            {
+                _attachmentRenderer = _sceneResources!.Own(attachmentCandidate);
+                attachmentCandidate = null;
+            }
+
+            DisposePathPhysics();
+            _sceneData = candidate;
+            _sceneSavePath = sourceScenePath;
+            _editorHistory = new SceneCommandHistory();
+            _editorUi?.SetHistory(_editorHistory);
+            _editorUi?.ResetSceneSelection();
+            _editorUi?.RefreshAfterRecovery();
+            _farLodByObjectId.Clear();
+            BuildSequencePreview();
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+
+            _reimportStatus = cleanupError is null
+                ? $"Applied recovery and reloaded {Path.GetFileName(sourceScenePath)}."
+                : $"Applied recovery; previous preview cleanup reported: {cleanupError.Message}";
+            return _reimportStatus;
+        }
+        catch
+        {
+            if (!previewTransferred) loadedPreview.Dispose();
+            attachmentCandidate?.Dispose();
+            throw;
         }
     }
 

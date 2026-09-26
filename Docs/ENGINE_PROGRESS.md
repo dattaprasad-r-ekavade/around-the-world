@@ -1376,3 +1376,22 @@ The Stage 14 gate remains Pending. The next batch starts at task 135 (project-wi
 | `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-restore` | PASS — save/load check |
 | CharacterStudio `--screenshot ... --warmup 8` via `dotnet exec` | PASS — 1280×720 capture; World Cells panel and validation action rendered |
 | CharacterStudio direct button interaction | Not automated — the desktop automation surface still exposes no app inventory or native launch API; project validation is covered by an integration fixture |
+
+## Tasks 136b–136e — authored-content recovery workflow — 26 September 2026
+
+- Task 136b captures the world manifest, every cell scene, RPG content, and top-level world path files into the checksummed recovery store. Snapshots stay outside the project and player-save locations and can be restored to an isolated staging tree.
+- Task 136c adds recovery-only JSON serialization for current in-memory scene and RPG state. RPG drafts with semantic reference errors survive capture so the review step can show their diagnostics; ordinary RPG saves remain validation-strict.
+- Task 136d adds immediate and one-minute CharacterStudio autosaves plus a recovery review action. Review restores the latest snapshot to staging and shows every project validation diagnostic; invalid staging disables the apply control.
+- Task 136e revalidates staged content before applying it, restricts writes to manifest-owned scenes, world path files, the manifest, and RPG content, and uses prepared replacement files with rollback on write failure. CharacterStudio prepares the recovered active scene and preview resources before writing, then replaces editor state without saving over the recovery and leaves player saves untouched.
+- Roadmap rows 136b–136e are checked. The ordered checklist is now 155/163 (95.1%); task 137 is first unchecked. The Stage 14 authoring gate remains Pending until the complete settlement/interior/route/quest is authored and verified; Stage 9–12 and Release gates are unchanged.
+
+### Authored recovery checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --no-restore --nologo` | PASS — 0 warnings and 0 errors; all engine, authoring, check, and sample projects compiled |
+| `dotnet test Ember.sln --no-restore --nologo` | PASS — 248 passed, 0 failed, 0 skipped |
+| `dotnet run --project tests/Ember.Rpg.Check --no-build --no-restore` | PASS — `[OK] save then load equals original` |
+| Authored recovery interruption test | PASS — in-memory scene edits round-trip; semantically invalid RPG drafts stage with diagnostics and are blocked from apply; valid recovery applies; source files remain untouched during review and player saves remain unchanged |
+| CharacterStudio `--screenshot ... --warmup 8` via `dotnet exec` | PASS — 1280×720 capture shows the recovery autosave and review controls in the World Cells panel |
+| CharacterStudio direct recovery button interaction | Not automated — the current desktop automation surface does not expose direct native-app button input; editor code builds, and capture/stage/validate/apply behavior is covered by the service integration test |

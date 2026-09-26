@@ -42,6 +42,8 @@ public static class SceneFile
         return FromDocument(document);
     }
 
+    public static string ToJson(SceneGraph scene) => SerializeToJson(scene);
+
     internal static string SerializeToJson(SceneGraph scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
