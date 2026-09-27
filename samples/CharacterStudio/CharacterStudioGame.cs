@@ -75,6 +75,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly string? _savePath;
     private readonly bool _lifecycleSmokeRequested;
     private readonly int _lifecycleSmokeCycles;
+    private readonly int _referenceSessionMinutes;
     private string? _sceneSavePath;
     private readonly string? _openSequencePath;
     private readonly string? _saveSequencePath;
@@ -109,6 +110,13 @@ public sealed class CharacterStudioGame : EngineHost
     private bool _sequenceExportRestoreWasPlaying;
     private bool _sequenceExportRestorePreviewEnabled;
     private LifecycleSmokeState? _lifecycleSmoke;
+    private CharacterStudioReferenceSession? _referenceSession;
+    private readonly Stopwatch _referenceFrameClock = new();
+    private bool _referenceFirstFrame = true;
+    private double _referenceNextModeSwitchSeconds = 60d;
+    private double _referenceNextMemorySampleSeconds = 1d;
+    private string? _referenceMarkdownPath;
+    private string? _referenceJsonPath;
     private Vector3 _sequenceExportRestoreCameraPosition;
     private Quaternion _sequenceExportRestoreCameraRotation;
     private float _sequenceExportRestoreFieldOfView;
@@ -134,10 +142,16 @@ public sealed class CharacterStudioGame : EngineHost
         _savePath = ParseOption(args, "--save");
         _lifecycleSmokeRequested = HasArgument(args, "--lifecycle-smoke");
         _lifecycleSmokeCycles = ParseIntOption(args, "--lifecycle-cycles", 10);
+        _referenceSessionMinutes = ParseIntOption(args, "--reference-session-minutes", 0);
         if (_lifecycleSmokeCycles < 1)
             throw new ArgumentOutOfRangeException(nameof(args), "--lifecycle-cycles must be positive.");
         if (!_lifecycleSmokeRequested && ParseOption(args, "--lifecycle-cycles") is not null)
             throw new ArgumentException("--lifecycle-cycles requires --lifecycle-smoke.", nameof(args));
+        if (_referenceSessionMinutes < 0
+            || (_referenceSessionMinutes == 0 && ParseOption(args, "--reference-session-minutes") is not null))
+            throw new ArgumentOutOfRangeException(nameof(args), "--reference-session-minutes must be positive when supplied.");
+        if (_lifecycleSmokeRequested && _referenceSessionMinutes > 0)
+            throw new ArgumentException("--lifecycle-smoke and --reference-session-minutes cannot be combined.", nameof(args));
         var openPath = ParseOption(args, "--open");
         var projectPath = ParseOption(args, "--project");
         if (projectPath is not null && openPath is not null)
@@ -153,6 +167,9 @@ public sealed class CharacterStudioGame : EngineHost
         if (_lifecycleSmokeRequested && (_openSequencePath is not null || _saveSequencePath is not null
             || _startupSequenceExportDirectory is not null))
             throw new ArgumentException("--lifecycle-smoke cannot be combined with sequence open, save, or export options.", nameof(args));
+        if (_referenceSessionMinutes > 0 && (_openSequencePath is not null || _saveSequencePath is not null
+            || _startupSequenceExportDirectory is not null))
+            throw new ArgumentException("--reference-session-minutes cannot be combined with sequence open, save, or export options.", nameof(args));
         var hasStartupExportOptions = HasArgument(args, "--export-start")
             || HasArgument(args, "--export-end") || HasArgument(args, "--export-fps")
             || HasArgument(args, "--export-width") || HasArgument(args, "--export-height");
@@ -330,6 +347,7 @@ public sealed class CharacterStudioGame : EngineHost
             if (_savePath is not null) SaveScene();
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
             if (_lifecycleSmokeRequested) RunLifecycleSmoke();
+            if (_referenceSessionMinutes > 0) RunReferenceSession();
         }
         catch
         {
@@ -347,10 +365,23 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void Update(GameTime gameTime)
     {
         BeginHostFrame();
+        if (_referenceSession is not null)
+            RecordReferenceFrameInterval();
         _input.Sample();
         var mouse = _input.CurrentMouse;
         _editorUi?.Update((float)gameTime.ElapsedGameTime.TotalSeconds,
             _input.CurrentKeyboard, mouse, LogicalMouse(mouse), CurrentScene);
+        if (_referenceSession is not null)
+        {
+            AdvanceReferenceSession();
+            _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+            if (_preview?.Current is { } activePreview)
+                foreach (var state in activePreview.CharacterInstances.Values)
+                    state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+            _input.Commit();
+            base.Update(gameTime);
+            return;
+        }
         if (_lifecycleSmoke is not null)
         {
             AdvanceLifecycleSmoke();
@@ -1151,6 +1182,160 @@ public sealed class CharacterStudioGame : EngineHost
         Console.WriteLine($"CharacterStudio lifecycle samples saved to {state.JsonPath}");
         Environment.ExitCode = passed ? 0 : 1;
         _lifecycleSmoke = null;
+        Exit();
+    }
+
+    private void RunReferenceSession()
+    {
+        if (_preview is null)
+            throw new InvalidOperationException("Reference session requires a loaded graphics preview.");
+
+        var outputDirectory = Path.Combine(Path.GetTempPath(), "Ember", "CharacterStudio", "ReferenceSessions");
+        Directory.CreateDirectory(outputDirectory);
+        var referenceScene = _playbackOptions.Pair
+            ? "CharacterStudio Fox pair (two skinned instances sharing one GLB)"
+            : $"CharacterStudio startup scene ({_sceneData.Objects.Count} authored objects)";
+        _referenceSession = new CharacterStudioReferenceSession(
+            TimeSpan.FromMinutes(_referenceSessionMinutes), referenceScene);
+        _referenceMarkdownPath = Path.Combine(outputDirectory, $"reference-session-{_referenceSession.RunId:N}.md");
+        _referenceJsonPath = Path.Combine(outputDirectory, $"reference-session-{_referenceSession.RunId:N}.json");
+        _referenceFrameClock.Restart();
+        _referenceFirstFrame = true;
+        _referenceNextModeSwitchSeconds = 60d;
+        _referenceNextMemorySampleSeconds = 1d;
+        _referenceSession.RecordModeChange("Editor");
+        RecordReferenceMemorySample(_referenceSession);
+        Console.WriteLine($"CharacterStudio: mixed editor/runtime reference session started; target={_referenceSessionMinutes} minutes; modes switch every 60 seconds.");
+    }
+
+    private void RecordReferenceFrameInterval()
+    {
+        if (_referenceSession is null) return;
+        var interval = _referenceFrameClock.Elapsed.TotalMilliseconds;
+        _referenceFrameClock.Restart();
+        if (_referenceFirstFrame)
+        {
+            _referenceFirstFrame = false;
+            return;
+        }
+
+        _referenceSession.RecordFrameInterval(interval);
+    }
+
+    private void AdvanceReferenceSession()
+    {
+        if (_referenceSession is not { } session) return;
+
+        try
+        {
+            if (session.TargetReached)
+            {
+                StopReferenceRuntimeIfNeeded(session);
+                RecordReferenceMemorySample(session);
+                WriteReferenceSessionReport(session);
+                return;
+            }
+
+            while (session.ElapsedSeconds >= _referenceNextModeSwitchSeconds
+                && _referenceNextModeSwitchSeconds < session.TargetDuration.TotalSeconds)
+            {
+                var transitionAt = session.ElapsedSeconds;
+                if (_playSession is null)
+                {
+                    StartPlaySession();
+                    if (_playSession is null)
+                        throw new InvalidOperationException($"Could not enter runtime mode: {_reimportStatus}");
+                    if (_reimportStatus.Contains("cleanup", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException($"Runtime preview cleanup reported an issue: {_reimportStatus}");
+                    session.RecordModeChange("Runtime");
+                }
+                else
+                {
+                    StopPlaySession();
+                    if (_playSession is not null)
+                        throw new InvalidOperationException($"Could not return to editor mode: {_reimportStatus}");
+                    if (_reimportStatus.Contains("issue", StringComparison.OrdinalIgnoreCase)
+                        || _reimportStatus.Contains("cleanup", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException($"Editor preview cleanup reported an issue: {_reimportStatus}");
+                    session.RecordModeChange("Editor");
+                }
+
+                _referenceNextModeSwitchSeconds += 60d;
+                if (session.ElapsedSeconds - transitionAt > 10d)
+                    throw new TimeoutException("A reference-session editor/runtime transition exceeded 10 seconds.");
+            }
+
+            if (session.ElapsedSeconds >= _referenceNextMemorySampleSeconds)
+            {
+                RecordReferenceMemorySample(session);
+                do { _referenceNextMemorySampleSeconds += 1d; }
+                while (_referenceNextMemorySampleSeconds <= session.ElapsedSeconds);
+            }
+        }
+        catch (Exception error)
+        {
+            session.RecordError($"{error.GetType().Name}: {error.Message}");
+            try { StopReferenceRuntimeIfNeeded(session); }
+            catch (Exception cleanupError)
+            {
+                session.RecordError($"Cleanup: {cleanupError.GetType().Name}: {cleanupError.Message}");
+            }
+            RecordReferenceMemorySample(session);
+            WriteReferenceSessionReport(session);
+        }
+    }
+
+    private void StopReferenceRuntimeIfNeeded(CharacterStudioReferenceSession session)
+    {
+        if (_playSession is null) return;
+        StopPlaySession();
+        if (_playSession is not null)
+            throw new InvalidOperationException($"Runtime session did not stop cleanly: {_reimportStatus}");
+        if (_reimportStatus.Contains("issue", StringComparison.OrdinalIgnoreCase)
+            || _reimportStatus.Contains("cleanup", StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException($"Runtime cleanup reported an issue: {_reimportStatus}");
+        session.RecordModeChange("Editor");
+    }
+
+    private void RecordReferenceMemorySample(CharacterStudioReferenceSession session)
+    {
+        var preview = _preview?.Current;
+        using var process = Process.GetCurrentProcess();
+        process.Refresh();
+        session.RecordSample(new CharacterStudioReferenceSession.MemorySample(
+            session.ElapsedSeconds,
+            _playSession is null ? "Editor" : "Runtime",
+            CurrentScene.Objects.Count,
+            preview?.Assets.Count ?? 0,
+            preview?.CharacterInstances.Count ?? 0,
+            preview?.OwnedGraphicsResourceCount ?? 0,
+            process.WorkingSet64,
+            process.PrivateMemorySize64,
+            GC.GetTotalMemory(false)));
+    }
+
+    private void WriteReferenceSessionReport(CharacterStudioReferenceSession session)
+    {
+        var passed = session.TargetReached && session.Errors.Count == 0 && _playSession is null;
+        var adapter = GraphicsDevice.Adapter.Description;
+        var width = GraphicsDevice.Viewport.Width;
+        var height = GraphicsDevice.Viewport.Height;
+        try
+        {
+            File.WriteAllText(_referenceJsonPath!, session.BuildRawData(adapter, width, height, passed), Encoding.UTF8);
+            File.WriteAllText(_referenceMarkdownPath!, session.BuildReport(adapter, width, height, passed), Encoding.UTF8);
+            Console.WriteLine(session.BuildReport(adapter, width, height, passed));
+            Console.WriteLine($"CharacterStudio reference report saved to {_referenceMarkdownPath}");
+            Console.WriteLine($"CharacterStudio reference samples saved to {_referenceJsonPath}");
+        }
+        catch (Exception error)
+        {
+            passed = false;
+            Console.Error.WriteLine($"CharacterStudio reference report export failed: {error}");
+        }
+
+        Environment.ExitCode = passed ? 0 : 1;
+        _referenceSession = null;
         Exit();
     }
 
