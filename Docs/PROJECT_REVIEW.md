@@ -1,3 +1,58 @@
+# Latest progress and creator-experience review — 28 September 2026
+
+Reviewed revision: `3c9620e`. The 27 September assessment below is historical; its
+soak defects and old test failure are not the current baseline. No runtime/UI changes
+were made in this review. The active design is CREATOR_EXPERIENCE.md and ENGINE_ROADMAP.md.
+
+## Progress since the previous review
+
+- M0.1–M0.3 have recorded passes: corrected soak reporting, live multi-interior and
+  editor lifecycle checks, a 30-minute reference session and relocated distribution.
+  These are prior recorded runs, not freshly repeated live tests in this review.
+- Atomic writes, staged world restore, cancellation cleanup and Windows CI were added.
+  M0.4 remains In progress: the latest recorded remote run failed and interactive
+  manual checks remain unrun. Commit 36dd000's title does not override this evidence.
+- M1.1 now has project create/open/recent services and GLB import with rollback.
+  Relocated static/animated content has recorded graphics coverage. Native pickers,
+  full asset-browser usability and button-driven integration are still incomplete.
+- Fresh local `dotnet test Ember.sln --configuration Release --no-restore --nologo`:
+  **283 passed, 0 failed, 0 skipped**. The previous review's 254/255 result is historical.
+- Fresh RPG Release check: **PASS**, save/load equals original.
+- Fresh Release solution build: **blocked by output file locks** from the already-running
+  CharacterStudio process (PID 39692), with MSB3027/MSB3021 copy failures. It was left open;
+  this run is not a successful full build. Existing progress records contain prior passes.
+- Remote CI status was not refreshed: `gh` is unavailable. Treat the failed run in the
+  progress log as last recorded evidence, not a confirmed current remote status.
+
+## Current usability finding — high priority
+
+Inspected the M1.1 `relocated-project.png` artifact and current UI code. The image is
+stored under `%TEMP%/Ember/CharacterStudio/M11ProjectWorkflow-39786d2da1694cacbd16f61e6a8236e4`.
+It shows project/scene panels on the left, World Cells across the middle, and RPG tools
+covering sequence controls on the right. The scene is largely obscured. In
+`CharacterStudioEditorUi.cs`, Draw calls all these panels; RPG and sequence preview
+share initial coordinates. `CharacterStudioProjectUi.cs` requires typed paths.
+
+This is a confirmed default-layout problem, not just a subjective preference about
+styling. Raw manifests, cloning terminology, numeric inputs and unrelated RPG controls
+precede the beginner's first useful action. This review used a saved screenshot and
+source inspection; it did not claim a fresh interactive usability study.
+
+## Updated direction
+
+Usability moves from M5 polish to required UX.1–UX.5 work at M1: Home, scene-first layout,
+visual/picker-based actions, contextual detail, safe feedback, a short creation lesson,
+and observed novice completion. M2 adds simple interaction presets and UX.6, an optional
+mission to build and play a challenge using the same commands and project format.
+M3/M4 inherit the same simplicity requirements. A later immersive designer-game shell
+can build on evidence from this loop; it is not a separate engine rewrite.
+
+The next verification priority remains M0.4. The next editor implementation priority
+is UX.1 with M1.1 integration, before adding further advanced default panels. New UX
+work is Not started; this update changes the plan and acceptance criteria only.
+
+---
+
 # Project and scope review — 27 September 2026
 
 Reviewed source baseline: `d081422`, plus existing untracked user content (not modified).

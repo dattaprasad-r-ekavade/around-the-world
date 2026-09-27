@@ -1,12 +1,19 @@
 # Ember roadmap: lightweight 3D engine and scene generator
 
-Updated: 27 September 2026. This is the sole active roadmap. It supersedes the
+Updated: 28 September 2026. This is the sole active roadmap. It supersedes the
 [RPG implementation plan](archive/ENGINE_ROADMAP_RPG_2026-09-27.md), including its
 next-task instructions and expansion tasks 145–152. Completed implementation history
 remains in [ENGINE_PROGRESS.md](ENGINE_PROGRESS.md); historical completion percentages
 are not product readiness. See [PROJECT_REVIEW.md](PROJECT_REVIEW.md) for the baseline.
 
 ## Product objective
+
+**Primary goal: a game engine that teaches you how to build a game as you build one.**
+A first-time creator should make a small change, see what it does, and build confidence.
+Embedded teaching and beginner usability are first-release requirements. Contextual explanations, experiments and feedback must teach transferable concepts, not just button sequences. The longer-term
+product is a game in which the player is a game designer, using these same creation tools.
+See [CREATOR_EXPERIENCE.md](CREATOR_EXPERIENCE.md) for the layout, language, learning loop,
+measurement targets, and designer-game direction. These are planned changes, not shipped UI.
 
 Build a compact Windows 3D creation tool in which one person can create or generate a
 scene, refine it visually, and use that same scene in a playable game or a cutscene.
@@ -47,7 +54,15 @@ adapters; they are not prerequisites for the local tool.
 M0.1 through M0.3 have passed; M0.4 and M1.1 are **In progress**; later tasks remain **Not started**
 against their new acceptance criteria;
 existing components are reusable foundations, not a reason to repeat their implementation.
-Documentation reset is complete.
+Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
+M0.4 remains open despite a commit title saying it was closed (remote CI/manual evidence
+is incomplete). M1.1 services exist but the visible button-driven workflow is unproven.
+New UX tasks below are **Not started**. Preserve completed reliability work.
+
+Execution order: close M0.4 verification, then prioritize UX.1–UX.3 alongside completion
+of M1.1. Do not add more default panels while this work is pending. UX.4 and UX.5 are
+required for the M1 gate; UX.6 follows the first M2 interaction. Design/specification work
+can proceed while CI is being repaired; do not call dependent release gates Passed.
 
 Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
 or exact UI steps, fixture, configuration, hardware where relevant, result, and artifact
@@ -85,19 +100,37 @@ Gate: corrected machine-readable evidence supports the small-scene baseline. Reg
 expansion remains unapproved. A longer soak establishes bounded behavior for its run,
 not proof that no leak exists under any workload.
 
-## M1 — One coherent editor project workflow
+## UX — Beginner creation experience (required, early)
 
-Dependency: M0. Extract shared services only as needed by these tasks.
+Dependency: reuse current project/scene services. Functional prototype can be developed
+alongside M1; accepting the M1 release gate requires M0 and UX.1–UX.5. Use the design
+contract in CREATOR_EXPERIENCE.md. These tasks precede additional advanced editor scope.
 
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
-| M1.1 | Project create/open, recent projects, asset browser and import/reimport. | Create a project outside the checkout, import static and animated GLBs, relocate and reopen it. Invalid reimport preserves the prior valid asset and explains the error. | **In progress** |
-| M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. | Not started |
+| UX.1 | Replace all-panels startup with Home and a scene-first workspace. | Home offers Game, Film and Open; the default editor has one toolbar, an Add library and contextual selection panel. World/RPG/debug/export panels are closed until requested. No overlapping windows; at least 60% scene area at 1280×720; reset layout, resize and DPI checks pass. | Not started |
+| UX.2 | Make common actions visual and understandable. | File/folder pickers, starter thumbnails, model preview, click selection and visible Move/Turn/Size/Play/Undo/Save actions complete the basic loop. No typed paths, JSON, manifests or required shortcuts. Advanced values remain discoverable in More details. | Not started |
+| UX.3 | Provide safe feedback and contextual help. | State-aware empty/disabled/error messages offer a next action; a missing model can be located through Browse. Save status, undo, recovery and Play/Stop are understandable. Keyboard focus, readable scaling and non-color-only states pass manual checks. | Not started |
+| UX.4 | Build a skippable first-creation lesson. | A starter enables add → move → play → undo → save/reopen without code; one concept per step, detected from real actions, with replayable help. Teach objects and transforms through explain → change → predict → play → reflect → vary. Contextual Why?/hints work offline; free creation is always available. The lesson uses normal commands and project data. | Not started |
+| UX.5 | Observe novice use and revise. | Three first-time users complete the starter loop within 10 minutes each without facilitator intervention; record errors/help/confusion and a later unaided repeat. All can undo, Play/Stop and reopen safely, explain their change, and repeat it on a different object without step-by-step hints. No participants means In progress with the usability gate pending, not a developer-inferred pass. | Not started |
+| UX.6 | Prototype one designer-game mission. | After M2.1, build/test/save a small challenge through an optional mission using the same authoring commands. Teach triggers, actions, goals and playtesting; after guidance, the creator makes a different interaction and explains its rule. Explain consequences and recognize completion; never lock editing behind progression. Free edit and mission mode reopen the same project unchanged. | Not started |
+
+Gate: users learn by making an observable change and trying it. A themed skin, extra
+menus, or a tutorial over the existing crowded UI does not meet this gate.
+
+## M1 — One coherent editor project workflow
+
+Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract shared services only as needed. Reuse the existing M1.1 services behind the simpler workspace.
+
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| M1.1 | Project create/open, recent projects, asset browser and import/reimport. | Create a project outside the checkout, import static and animated GLBs, relocate and reopen it. Invalid reimport preserves the prior valid asset and explains the error. Complete these actions through Browse/visual controls; typed-path service tests alone do not pass the gate. | **In progress** |
+| M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. Selection and Move/Turn/Size work in the viewport; numeric transforms are optional details. | Not started |
 | M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | Not started |
 | M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | Not started |
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
-source changes; restart and recover the same scene. Record the complete action sequence.
+source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.
 
 ## M2 — Make and deliver a small game
 
@@ -105,13 +138,13 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 
 | ID | Work | Acceptance |
 | --- | --- | --- |
-| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. |
+| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. |
 | M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. |
 | M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. |
 
 Gate: an editor-authored 3–5 minute interaction demo starts, plays, saves/reloads its
 small state, and exits from a relocated package. No sample-specific source wiring is
-needed for the demonstrated workflow. Full RPG systems are not this gate.
+needed for the demonstrated workflow. Full RPG systems are not this gate. Include the optional UX.6 designer mission using the same saved project and editor commands.
 
 ## M3 — Author and export cutscenes
 
@@ -119,14 +152,14 @@ Dependency: M1; runtime-triggered sequence proof also depends on M2.2.
 
 | ID | Work | Acceptance |
 | --- | --- | --- |
-| M3.1 | Editable timeline for clips, object transforms, camera keys and cuts. | Add/move/delete keys and tracks, undo/redo, save/reopen, and validate missing targets. Expose authoring, not only playback of a generated sequence. |
+| M3.1 | Editable timeline for clips, object transforms, camera keys and cuts. | Add/move/delete keys and tracks, undo/redo, save/reopen, and validate missing targets. Expose authoring, not only playback of a generated sequence. Reveal the timeline only in Animate/Film work; begin with a shot, camera and clip rather than an empty collection of technical tracks. |
 | M3.2 | Preview parity, audio cues and scene lighting controls. | Scrub and play a multi-shot scene; define seek/mute rules so scrubbing does not replay unwanted audio. Reopening preserves timing, camera and lighting. |
 | M3.3 | Export UI over deterministic frame export. | Choose range, rate, resolution and output folder. Export numbered PNGs plus timing/asset manifest and synchronized audio output; cancellation/failure leaves an accurate manifest. Compare selected output frames with preview. |
 | M3.4 | Optional video encoding adapter. | If included, encode image/audio outputs through an explicitly configured encoder with progress, cancel and actionable errors. Core scene authoring and PNG export work without it. This task does not block the first release. |
 
 Gate: author a 30–60 second film with two animated actors, three camera shots, prop
 motion and audio, then restart and export matching output. Report repeatability for the
-tested backend; do not promise byte-identical GPU images across machines.
+tested backend; do not promise byte-identical GPU images across machines. Observe a first-time user making a short starter shot, previewing and exporting frames within the provisional 15-minute target in CREATOR_EXPERIENCE.md.
 
 ## M4 — Generate editable scenes
 
@@ -136,7 +169,7 @@ Dependency: M1; generated game/film proofs depend on M2 and M3 respectively.
 | --- | --- | --- |
 | M4.1 | Versioned generation recipes and deterministic output. | Recipe stores seed, dimensions, asset palette, placement rules and generator version. Same inputs yield the same transforms/content; unsupported or invalid recipes fail without changing the scene. |
 | M4.2 | Room/layout and prop-scatter generators. | Generate a small connected room layout and a bounded outdoor prop scene. Check overlaps, clearance and placement limits; emit normal editable scene objects with provenance. Do not imply generated navigation or gameplay correctness. |
-| M4.3 | Preview, apply, undo and regeneration policy. | Preview generation before applying; one undo removes the operation. Explicitly preserve locked/manual edits or show affected objects before replacement. Save/reopen preserves recipe and generated result. |
+| M4.3 | Preview, apply, undo and regeneration policy. | Offer Room/Outdoor presets and a few visual parameters; preview generation before applying, and one undo removes the operation. Seed and rule internals are optional details. Explicitly preserve locked/manual edits or show affected objects before replacement. Save/reopen preserves recipe and generated result. |
 | M4.4 | Reuse generated content in both outputs. | Generate from a bundled licensed palette, refine visually, play with collision, and export a camera sequence without editing engine code. Report generation time and object/resource budgets. |
 
 Gate: a recipe produces a useful starting scene that remains ordinary editable content,
@@ -144,12 +177,12 @@ with predictable regeneration and no dependency on an online service.
 
 ## M5 — First usable release
 
-Dependency: M0–M4 gates, excluding optional M3.4.
+Dependency: M0–M4 and UX gates, excluding optional M3.4. Usability work begins at UX, not here.
 
 | ID | Work | Acceptance |
 | --- | --- | --- |
 | M5.1 | Rendering and lifecycle consistency. | Static/skinned assets, supported materials, shadows, cameras and audio match between editor, runtime and export reference scenes. Fix measured bottlenecks; prepare terrain on workers but create/upload GPU resources on the graphics-owning thread. |
-| M5.2 | Onboarding, templates and installation. | Ship empty scene, small game and short film templates; a fresh user completes each documented workflow without modifying engine sources. Record observed completion time and friction. |
+| M5.2 | Onboarding, templates and installation. | Ship empty scene, small game and short film templates; a fresh user completes each documented workflow without modifying engine sources. Re-test the early UX workflows on the packaged release; record observed completion time, wrong turns, help, retention and friction. Preserve a free creation route alongside lessons and designer missions. |
 | M5.3 | Regression and release evidence. | Re-run M0 reliability/budgets against final scenes; test malformed projects and missing assets, clean installation and relocated outputs. Publish supported formats, tested limits, known issues and licenses. |
 
 Release definition: one local tool supports create/import/generate → edit → save/reopen
@@ -160,9 +193,17 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue with the earliest not-Passed task: M0.4. Split large tasks into independently verifiable changes before coding.
+2. Close M0.4 verification, then implement UX.1 first with M1.1 integration. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.
 5. Append evidence to ENGINE_PROGRESS.md and update only the current milestone status.
 6. Preserve user content; do not commit, push or publish unless requested.
+
+## After the first release — designer-game presentation experiment
+
+Use UX.6 feedback to explore an in-world workshop and a series of optional creation
+missions. Reuse editor commands, project formats and runtime; keep direct editing
+available and teach transferable game-development concepts. Validate one playable
+creator session before committing to a campaign, economy, social platform or immersive
+UI rewrite. Those larger features are not required for the lightweight first release.

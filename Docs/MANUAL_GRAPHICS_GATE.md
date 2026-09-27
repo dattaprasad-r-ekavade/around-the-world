@@ -48,3 +48,20 @@ or release evidence. Report failures as failures; do not count an unrun check as
 This gate covers the generic engine/editor path. It does not claim that RpgSlice gameplay,
 RPG save sidecars, or RPG content authoring passed. Run and report those checks separately when
 an RPG change requires them; do not make them prerequisites for a generic CharacterStudio run.
+
+## Beginner workspace acceptance
+
+For the planned UX redesign, also follow CREATOR_EXPERIENCE.md: confirm Home routes,
+no overlapping default panels, at least 60% unobscured scene area at 1280x720, readable
+100%/150% scaling, Reset layout, keyboard focus, and visible action labels. Exercise
+Browse → add model → select/move → undo → Play/Stop → save/reopen without typed paths
+or required shortcuts. Advanced World/RPG/debug tools must be opt-in and discoverable.
+
+These are planned acceptance checks, not passes for the current UI. Record novice
+observations separately under UX.5; screenshots and developer automation cannot close
+that gate. The optional designer mission must use the same saved project as free editing.
+
+For learning flows, also check that Why?/hints are optional and work offline, lesson
+completion follows actual edits/play outcomes, demonstrations are explicit and undoable,
+and no tool is locked behind lesson progress. Observe an unguided variation and ask the
+beginner to explain the changed rule; record learning separately from task completion.

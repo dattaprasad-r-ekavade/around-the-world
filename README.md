@@ -1,6 +1,11 @@
 # Ember
 
-A lightweight 3D engine and scene-authoring toolkit built on MonoGame, evolving toward one workflow for games, cutscenes, and generated scenes.
+**A lightweight 3D engine that teaches you how to build games as you build them.**
+
+Built on MonoGame, Ember is evolving toward one approachable workflow for games,
+cutscenes, and generated scenes. The planned learning experience combines contextual
+explanations, small experiments, immediate play and optional creator missions, so you
+learn the concepts behind your creations. This teaching workflow is not implemented yet.
 
 **This repository is the engine.** Ember lives here and is edited here: `src/Ember.Engine` and
 `src/Ember.Scripting` are owned in this repo, not mirrored from anywhere. The default workflow
@@ -9,7 +14,7 @@ is to open a file under `src/` and change it.
 Ember began as reusable systems extracted from Ratna Bay. Its current foundation includes
 3D scenes, GLB assets and animation, physics, editing, sequences, world streaming, and packaging.
 The objective is a compact local tool for creating or generating a scene, refining it visually,
-and delivering either a playable game or a cutscene. That complete workflow is still in progress.
+and delivering either a playable game or a cutscene. That complete workflow is still in progress. The primary goal is to make game development approachable for first-time creators through editing and immediate play, with a later path to a game about designing games. The current editor layout still needs restructuring; see the [creator experience plan](Docs/CREATOR_EXPERIENCE.md).
 
 Start with the [active roadmap](Docs/ENGINE_ROADMAP.md) and
 [current project review](Docs/PROJECT_REVIEW.md). The RPG slice is an integration example;

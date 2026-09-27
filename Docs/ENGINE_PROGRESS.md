@@ -1718,3 +1718,29 @@ reimport through the visible editor path. The Project window currently accepts t
 than providing native file/folder pickers. M0.4's Windows test run failed remotely, so the next
 priority is to get actionable diagnostics and make that workflow green before advancing the M1.1
 gate.
+
+## Creator-first roadmap update — 28 September 2026
+
+Reviewed current revision 3c9620e, recent progress, editor drawing code, and the saved
+M1.1 relocated-project screenshot. Confirmed overlapping always-visible panels obscure
+most of the scene. Added CREATOR_EXPERIENCE.md and required early UX.1–UX.6 tasks to the
+active roadmap. Updated M1–M5 acceptance and README direction: learn through small
+visible edits and play; use optional lessons and later designer-game missions on the
+same command layer and project data. Advanced tools remain available on demand.
+
+M0.1–M0.3 recorded passes are preserved; M0.4 and M1.1 remain In progress. New UX work
+is Not started. Fresh local Release test suite passed 283/283; RPG check passed.
+Release solution build could not copy DLLs locked by running CharacterStudio (39692);
+the session was not closed. Remote CI was not rechecked because gh is unavailable.
+No fresh live UI/novice/soak test was claimed; no runtime implementation was changed.
+
+Next: close M0.4 verification, then UX.1 workspace simplification with M1.1 integration.
+
+## Explicit teaching-engine principle — 28 September 2026
+
+Made the product promise explicit: Ember teaches users how to build games while they
+build their own. Added a concept progression, explain/change/predict/play/reflect/vary
+loop, offline contextual explanations and hints, and evidence of learning through an
+unguided variation. Connected lesson scope to M1, M2 and M3 so lessons never depend on
+unimplemented tools. Teaching is required in the first release; the later designer-game
+presentation remains an extension of the same editor and project model.
