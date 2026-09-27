@@ -82,6 +82,26 @@ public sealed class EngineProjectFileTests
     }
 
     [Fact]
+    public void LoadRejectsUnknownProjectMemberAsSchemaError()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var projectPath = Path.Combine(root, EngineProjectFile.DefaultFileName);
+            File.WriteAllText(projectPath,
+                "{\"version\":1,\"startupScene\":\"Start.json\",\"unexpected\":true}");
+
+            var exception = Assert.Throws<InvalidDataException>(() => EngineProjectFile.Load(projectPath));
+            Assert.Contains("Project JSON is invalid", exception.Message, StringComparison.Ordinal);
+            Assert.IsType<System.Text.Json.JsonException>(exception.InnerException);
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void ContentPathsResolveFromTheProjectDirectoryAndRejectEscapes()
     {
         var root = NewDirectory();

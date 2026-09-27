@@ -1,0 +1,24 @@
+name: Windows engine build and CPU tests
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  engine-build-and-cpu-tests:
+    runs-on: windows-2022
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 9.0.x
+      - name: Restore solution
+        run: dotnet restore Ember.sln --nologo
+      - name: Run CPU test suite
+        run: dotnet test Ember.sln --configuration Release --no-restore --nologo
+      - name: Build solution
+        run: dotnet build Ember.sln --configuration Release --no-restore --nologo

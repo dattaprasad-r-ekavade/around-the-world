@@ -364,6 +364,7 @@ public static class RpgContentJson
     {
         PropertyNameCaseInsensitive = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         WriteIndented = true,
         Converters = { FlagValueJson.Instance, new JsonStringEnumConverter() }
     };

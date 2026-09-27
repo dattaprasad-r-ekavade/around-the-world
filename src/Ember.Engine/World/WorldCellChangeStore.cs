@@ -43,7 +43,7 @@ public readonly record struct WorldCellChangeEntry(Guid CellId, WorldInstanceId 
 public sealed class WorldCellChangeStore
 {
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
-    private readonly Dictionary<Guid, Dictionary<WorldInstanceId, InstanceChange>> _cells = new();
+    private Dictionary<Guid, Dictionary<WorldInstanceId, InstanceChange>> _cells = new();
 
     public int CellCount
     {
@@ -128,6 +128,17 @@ public sealed class WorldCellChangeStore
             change.Enabled = entry.Enabled;
             change.Deleted = entry.Deleted;
         }
+    }
+
+    internal void ReplaceContentsFrom(WorldCellChangeStore staged)
+    {
+        ArgumentNullException.ThrowIfNull(staged);
+        EnsureOwnerThread();
+        staged.EnsureOwnerThread();
+        if (_cells.Count != 0)
+            throw new InvalidOperationException("World cell changes can only be replaced in an empty store.");
+
+        _cells = staged._cells;
     }
 
     /// <summary>Applies stored overrides to a newly loaded scene using its current identity snapshot.</summary>

@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ember.IO;
 
 namespace Ember.World;
 
@@ -143,11 +144,8 @@ public sealed class WorldManifest
         ArgumentNullException.ThrowIfNull(cells);
 
         var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("World manifest path has no parent directory.");
         var snapshot = cells.ToList();
         var validated = new WorldManifest(fullPath, exteriorCellWidth, snapshot, requireSceneFiles: false);
-        Directory.CreateDirectory(directory);
 
         var document = new WorldManifestDocument
         {
@@ -155,18 +153,7 @@ public sealed class WorldManifest
             ExteriorCellWidth = validated.ExteriorCellWidth,
             Cells = snapshot.Select(ToDocumentCell).ToList()
         };
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        AtomicFile.Write(fullPath, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
     }
 
     private static List<WorldCellDefinition> ConvertVersion1Cells(IEnumerable<WorldCellDocument> cells) =>

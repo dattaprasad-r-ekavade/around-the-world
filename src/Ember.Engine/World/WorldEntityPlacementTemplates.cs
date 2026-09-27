@@ -7,6 +7,7 @@ using System.Linq;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ember.IO;
 
 namespace Ember.World;
 
@@ -158,26 +159,8 @@ public sealed class WorldEntityPlacementTemplateSet
     public void SaveAtomic(string path)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("Placement-template file has no parent directory.");
-        Directory.CreateDirectory(directory);
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            var bytes = new UTF8Encoding(false).GetBytes(ToJson());
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                stream.Write(bytes);
-                stream.Flush(flushToDisk: true);
-            }
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        var bytes = new UTF8Encoding(false).GetBytes(ToJson());
+        AtomicFile.Write(path, stream => stream.Write(bytes));
     }
 
     private sealed class TemplateDocument

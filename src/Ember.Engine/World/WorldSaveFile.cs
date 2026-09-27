@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Ember.IO;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
 
@@ -86,9 +88,17 @@ public sealed class WorldSaveSnapshot
         if (identities.Count != 0 || changes.CellCount != 0 || runtimeObjects.Count != 0)
             throw new InvalidOperationException("A world save can only be restored into empty world-state stores.");
 
-        identities.ImportSnapshot(Identities);
-        changes.ImportSnapshot(Changes);
-        runtimeObjects.ImportSnapshot(RuntimeObjects);
+        Validate();
+        var stagedIdentities = new WorldInstanceIdentityMap();
+        var stagedChanges = new WorldCellChangeStore();
+        var stagedRuntimeObjects = new WorldRuntimeObjectStore();
+        stagedIdentities.ImportSnapshot(Identities);
+        stagedChanges.ImportSnapshot(Changes);
+        stagedRuntimeObjects.ImportSnapshot(RuntimeObjects);
+
+        identities.ReplaceContentsFrom(stagedIdentities);
+        changes.ReplaceContentsFrom(stagedChanges);
+        runtimeObjects.ReplaceContentsFrom(stagedRuntimeObjects);
     }
 
     public void ValidateAgainstWorld(WorldManifest world)
@@ -183,7 +193,8 @@ public static class WorldSaveFile
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
     public static void SaveAtomic(string path, WorldSaveSnapshot snapshot)
@@ -192,26 +203,7 @@ public static class WorldSaveFile
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A world-save path is required.", nameof(path));
 
         var document = ToDocument(snapshot);
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("World-save path has no parent directory.");
-        Directory.CreateDirectory(directory);
-
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-                stream.Flush(flushToDisk: true);
-            }
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
     }
 
     public static WorldSaveSnapshot Load(string path)

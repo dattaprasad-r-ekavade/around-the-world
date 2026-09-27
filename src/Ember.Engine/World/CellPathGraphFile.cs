@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ember.IO;
 
 namespace Ember.World;
 
@@ -24,29 +25,11 @@ public static class CellPathGraphFile
         ArgumentException.ThrowIfNullOrWhiteSpace(path);
         ArgumentNullException.ThrowIfNull(graph);
         graph.Validate();
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("Navigation graph path has no parent directory.");
-        Directory.CreateDirectory(directory);
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, new NavigationDocument
         {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                JsonSerializer.Serialize(stream, new NavigationDocument
-                {
-                    Version = CurrentVersion,
-                    Graph = graph
-                }, JsonOptions);
-                stream.Flush(flushToDisk: true);
-            }
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+            Version = CurrentVersion,
+            Graph = graph
+        }, JsonOptions));
     }
 
     public static CellPathGraph Load(string path)

@@ -4,6 +4,7 @@ using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Ember.IO;
 
 namespace Ember.Sequence;
 
@@ -246,26 +247,10 @@ public sealed class SequenceFrameExportJob
             CompletedFrames,
             _assets,
             Error);
-        var temporaryPath = ManifestPath + "." + Guid.NewGuid().ToString("N") + ".tmp";
-        try
-        {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-            if (File.Exists(ManifestPath))
-            {
-                if (!allowReplace)
-                    throw new IOException($"An export manifest already exists at '{ManifestPath}'.");
-                File.Move(temporaryPath, ManifestPath, overwrite: true);
-            }
-            else
-            {
-                File.Move(temporaryPath, ManifestPath);
-            }
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        if (!allowReplace && File.Exists(ManifestPath))
+            throw new IOException($"An export manifest already exists at '{ManifestPath}'.");
+        AtomicFile.Write(ManifestPath,
+            stream => JsonSerializer.Serialize(stream, document, JsonOptions), overwrite: allowReplace);
     }
 
     private static string AppendError(string? existing, string addition) =>

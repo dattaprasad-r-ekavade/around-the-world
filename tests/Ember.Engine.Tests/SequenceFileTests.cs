@@ -137,6 +137,30 @@ public sealed class SequenceFileTests
     }
 
     [Fact]
+    public void LoadRejectsUnknownSequenceMemberAsSchemaError()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var fixture = CreateFixture();
+            var path = Path.Combine(directory, "sequence.json");
+            SequenceFile.SaveAtomic(fixture.Sequence, fixture.Scene, path);
+            var document = JsonNode.Parse(File.ReadAllText(path))!;
+            document["unexpected"] = true;
+            File.WriteAllText(path, document.ToJsonString());
+
+            var exception = Assert.Throws<InvalidDataException>(() =>
+                SequenceFile.Load(path, fixture.Scene, fixture.ClipsByAssetId));
+            Assert.Contains("Sequence JSON is invalid", exception.Message, StringComparison.Ordinal);
+            Assert.IsType<System.Text.Json.JsonException>(exception.InnerException);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void InvalidSaveDoesNotReplaceThePreviousValidSequence()
     {
         var directory = NewDirectory();

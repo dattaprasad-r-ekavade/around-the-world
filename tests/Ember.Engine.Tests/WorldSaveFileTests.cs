@@ -109,6 +109,52 @@ public sealed class WorldSaveFileTests
     }
 
     [Fact]
+    public void FailedRestoreLeavesEveryTargetStoreEmpty()
+    {
+        var cellId = Guid.NewGuid();
+        var sceneObjectId = Guid.NewGuid();
+        var instanceId = new WorldInstanceId(Guid.NewGuid());
+        var runtimeObject = new SceneObject(sceneObjectId, "Runtime object");
+        var snapshot = new WorldSaveSnapshot(
+            new WorldPlayerLocation(cellId, Vector3.Zero, Quaternion.Identity),
+            [new WorldInstanceIdentityEntry(cellId, sceneObjectId, instanceId)],
+            [new WorldCellChangeEntry(cellId, instanceId,
+                new WorldTransformState(Vector3.One, Quaternion.Identity, Vector3.One), null, false)],
+            [new WorldRuntimeObjectEntry(cellId, sceneObjectId, instanceId, runtimeObject)]);
+
+        var runtimeEntries = Assert.IsType<WorldRuntimeObjectEntry[]>(snapshot.RuntimeObjects);
+        runtimeEntries[0] = runtimeEntries[0] with { SceneObjectId = Guid.NewGuid() };
+
+        var identities = new WorldInstanceIdentityMap();
+        var changes = new WorldCellChangeStore();
+        var runtimeObjects = new WorldRuntimeObjectStore();
+        Assert.Throws<InvalidDataException>(() => snapshot.Restore(identities, changes, runtimeObjects));
+        Assert.Equal(0, identities.Count);
+        Assert.Equal(0, changes.CellCount);
+        Assert.Equal(0, runtimeObjects.Count);
+    }
+
+    [Fact]
+    public void UnknownWorldSaveMemberIsRejectedAsSchemaError()
+    {
+        var directory = TemporaryDirectory();
+        var path = Path.Combine(directory, "unknown-member.json");
+        try
+        {
+            File.WriteAllText(path,
+                "{\"Version\":1,\"PlayerLocation\":{\"CellId\":\"00000000-0000-0000-0000-000000000001\",\"Position\":[0,0,0],\"Facing\":[0,0,0,1]},\"InstanceIdentities\":[],\"CellChanges\":[],\"RuntimeObjects\":[],\"typoField\":true}");
+
+            var exception = Assert.Throws<InvalidDataException>(() => WorldSaveFile.Load(path));
+            Assert.Contains("World-save JSON is invalid", exception.Message, StringComparison.Ordinal);
+            Assert.IsType<System.Text.Json.JsonException>(exception.InnerException);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
     public void UnsupportedWorldSaveVersionIsRejected()
     {
         var directory = TemporaryDirectory();

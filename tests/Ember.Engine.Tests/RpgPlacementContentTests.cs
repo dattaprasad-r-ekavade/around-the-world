@@ -25,6 +25,14 @@ public sealed class RpgPlacementContentTests
     }
 
     [Fact]
+    public void ContentPackRejectsUnknownMemberAsSchemaError()
+    {
+        var exception = Assert.Throws<System.Text.Json.JsonException>(() =>
+            RpgContentJson.ParseForValidation("{\"actors\":[],\"typoField\":true}"));
+        Assert.Contains("typoField", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void DialogueAuthoringPackRoundTripsConditionsEffectsAndReferencesAtomically()
     {
         var directory = Path.Combine(Path.GetTempPath(), $"ember-dialogue-{Guid.NewGuid():N}");

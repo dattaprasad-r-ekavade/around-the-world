@@ -2,7 +2,10 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Ember.IO;
 using Ember.World;
 using Microsoft.Xna.Framework;
 
@@ -16,7 +19,8 @@ public static class SceneFile
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = true,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
     public static SceneGraph Load(string path)
@@ -58,26 +62,10 @@ public static class SceneFile
         ArgumentNullException.ThrowIfNull(scene);
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A scene path is required.", nameof(path));
 
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("Scene path has no parent directory.");
-        Directory.CreateDirectory(directory);
-
         // Build and validate before touching the destination, so an invalid scene cannot
         // destroy the last valid save.
-        var tempPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            var json = SerializeToJson(scene);
-            File.WriteAllText(tempPath, json);
-
-            if (File.Exists(fullPath)) File.Replace(tempPath, fullPath, null);
-            else File.Move(tempPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(tempPath)) File.Delete(tempPath);
-        }
+        var bytes = Encoding.UTF8.GetBytes(SerializeToJson(scene));
+        AtomicFile.Write(path, stream => stream.Write(bytes));
     }
 
     private static SceneGraph FromDocument(SceneDocument document)

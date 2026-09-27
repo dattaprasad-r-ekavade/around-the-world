@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
+using Ember.IO;
 using Ember.Assets;
 using Ember.Scene;
 
@@ -17,7 +19,8 @@ public static class SequenceFile
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow
     };
 
     public static void SaveAtomic(SceneSequence sequence, SceneGraph scene, string path)
@@ -27,23 +30,7 @@ public static class SequenceFile
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A sequence path is required.", nameof(path));
 
         var document = ToDocument(sequence, scene);
-        var fullPath = Path.GetFullPath(path);
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("Sequence path has no parent directory.");
-        Directory.CreateDirectory(directory);
-
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
     }
 
     public static SceneSequence Load(string path, SceneGraph scene,

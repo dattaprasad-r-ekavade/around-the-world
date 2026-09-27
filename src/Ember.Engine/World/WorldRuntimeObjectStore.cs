@@ -15,7 +15,7 @@ public sealed record WorldRuntimeObjectEntry(Guid CellId, Guid SceneObjectId,
 public sealed class WorldRuntimeObjectStore
 {
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
-    private readonly Dictionary<Guid, Dictionary<WorldInstanceId, RuntimeObjectRecord>> _cells = new();
+    private Dictionary<Guid, Dictionary<WorldInstanceId, RuntimeObjectRecord>> _cells = new();
 
     public int Count
     {
@@ -60,6 +60,17 @@ public sealed class WorldRuntimeObjectStore
                     entry.InstanceId, SceneObjectCopy.Copy(entry.SceneObject))))
                 throw new ArgumentException($"Duplicate runtime object record {entry.InstanceId.Value} in cell {entry.CellId}.", nameof(entries));
         }
+    }
+
+    internal void ReplaceContentsFrom(WorldRuntimeObjectStore staged)
+    {
+        ArgumentNullException.ThrowIfNull(staged);
+        EnsureOwnerThread();
+        staged.EnsureOwnerThread();
+        if (_cells.Count != 0)
+            throw new InvalidOperationException("Runtime objects can only be replaced in an empty store.");
+
+        _cells = staged._cells;
     }
 
     /// <summary>Clones a definition into the active scene and records it under a fresh stable identity.</summary>

@@ -443,6 +443,24 @@ public sealed class SceneFileTests
         }
     }
 
+    [Fact]
+    public void UnknownSceneMemberIsRejectedAsSchemaError()
+    {
+        var path = TemporaryPath();
+        try
+        {
+            File.WriteAllText(path, "{\"Version\":7,\"Objects\":[],\"typoField\":true}");
+
+            var exception = Assert.Throws<InvalidDataException>(() => SceneFile.Load(path));
+            Assert.Contains("Scene JSON is invalid", exception.Message, StringComparison.Ordinal);
+            Assert.IsType<System.Text.Json.JsonException>(exception.InnerException);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     private static string TemporaryPath() =>
         Path.Combine(Path.GetTempPath(), $"ember-scene-{Guid.NewGuid():N}.json");
 

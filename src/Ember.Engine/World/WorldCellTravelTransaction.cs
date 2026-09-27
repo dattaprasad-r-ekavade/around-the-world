@@ -17,7 +17,7 @@ public enum WorldCellTravelState
 /// Loads and activates a destination while the source remains playable, then moves the player
 /// and releases the source only after destination activation succeeds.
 /// </summary>
-public sealed class WorldCellTravelTransaction<TPrepared, TActive>
+public sealed class WorldCellTravelTransaction<TPrepared, TActive> : IDisposable
     where TPrepared : IDisposable
     where TActive : IDisposable
 {
@@ -160,14 +160,52 @@ public sealed class WorldCellTravelTransaction<TPrepared, TActive>
     public void Cancel()
     {
         EnsureOwnerThread();
-        if (State == WorldCellTravelState.PreparingDestination)
-            _destination.Cancel();
-        else if (State == WorldCellTravelState.DestinationReady)
-            _destination.Discard();
-        else
-            throw new InvalidOperationException($"Travel cannot be canceled while it is {State}.");
+        try
+        {
+            if (State == WorldCellTravelState.PreparingDestination)
+                _destination.Cancel();
+            else if (State == WorldCellTravelState.DestinationReady)
+                _destination.Discard();
+            else
+                throw new InvalidOperationException($"Travel cannot be canceled while it is {State}.");
+        }
+        finally
+        {
+            if (State is WorldCellTravelState.PreparingDestination or WorldCellTravelState.DestinationReady)
+                State = WorldCellTravelState.Cancelled;
+        }
+    }
 
-        State = WorldCellTravelState.Cancelled;
+    /// <summary>
+    /// Cancels in-flight preparation and drains its late result on the owning thread. Disposing
+    /// while preparing waits for the worker to observe cancellation and finish.
+    /// </summary>
+    public void Dispose()
+    {
+        EnsureOwnerThread();
+        if (State is WorldCellTravelState.Completed or WorldCellTravelState.Failed or WorldCellTravelState.Cancelled)
+            return;
+
+        Exception? failure = null;
+        try { Cancel(); }
+        catch (Exception exception) { failure = exception; }
+
+        if (State == WorldCellTravelState.Cancelled && _preparationTask is not null)
+        {
+            try { _preparationTask.GetAwaiter().GetResult(); }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+            try { _destination.PumpCompletions(); }
+            catch (Exception exception)
+            {
+                failure = failure is null ? exception : new AggregateException(failure, exception);
+            }
+        }
+
+        if (failure is not null)
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Capture(failure).Throw();
     }
 
     private void EnsureOwnerThread()

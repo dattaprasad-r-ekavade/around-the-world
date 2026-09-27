@@ -167,6 +167,36 @@ public sealed class WorldCellTravelTransactionTests
     }
 
     [Fact]
+    public void DisposingTravelCancelsAndDrainsLatePreparedData()
+    {
+        var sourceId = Guid.NewGuid();
+        var sourceResource = CreateActive(sourceId, out var source);
+        var destinationId = Guid.NewGuid();
+        var destination = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var preparation = new TaskCompletionSource<PreparedProbe>(TaskCreationOptions.RunContinuationsAsynchronously);
+        PreparedProbe? lateResult = null;
+        var travel = new WorldCellTravelTransaction<PreparedProbe, ActiveProbe>(sourceId, source, destination,
+            new WorldSpawnLocation(destinationId, Guid.NewGuid(), Vector3.Zero, Quaternion.Identity),
+            (_, token) =>
+            {
+                token.Register(() =>
+                {
+                    lateResult = new PreparedProbe(destinationId);
+                    preparation.SetResult(lateResult);
+                });
+                return preparation.Task;
+            }, prepared => new ActiveProbe(prepared.CellId), _ => { });
+
+        travel.Dispose();
+
+        Assert.Equal(WorldCellTravelState.Cancelled, travel.State);
+        Assert.Equal(CellLifecycleState.Unloaded, destination.State);
+        Assert.True(lateResult!.IsDisposed);
+        Assert.Equal(CellLifecycleState.Active, source.State);
+        Assert.Same(sourceResource, source.ActiveResources);
+    }
+
+    [Fact]
     public void FailedPlacementUnloadsDestinationAndKeepsSourceActive()
     {
         var sourceId = Guid.NewGuid();

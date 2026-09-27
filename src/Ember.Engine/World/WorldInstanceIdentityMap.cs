@@ -28,8 +28,8 @@ public readonly record struct WorldInstanceId
 public sealed class WorldInstanceIdentityMap
 {
     private readonly int _ownerThreadId = Environment.CurrentManagedThreadId;
-    private readonly Dictionary<InstanceSource, WorldInstanceId> _bySource = new();
-    private readonly HashSet<Guid> _instanceValues = new();
+    private Dictionary<InstanceSource, WorldInstanceId> _bySource = new();
+    private HashSet<Guid> _instanceValues = new();
 
     public int Count
     {
@@ -126,6 +126,18 @@ public sealed class WorldInstanceIdentityMap
             throw new InvalidOperationException("World instance identities can only be restored into an empty map.");
         foreach (var entry in entries)
             Register(entry.CellId, entry.SceneObjectId, entry.InstanceId);
+    }
+
+    internal void ReplaceContentsFrom(WorldInstanceIdentityMap staged)
+    {
+        ArgumentNullException.ThrowIfNull(staged);
+        EnsureOwnerThread();
+        staged.EnsureOwnerThread();
+        if (_bySource.Count != 0)
+            throw new InvalidOperationException("World instance identities can only be replaced in an empty map.");
+
+        _bySource = staged._bySource;
+        _instanceValues = staged._instanceValues;
     }
 
     /// <summary>Returns the same identity for the same cell and authored scene object across reloads.</summary>

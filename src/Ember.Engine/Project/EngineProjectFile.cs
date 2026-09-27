@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ember.IO;
 
 namespace Ember.Project;
 
@@ -18,6 +19,7 @@ public sealed class EngineProjectFile
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
         PropertyNameCaseInsensitive = true,
+        UnmappedMemberHandling = JsonUnmappedMemberHandling.Disallow,
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
@@ -126,14 +128,9 @@ public sealed class EngineProjectFile
         if (string.IsNullOrWhiteSpace(startupScenePath) && string.IsNullOrWhiteSpace(worldManifestPath))
             throw new ArgumentException("Either a startup scene path or a world manifest path is required.", nameof(startupScenePath));
 
-        var fullPath = Path.GetFullPath(path);
         var normalizedStartupScene = startupScenePath is not null ? NormalizeStartupScenePath(startupScenePath) : null;
         var normalizedWorldManifest = worldManifestPath is not null ? NormalizeWorldManifestPath(worldManifestPath) : null;
         var normalizedExtraContent = extraContentPaths?.Select(NormalizeRelativeContentPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
-
-        var directory = Path.GetDirectoryName(fullPath)
-            ?? throw new InvalidDataException("Project file path has no parent directory.");
-        Directory.CreateDirectory(directory);
 
         var document = new ProjectDocument
         {
@@ -142,21 +139,7 @@ public sealed class EngineProjectFile
             WorldManifest = normalizedWorldManifest,
             ExtraContent = normalizedExtraContent is { Count: > 0 } ? normalizedExtraContent : null
         };
-        var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-                stream.Flush(flushToDisk: true);
-            }
-            if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
-            else File.Move(temporaryPath, fullPath);
-        }
-        finally
-        {
-            if (File.Exists(temporaryPath)) File.Delete(temporaryPath);
-        }
+        AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
     }
 
     private static string NormalizeStartupScenePath(string path)
