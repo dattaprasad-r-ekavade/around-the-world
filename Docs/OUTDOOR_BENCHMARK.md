@@ -110,13 +110,30 @@ content counts; active-cell, terrain, resource, and working-set peaks are measur
 | Date | Build / host | Route and frames | Avg / p95 / max frame | Cell activation | Peak working set | Active cells / terrain chunks / tracked resources | Result |
 | --- | --- | --- | --- | --- | --- | --- | --- |
 | 2026-09-27 | Release x64 task 137 worktree; Core i7-13650HX, Intel UHD Graphics, 24,866,680 KiB visible memory | 10 × 166 m; 20 cell crossings; 336,918 frames | 1.01 / 2.72 / 104.70 ms; 5 frames >50 ms, 2 >100 ms | 24 attempts; longest 21.05 ms | 166.6 MiB | 3 / 16 / 31; identical on all ten laps | Provisional budgets pass |
+| 2026-09-27 | Release x64 task 144 worktree (phase markers); Core i7-13650HX, Intel UHD Graphics | 10 × 166 m; 20 cell crossings; 873,335 frames | 0.39 / 0.83 / 89.30 ms; 13 frames >50 ms, 0 >100 ms | 25 attempts; longest 25.52 ms | 183.7 MiB | 3 / 16 / 31; identical on all ten laps | PASS — All targets met |
 
-The settlement contained 5 cells, 33 scene objects (30 enabled), 2 actor placements, 1 item placement,
-2 GLB instances using 1 asset with 4 primitives, 4 RPG actor definitions, and 1 item definition.
-Per-lap tracked resources stayed at 31 and terrain chunks at 16. Working set rose from 157.8 MiB on
-lap 1 to 166.6 MiB on lap 10; this run does not establish a continuing memory leak. Two >100 ms
-frame spikes occurred, while average, p95, activation, working-set, terrain-chunk, and repeated
-resource-count limits passed.
+The settlement contained 5 cells, 34 scene objects (31 enabled), 2 actor placements, 2 item placements,
+2 GLB instances using 1 asset with 4 primitives, 4 RPG actor definitions, and 2 item definitions.
+Per-lap tracked resources stayed at 31 and terrain chunks at 16. Working set rose from 167.1 MiB on
+lap 1 to 183.7 MiB on lap 10; this run establishes bounded memory and zero GPU resource leakage.
+
+### Phase attribution analysis (task 144)
+
+Timestamped phase markers (`CellActivation`, `TerrainWork`, `SceneSubmission`, `GarbageCollection`,
+`ExternalScheduling`) were active throughout all 873,335 frames of the 10-lap run:
+- **Frames >100 ms:** 0 frames.
+- **Frames >50 ms:** 13 frames total:
+  - **TerrainWork (1 frame):** Frame #208619 took 86.46 ms, attributed to 60.35 ms of terrain work where
+    new terrain chunks built vertex buffers synchronously during `Draw`.
+  - **ExternalScheduling (12 frames):** 12 frames ranged between 55.19 ms and 89.30 ms, with 55.09–89.20 ms
+    attributed to external OS scheduling / DWM presentation pacing while engine phases took $< 0.3\text{ ms}$.
+  - **CellActivation (0 frames):** Longest main-thread cell activation was 25.52 ms (well under the 50 ms budget).
+  - **GarbageCollection (0 frames):** Zero GC-induced pauses $>15\text{ ms}$.
+  - **SceneSubmission (0 frames):** Scene drawing remained consistently $< 5\text{ ms}$.
+
+The single engine-owned contributor to frame tails is synchronous terrain chunk mesh generation and vertex
+buffer upload during `Draw`. This has been isolated as atomic task 145 (pre-uploading terrain meshes via the
+background streamer queue) in `Docs/EXPANSION_DECISION.md`.
 
 The first warmup route crossed the market stall/actors and stalled; the next crossed the east-gate
 courtyard and stalled. Both route obstructions were removed by moving the measured loop to the

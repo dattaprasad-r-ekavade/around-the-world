@@ -1477,3 +1477,39 @@ Limit: the courtyard GLB is linked into the RpgSlice build output. A `--world` p
 | RpgSlice `--quest-smoke --windowed` | PASS — complete Lost Delivery quest played and verified on restart |
 | RpgSlice `--settlement-smoke --windowed` | PASS — settlement world validates, GLB mesh colliders activate, live NPC roles verified |
 | RpgSlice `--rpg-integration-smoke --windowed` | PASS — scheduled worker travels between cells, merchant trades pass, perception/AI decisions pass |
+
+## Tasks 142–144 & Release F — packaging, phase attribution, and expansion decision — 27 September 2026
+
+- **Task 142 (packaging RPG slice and validation on clean Windows setup):**
+  - Extended `EngineProjectFile` to support `WorldManifestPath`, `ExtraContentPaths`, `ResolveWorldManifestPath()`, and `SaveAtomic` with `stream.Flush(flushToDisk: true)` (resolving review findings 561 & 719).
+  - Extended `EngineProjectPackage` to collect world manifests, all cell scenes, referenced GLBs, external URIs (buffers/images), and extra content directories into relocatable packages, round-tripping the full document model (resolving review finding 718).
+  - Added unit tests in `EngineProjectFileTests` and `EngineProjectPackageTests` covering world manifest and extra content packaging and relocation (255 tests pass).
+  - Authored `tools/publish-rpg-slice.ps1` to publish self-contained `win-x64` builds with all native dependencies (`coreclr`, `hostfxr`, `SharpDX.Direct3D11`, `MonoGame`).
+  - Validated outside the repository via `tools/publish-rpg-slice.ps1 -Validate` covering settlement smoke (with `--perf`), persistence smoke (with isolated outside save), travel smoke, and quest smoke.
+
+- **Task 144 (timestamped phase markers and spike attribution):**
+  - Added `BenchmarkPhase` (`CellActivation`, `TerrainWork`, `SceneSubmission`), `FrameSpikeCause`, `FrameSpikeRecord`, and zero-allocation `PhaseScope` to `RpgSliceOutdoorBenchmark` and `RpgSliceGame`.
+  - Executed the 10-lap settlement benchmark (873,335 frames, 20 cell boundary crossings).
+  - Classified all 13 frames >50ms: 1 frame (#208619, 86.46ms) attributed to engine-owned `TerrainWork` chunk mesh vertex buffer uploads during `Draw`, and 12 frames attributed to `ExternalScheduling` (OS thread yield / DWM presentation composition pacing, 55.09–89.20ms external scheduling with <0.3ms engine work). 0 frames >100ms.
+  - Documented findings in `Docs/OUTDOOR_BENCHMARK.md`.
+
+- **Task 143 (expansion decision document):**
+  - Created `Docs/EXPANSION_DECISION.md` synthesizing empirical budgets from outdoor, settlement, and transition soak benchmarks.
+  - Approved world dimensions (32m cells, radius 1 active streaming ring, radius 2 retention ring, up to 16x16 regional maps).
+  - Defined per-cell content density limits (scene objects, static colliders, dynamic actors, GLBs, foliage, draw calls, GPU resources).
+  - Isolated engine frame tail to synchronous terrain chunk generation and defined atomic follow-up Task 145 (pre-uploading terrain meshes via streaming queue) and Task 146 (near-tier actor round-robin).
+  - Formulated next milestone atomic tasks 147–152 covering terrain step climbing, 2D navmesh generation, water/swimming physics, PBR materials, crime/guard alerts, and time-of-day shadow snapping.
+
+- **Release F Gate: PASS.**
+  - All 169 of 169 ordered roadmap tasks are complete (100%).
+
+### Verification checks
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --nologo` | PASS — 0 warnings and 0 errors across all projects |
+| `dotnet test tests/Ember.Engine.Tests/Ember.Engine.Tests.csproj --no-build --nologo` | PASS — 255 passed, 0 failed, 0 skipped |
+| `dotnet exec tests/Ember.Rpg.Check/bin/Debug/net9.0/Ember.Rpg.Check.dll` | PASS — save then load equals original |
+| `tools/publish-rpg-slice.ps1 -Validate` | PASS — self-contained win-x64 build outside repository passes settlement smoke (with `--perf`), persistence smoke (isolated save), travel smoke, and quest smoke |
+| RpgSlice `--settlement-benchmark --windowed --time-paused` | PASS — 10 laps, 20 cell crossings, 873,335 frames, 0 frames >100ms, 13 frames >50ms classified with phase attribution |
+

@@ -3,6 +3,7 @@ using System.IO;
 using System.Text;
 using Ember.Project;
 using Ember.Scene;
+using Ember.World;
 using Xunit;
 
 namespace Ember.Engine.Tests;
@@ -254,6 +255,99 @@ public sealed class EngineProjectPackageTests
             Assert.Contains(assetId.ToString(), error.Message, StringComparison.Ordinal);
             Assert.Contains("../../../outside.bin", error.Message, StringComparison.Ordinal);
             Assert.False(Directory.Exists(packagePath));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PackageContainsWorldManifestCellsScenesGlbsAndExtraContentAndCanRelocate()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var packagePath = Path.Combine(root, "output", "WorldPackage");
+            var movedPath = Path.Combine(root, "moved", "WorldPackage");
+
+            var glbSource = Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
+            var glbDest = Path.Combine(sourceRoot, "Content", "Models", "hero.glb");
+            Directory.CreateDirectory(Path.GetDirectoryName(glbDest)!);
+            File.Copy(glbSource, glbDest);
+
+            var exteriorScenePath = Path.Combine(sourceRoot, "Content", "World", "Scenes", "Exterior_0_0.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(exteriorScenePath)!);
+            var exteriorScene = new SceneGraph();
+            var heroId = Guid.NewGuid();
+            exteriorScene.Add(new SceneObject(heroId, "Hero")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Content/Models/hero.glb")
+            });
+            SceneFile.SaveAtomic(exteriorScene, exteriorScenePath);
+
+            var interiorScenePath = Path.Combine(sourceRoot, "Content", "World", "Interiors", "House_A.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(interiorScenePath)!);
+            var interiorScene = new SceneGraph();
+            interiorScene.Add(new SceneObject(Guid.NewGuid(), "Table"));
+            SceneFile.SaveAtomic(interiorScene, interiorScenePath);
+
+            var manifestPath = Path.Combine(sourceRoot, "Content", "World", "world.json");
+            var exteriorCellId = Guid.NewGuid();
+            var interiorCellId = Guid.NewGuid();
+            var manifestJson = $$"""
+            {
+              "version": 2,
+              "exteriorCellWidth": 32,
+              "cells": [
+                { "id": "{{exteriorCellId}}", "kind": "Exterior", "exteriorCoordinate": { "x": 0, "z": 0 }, "scenePath": "Scenes/Exterior_0_0.json" },
+                { "id": "{{interiorCellId}}", "kind": "Interior", "scenePath": "Interiors/House_A.json" }
+              ]
+            }
+            """;
+            File.WriteAllText(manifestPath, manifestJson);
+
+            var rpgContentPath = Path.Combine(sourceRoot, "Content", "RpgContent.json");
+            File.WriteAllText(rpgContentPath, "{\"version\": 1}");
+
+            var effectDir = Path.Combine(sourceRoot, "Content", "Effects");
+            Directory.CreateDirectory(effectDir);
+            File.WriteAllText(Path.Combine(effectDir, "TestEffect.fx"), "// fx shader");
+
+            var projectFilePath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectFilePath,
+                startupScenePath: null,
+                worldManifestPath: "Content/World/world.json",
+                extraContentPaths: ["Content/RpgContent.json", "Content/Effects"]);
+
+            var result = EngineProjectPackage.Create(projectFilePath, packagePath);
+
+            Assert.Equal(packagePath, result.DirectoryPath);
+            Assert.Equal(1, result.GlbAssetCount);
+            Assert.Equal("Content/World/world.json", result.WorldManifestPath);
+            Assert.True(File.Exists(Path.Combine(packagePath, EngineProjectFile.DefaultFileName)));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "world.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Scenes", "Exterior_0_0.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Interiors", "House_A.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "RpgContent.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Effects", "TestEffect.fx")));
+
+            Directory.CreateDirectory(Path.GetDirectoryName(movedPath)!);
+            Directory.Move(packagePath, movedPath);
+
+            var movedProject = EngineProjectFile.Load(Path.Combine(movedPath, EngineProjectFile.DefaultFileName));
+            Assert.Null(movedProject.StartupScenePath);
+            Assert.Equal("Content/World/world.json", movedProject.WorldManifestPath);
+            var movedManifest = WorldManifest.Load(movedProject.ResolveWorldManifestPath()!);
+            Assert.Equal(2, movedManifest.Cells.Count);
+
+            var movedExterior = SceneFile.Load(movedManifest.ResolveScenePath(exteriorCellId));
+            Assert.Equal(heroId, Assert.Single(movedExterior.Objects).Id);
+            Assert.True(File.Exists(movedProject.ResolveContentPath("Content/Models/hero.glb")));
+            Assert.True(File.Exists(movedProject.ResolveContentPath("Content/RpgContent.json")));
+            Assert.True(File.Exists(movedProject.ResolveContentPath("Content/Effects/TestEffect.fx")));
         }
         finally
         {

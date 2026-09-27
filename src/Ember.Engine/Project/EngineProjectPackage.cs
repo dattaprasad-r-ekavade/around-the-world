@@ -4,10 +4,11 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Ember.Scene;
+using Ember.World;
 
 namespace Ember.Project;
 
-/// <summary>Creates a relocatable project folder containing its startup scene and referenced GLBs.</summary>
+/// <summary>Creates a relocatable project folder containing its scenes, world manifests, extra content, and referenced GLBs.</summary>
 public static class EngineProjectPackage
 {
     public static EngineProjectPackageResult Create(string projectFilePath, string destinationDirectory)
@@ -20,9 +21,7 @@ public static class EngineProjectPackage
         if (Directory.Exists(destination) || File.Exists(destination))
             throw new IOException($"Package destination already exists: '{destination}'.");
 
-        var startupScenePath = project.ResolveStartupScenePath();
-        var scene = SceneFile.Load(startupScenePath);
-        var contents = CollectPackageContent(project, scene);
+        var contents = CollectPackageContent(project);
         var parentDirectory = Path.GetDirectoryName(destination)
             ?? throw new InvalidDataException("Package destination has no parent directory.");
         Directory.CreateDirectory(parentDirectory);
@@ -32,8 +31,8 @@ public static class EngineProjectPackage
         {
             Directory.CreateDirectory(stagingDirectory);
             var stagedProjectPath = Path.Combine(stagingDirectory, EngineProjectFile.DefaultFileName);
-            EngineProjectFile.SaveAtomic(stagedProjectPath, project.StartupScenePath);
-            CopyRelativeFile(startupScenePath, stagingDirectory, project.StartupScenePath);
+            EngineProjectFile.SaveAtomic(stagedProjectPath, project.StartupScenePath,
+                project.WorldManifestPath, project.ExtraContentPaths);
             foreach (var file in contents.Files)
                 CopyRelativeFile(file.FullPath, stagingDirectory, file.ProjectRelativePath);
 
@@ -44,13 +43,102 @@ public static class EngineProjectPackage
             if (Directory.Exists(stagingDirectory)) Directory.Delete(stagingDirectory, recursive: true);
         }
 
-        return new EngineProjectPackageResult(destination, project.StartupScenePath, contents.GlbAssetCount);
+        return new EngineProjectPackageResult(destination, project.StartupScenePath,
+            contents.GlbAssetCount, project.WorldManifestPath, contents.Files.Count);
     }
 
-    private static PackageContents CollectPackageContent(EngineProjectFile project, SceneGraph scene)
+    private static PackageContents CollectPackageContent(EngineProjectFile project)
     {
         var assetsById = new Dictionary<Guid, PackageAsset>();
         var filesByPath = new Dictionary<string, PackageFile>(StringComparer.OrdinalIgnoreCase);
+
+        // 1. Startup scene if present
+        if (project.StartupScenePath is not null)
+        {
+            var startupScenePath = project.ResolveStartupScenePath();
+            var scene = SceneFile.Load(startupScenePath);
+            AddPackageFile(filesByPath, project.StartupScenePath, startupScenePath);
+            CollectSceneGlbAssets(project, scene, assetsById);
+        }
+
+        // 2. World manifest if present
+        if (project.WorldManifestPath is not null)
+        {
+            var manifestPath = project.ResolveWorldManifestPath()!;
+            var manifest = WorldManifest.Load(manifestPath);
+            AddPackageFile(filesByPath, project.WorldManifestPath, manifestPath);
+
+            foreach (var cell in manifest.Cells)
+            {
+                var cellSceneFullPath = manifest.ResolveScenePath(cell.Id);
+                var cellSceneProjectRel = Path.GetRelativePath(project.RootDirectory, cellSceneFullPath).Replace('\\', '/');
+                AddPackageFile(filesByPath, cellSceneProjectRel, cellSceneFullPath);
+
+                var cellScene = SceneFile.Load(cellSceneFullPath);
+                CollectSceneGlbAssets(project, cellScene, assetsById);
+            }
+
+            // Also check for optional world-paths.json beside the manifest
+            var manifestDir = Path.GetDirectoryName(manifestPath)!;
+            var worldPaths = Path.Combine(manifestDir, "Paths", "world-paths.json");
+            if (File.Exists(worldPaths))
+            {
+                var rel = Path.GetRelativePath(project.RootDirectory, worldPaths).Replace('\\', '/');
+                AddPackageFile(filesByPath, rel, worldPaths);
+            }
+        }
+
+        // 3. Extra content if present
+        foreach (var extra in project.ExtraContentPaths)
+        {
+            var fullPath = project.ResolveContentPath(extra);
+            if (Directory.Exists(fullPath))
+            {
+                foreach (var file in Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories))
+                {
+                    var rel = Path.GetRelativePath(project.RootDirectory, file).Replace('\\', '/');
+                    AddPackageFile(filesByPath, rel, file);
+                }
+            }
+            else if (File.Exists(fullPath))
+            {
+                AddPackageFile(filesByPath, extra, fullPath);
+            }
+            else
+            {
+                throw new FileNotFoundException($"Extra content '{extra}' was not found at '{fullPath}'.", fullPath);
+            }
+        }
+
+        // 4. For each collected GLB asset, inspect external URIs (buffers/images)
+        foreach (var asset in assetsById.Values)
+        {
+            AddPackageFile(filesByPath, asset.Reference.SourcePath, asset.FullPath);
+            foreach (var uri in ReadExternalUris(asset.FullPath, asset.Reference, asset.ObjectId))
+            {
+                if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+                var dependencyPath = ResolveExternalDependencyPath(project, asset, uri);
+                AddPackageFile(filesByPath, dependencyPath.ProjectRelativePath, dependencyPath.FullPath);
+            }
+        }
+
+        // 5. Optional notices
+        const string noticesRelativePath = "ThirdPartyNotices.txt";
+        var noticesPath = project.ResolveContentPath(noticesRelativePath);
+        if (File.Exists(noticesPath))
+            AddPackageFile(filesByPath, noticesRelativePath, noticesPath);
+
+        var files = filesByPath.Values
+            .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        return new PackageContents(files, assetsById.Count);
+    }
+
+    private static void CollectSceneGlbAssets(
+        EngineProjectFile project,
+        SceneGraph scene,
+        IDictionary<Guid, PackageAsset> assetsById)
+    {
         foreach (var item in scene.Objects)
         foreach (var reference in EnumerateAssetReferences(item))
         {
@@ -84,27 +172,6 @@ public static class EngineProjectPackage
 
             assetsById.TryAdd(reference.AssetId, new PackageAsset(reference, fullPath, item.Id));
         }
-
-        foreach (var asset in assetsById.Values)
-        {
-            AddPackageFile(filesByPath, asset.Reference.SourcePath, asset.FullPath);
-            foreach (var uri in ReadExternalUris(asset.FullPath, asset.Reference, asset.ObjectId))
-            {
-                if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
-                var dependencyPath = ResolveExternalDependencyPath(project, asset, uri);
-                AddPackageFile(filesByPath, dependencyPath.ProjectRelativePath, dependencyPath.FullPath);
-            }
-        }
-
-        const string noticesRelativePath = "ThirdPartyNotices.txt";
-        var noticesPath = project.ResolveContentPath(noticesRelativePath);
-        if (File.Exists(noticesPath))
-            AddPackageFile(filesByPath, noticesRelativePath, noticesPath);
-
-        var files = filesByPath.Values
-            .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
-            .ToArray();
-        return new PackageContents(files, assetsById.Count);
     }
 
     private static IEnumerable<GltfAssetReference> EnumerateAssetReferences(SceneObject item)
@@ -224,14 +291,15 @@ public static class EngineProjectPackage
 
     private static void AddPackageFile(IDictionary<string, PackageFile> files, string projectRelativePath, string fullPath)
     {
-        if (files.TryGetValue(projectRelativePath, out var existing))
+        var normalizedPath = projectRelativePath.Replace('\\', '/');
+        if (files.TryGetValue(normalizedPath, out var existing))
         {
             if (!string.Equals(existing.FullPath, fullPath, StringComparison.OrdinalIgnoreCase))
                 throw new InvalidDataException(
-                    $"Different source files resolve to the same package content path '{projectRelativePath}'.");
+                    $"Different source files resolve to the same package content path '{normalizedPath}'.");
             return;
         }
-        files.Add(projectRelativePath, new PackageFile(projectRelativePath, fullPath));
+        files.Add(normalizedPath, new PackageFile(normalizedPath, fullPath));
     }
 
     private static void CopyRelativeFile(string sourcePath, string packageRoot, string projectRelativePath)
@@ -255,5 +323,7 @@ public static class EngineProjectPackage
 
 public sealed record EngineProjectPackageResult(
     string DirectoryPath,
-    string StartupScenePath,
-    int GlbAssetCount);
+    string? StartupScenePath,
+    int GlbAssetCount,
+    string? WorldManifestPath = null,
+    int PackagedFileCount = 0);

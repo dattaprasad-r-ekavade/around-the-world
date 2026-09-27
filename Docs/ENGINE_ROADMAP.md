@@ -317,16 +317,16 @@ Use the existing scene tool. Add one panel or command at a time; all authored da
 | [x] | 139 | Add a repeatable persistence scenario: drop item, loot container, kill enemy, move follower across cells, enter interior, save/restart. | Every resulting state is correct and each persistent instance exists exactly once. |
 | [x] | 140 | Run repeated travel/save/load with delayed or failed asset reads. | Failures remain recoverable; no duplicate actors, lost items, or partially restored scenes occur. |
 | [x] | 141 | Run a documented hour-long route with at least 50 interior/exterior transitions. | Resource counts stabilize after warmup; no unbounded growth or accumulating errors occur. |
-| [ ] | 142 | Package this RPG slice and validate it on the reference clean Windows setup. | Content, native dependencies, player saves, and diagnostics work outside the repository. |
-| [ ] | 143 | Record an expansion decision: measured budgets, approved world dimensions, content density, and remaining mechanics. | Larger-map work has explicit limits and new atomic tasks; failed gates remain blockers. |
+| [x] | 142 | Package this RPG slice and validate it on the reference clean Windows setup. | Content, native dependencies, player saves, and diagnostics work outside the repository. |
+| [x] | 143 | Record an expansion decision: measured budgets, approved world dimensions, content density, and remaining mechanics. | Larger-map work has explicit limits and new atomic tasks; failed gates remain blockers. |
 
-**Release F: cell-based RPG foundation.** A functioning small piece of the intended larger game establishes readiness to expand. Producing the full map, quests, characters, and art remains a separate content workload.
+**Release F: cell-based RPG foundation.** PASS — A functioning piece of the intended larger game establishes readiness to expand, validated by the settlement proof, 50-transition soak, packaging outside the repository, phase attribution, and the expansion decision document (`Docs/EXPANSION_DECISION.md`). Producing the full map, quests, characters, and art remains a separate content workload.
 
 ## Stage 13 follow-up — before increasing world density
 
 | Done | ID | Implement only this | Pass when |
 | --- | --- | --- | --- |
-| [ ] | 144 | Add timestamped phase markers to the outdoor benchmark so frames over 50 ms can be attributed to cell activation, terrain work, scene submission, garbage collection, or external scheduling. | Every frame over 100 ms in the reference route is classified; engine-owned causes become separate, atomic optimization tasks before denser content is added. |
+| [x] | 144 | Add timestamped phase markers to the outdoor benchmark so frames over 50 ms can be attributed to cell activation, terrain work, scene submission, garbage collection, or external scheduling. | Every frame over 100 ms in the reference route is classified; engine-owned causes become separate, atomic optimization tasks before denser content is added. |
 
 ## Later: pick one need, then write new atomic tasks
 
@@ -373,14 +373,14 @@ The broad Stage 9–12 gates remain Pending. Remaining data-safety work includes
 
 ## Handoff — update after every implementation session
 
-- Last completed task: 141 — ran a documented 50-transition soak route; verified resource stability, zero leaks, bounded memory (+0.5 MiB post-warmup delta across 50 transitions), and zero errors.
-- First unchecked baseline task: 142 — package this RPG slice and validate it on the reference clean Windows setup.
-- Current checklist: 166 of 169 ordered rows complete (98.2%); task 142 is first unchecked.
-- Current gates: Release A and D passed; Release B and C remain Pending. The targeted Stage 15 settlement proof, quest completion proof, repeatable persistence scenario proof, resilient travel/save failure recovery proof, 50-transition soak stability proof, and Stage 13 benchmark pass. Broader Stages 9–12, the Stage 14 editor-authorship gate, and Release E remain Pending. Task 144 remains conditional before increasing world density if the long-frame tail recurs.
-- Latest changes: Added `WorldPersistenceSession.Transfer`, `MarkDeleted`, and `IsDeleted` for atomic cross-cell instance migration and deletion tombstones; added `WorldPersistenceScenarioTests` covering drop item, loot container, kill enemy, follower cell transfer, interior travel, save/restart with exact-once verification; updated `--persistence-smoke` with full 6-action live scenario; added `WorldTravelPersistenceFailureTests` exercising delayed reads, simulated I/O failures, save failures, and retry without duplicate actors or lost items; added `RpgSliceTransitionSoak` and `WorldTransitionSoakTests` with 50 interior/exterior transitions, recording per-transition latency, active cells, terrain chunks, graphics resources, working set, and generating `Docs/TRANSITION_SOAK.md`; fixed finding 572 by clearing static texture caches in `EngineHost.DisposeHost()`.
-- Verification: `dotnet build Ember.sln --nologo` passed with 0 warnings/errors; `dotnet test tests/Ember.Engine.Tests` passed 252 tests; `Ember.Rpg.Check` passed; `--settlement-smoke`, `--rpg-integration-smoke`, `--travel-smoke`, `--persistence-smoke`, `--quest-smoke`, and `--transition-soak` all passed cleanly.
-- Limits: The settlement benchmark recorded five frames over 50 ms and two over 100 ms. The Stage 14 editor-authoring workflow without handwritten reference wiring remains open. `test-assets/` and `games/` remain untracked user directories.
-- Next action: implement task 142 (package this RPG slice and validate it on the reference clean Windows setup).
+- Last completed task: 144 / 143 / 142 — all 169 ordered roadmap rows complete (100%).
+- First unchecked baseline task: None. All 169 ordered roadmap tasks through Release F are complete.
+- Current checklist: 169 of 169 ordered rows complete (100%).
+- Current gates: Release A, D, and F passed; Release B and C remain Pending comprehensive scene sweeps. The Stage 15 settlement proof, quest completion proof, repeatable persistence scenario proof, resilient travel/save failure recovery proof, 50-transition soak stability proof, outside-repo packaging validation, and phase attribution benchmark pass. Broader Stages 9–12, the Stage 14 editor-authorship gate, and Release E remain Pending.
+- Latest changes: Extended `EngineProjectFile` (world manifest path, extra content paths, atomic flushed saves) and `EngineProjectPackage` to package world manifests, cell scenes, GLBs, external URIs, and extra content; authored `tools/publish-rpg-slice.ps1` and validated outside repository; added timestamped phase markers (`BenchmarkPhase.CellActivation`, `BenchmarkPhase.TerrainWork`, `BenchmarkPhase.SceneSubmission`, `GarbageCollection`, `ExternalScheduling`) and spike classification to `RpgSliceOutdoorBenchmark` and `RpgSliceGame`; executed 10-lap settlement benchmark attributing 13 frames >50ms (1 engine terrain chunk upload, 12 external DWM/scheduling) and 0 frames >100ms; authored `Docs/EXPANSION_DECISION.md` approving regional world expansion and establishing follow-up atomic tasks 145–152.
+- Verification: `dotnet build Ember.sln --nologo` passed with 0 warnings/errors; `dotnet test tests/Ember.Engine.Tests` passed 255 tests; `Ember.Rpg.Check` passed; `tools/publish-rpg-slice.ps1 -Validate` passed outside repository across settlement smoke (with `--perf`), persistence smoke (isolated save), travel smoke, and quest smoke; live 10-lap settlement benchmark passed with 873,335 frames and phase attribution.
+- Limits: Single-frame terrain chunk building in Draw is isolated as atomic follow-up Task 145. `test-assets/` and `games/` remain untracked user directories.
+- Next action: implement next milestone tasks 145–152 (terrain pre-upload, navigation mesh, swimming, PBR lighting) as defined in `Docs/EXPANSION_DECISION.md`.
 
 Suggested request to an implementing AI:
 

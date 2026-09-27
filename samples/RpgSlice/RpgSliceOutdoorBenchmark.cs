@@ -2,10 +2,75 @@ using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
+using System.Text;
 using Ember.World;
 using Microsoft.Xna.Framework;
 
 namespace RpgSlice;
+
+internal enum BenchmarkPhase
+{
+    CellActivation,
+    TerrainWork,
+    SceneSubmission
+}
+
+internal enum FrameSpikeCause
+{
+    CellActivation,
+    TerrainWork,
+    SceneSubmission,
+    GarbageCollection,
+    ExternalScheduling
+}
+
+internal sealed class FrameSpikeRecord
+{
+    public int FrameIndex { get; init; }
+    public double TotalMilliseconds { get; init; }
+    public FrameSpikeCause PrimaryCause { get; init; }
+    public double CellActivationMilliseconds { get; init; }
+    public double TerrainWorkMilliseconds { get; init; }
+    public double SceneSubmissionMilliseconds { get; init; }
+    public double GcPauseMilliseconds { get; init; }
+    public int Gen0Delta { get; init; }
+    public int Gen1Delta { get; init; }
+    public int Gen2Delta { get; init; }
+    public double ExternalSchedulingMilliseconds { get; init; }
+    public string Details { get; init; } = string.Empty;
+}
+
+internal readonly struct PhaseScope : IDisposable
+{
+    private readonly RpgSliceOutdoorBenchmark? _benchmark;
+    private readonly BenchmarkPhase _phase;
+    private readonly long _startTimestamp;
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public PhaseScope(RpgSliceOutdoorBenchmark? benchmark, BenchmarkPhase phase)
+    {
+        _benchmark = benchmark;
+        _phase = phase;
+        _startTimestamp = benchmark is { IsMeasuring: true, IsComplete: false } ? Stopwatch.GetTimestamp() : 0;
+    }
+
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public void Dispose()
+    {
+        if (_benchmark is not null && _startTimestamp != 0)
+        {
+            var elapsedTicks = Stopwatch.GetTimestamp() - _startTimestamp;
+            _benchmark.RecordPhaseTicks(_phase, elapsedTicks);
+        }
+    }
+}
+
+internal static class BenchmarkPhaseExtensions
+{
+    [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.AggressiveInlining)]
+    public static PhaseScope MeasurePhase(this RpgSliceOutdoorBenchmark? benchmark, BenchmarkPhase phase) =>
+        new(benchmark, phase);
+}
 
 /// <summary>Drives the fixed outdoor route and collects frame, streaming, and memory measurements.</summary>
 internal sealed class RpgSliceOutdoorBenchmark
@@ -55,6 +120,15 @@ internal sealed class RpgSliceOutdoorBenchmark
     private int _lapPeakTerrainChunks;
     private int _lapPeakTrackedGraphicsResources;
     private long _lapPeakWorkingSetBytes;
+    private readonly List<FrameSpikeRecord> _frameSpikes = new();
+    private long _currentCellActivationTicks;
+    private long _currentTerrainTicks;
+    private long _currentSceneSubmissionTicks;
+    private TimeSpan _startGcPause;
+    private int _startGen0;
+    private int _startGen1;
+    private int _startGen2;
+    private int _totalMeasuredFrames;
 
     public RpgSliceOutdoorBenchmark(Vector3 startPosition, bool settlementRoute = false)
     {
@@ -87,6 +161,7 @@ internal sealed class RpgSliceOutdoorBenchmark
     public int PeakEquivalentIndividualDrawSubmissions { get; private set; }
     public int FramesOver50Milliseconds => _framesOver50Milliseconds;
     public int FramesOver100Milliseconds => _framesOver100Milliseconds;
+    public IReadOnlyList<FrameSpikeRecord> FrameSpikes => _frameSpikes;
 
     public bool ShouldSampleWorkingSet(double elapsedSeconds) =>
         IsMeasuring && !IsComplete && elapsedSeconds >= _nextWorkingSetSampleSeconds;
@@ -126,23 +201,123 @@ internal sealed class RpgSliceOutdoorBenchmark
         return new Vector3(direction.X, 0f, direction.Y);
     }
 
+    public void RecordPhaseTicks(BenchmarkPhase phase, long ticks)
+    {
+        if (!IsMeasuring || IsComplete) return;
+        switch (phase)
+        {
+            case BenchmarkPhase.CellActivation:
+                _currentCellActivationTicks += ticks;
+                break;
+            case BenchmarkPhase.TerrainWork:
+                _currentTerrainTicks += ticks;
+                break;
+            case BenchmarkPhase.SceneSubmission:
+                _currentSceneSubmissionTicks += ticks;
+                break;
+        }
+    }
+
     public void RecordFrame(long timestamp)
     {
         if (!IsMeasuring || IsComplete)
         {
             _lastFrameTimestamp = 0;
+            ResetFramePhaseCounters();
             return;
         }
 
         if (_lastFrameTimestamp != 0)
         {
             var milliseconds = Stopwatch.GetElapsedTime(_lastFrameTimestamp, timestamp).TotalMilliseconds;
+            _totalMeasuredFrames++;
             _frameMilliseconds.Add(milliseconds);
             _lapMaximumFrameMilliseconds = Math.Max(_lapMaximumFrameMilliseconds, milliseconds);
+            var cellActivationMs = (double)_currentCellActivationTicks / Stopwatch.Frequency * 1000.0;
+            var terrainWorkMs = (double)_currentTerrainTicks / Stopwatch.Frequency * 1000.0;
+            var sceneSubmissionMs = (double)_currentSceneSubmissionTicks / Stopwatch.Frequency * 1000.0;
+            var currentGcPause = GC.GetTotalPauseDuration();
+            var gcPauseMs = Math.Max(0d, (currentGcPause - _startGcPause).TotalMilliseconds);
+            var gen0Delta = GC.CollectionCount(0) - _startGen0;
+            var gen1Delta = GC.CollectionCount(1) - _startGen1;
+            var gen2Delta = GC.CollectionCount(2) - _startGen2;
+            var accountedMs = cellActivationMs + terrainWorkMs + sceneSubmissionMs + (gcPauseMs > 0 ? gcPauseMs : 0);
+            var externalSchedulingMs = Math.Max(0d, milliseconds - accountedMs);
+
             if (milliseconds > 50d) _framesOver50Milliseconds++;
             if (milliseconds > 100d) _framesOver100Milliseconds++;
+            if (milliseconds > 50d)
+            {
+                var cause = ClassifySpike(milliseconds, cellActivationMs, terrainWorkMs,
+                    sceneSubmissionMs, gcPauseMs, gen1Delta, gen2Delta, externalSchedulingMs);
+                var details = $"total={milliseconds:0.00}ms, activation={cellActivationMs:0.00}ms, "
+                    + $"terrain={terrainWorkMs:0.00}ms, submission={sceneSubmissionMs:0.00}ms, "
+                    + $"gcPause={gcPauseMs:0.00}ms (Gen0:{gen0Delta}, Gen1:{gen1Delta}, Gen2:{gen2Delta}), "
+                    + $"scheduling={externalSchedulingMs:0.00}ms";
+
+                _frameSpikes.Add(new FrameSpikeRecord
+                {
+                    FrameIndex = _totalMeasuredFrames,
+                    TotalMilliseconds = milliseconds,
+                    PrimaryCause = cause,
+                    CellActivationMilliseconds = cellActivationMs,
+                    TerrainWorkMilliseconds = terrainWorkMs,
+                    SceneSubmissionMilliseconds = sceneSubmissionMs,
+                    GcPauseMilliseconds = gcPauseMs,
+                    Gen0Delta = gen0Delta,
+                    Gen1Delta = gen1Delta,
+                    Gen2Delta = gen2Delta,
+                    ExternalSchedulingMilliseconds = externalSchedulingMs,
+                    Details = details
+                });
+            }
         }
         _lastFrameTimestamp = timestamp;
+        ResetFramePhaseCounters();
+    }
+
+    private void ResetFramePhaseCounters()
+    {
+        _currentCellActivationTicks = 0;
+        _currentTerrainTicks = 0;
+        _currentSceneSubmissionTicks = 0;
+        _startGcPause = GC.GetTotalPauseDuration();
+        _startGen0 = GC.CollectionCount(0);
+        _startGen1 = GC.CollectionCount(1);
+        _startGen2 = GC.CollectionCount(2);
+    }
+
+    private static FrameSpikeCause ClassifySpike(
+        double totalMs,
+        double cellActivationMs,
+        double terrainWorkMs,
+        double sceneSubmissionMs,
+        double gcPauseMs,
+        int gen1Delta,
+        int gen2Delta,
+        double externalSchedulingMs)
+    {
+        if (gcPauseMs >= 15d || (gen2Delta > 0 && externalSchedulingMs >= 20d))
+            return FrameSpikeCause.GarbageCollection;
+
+        var maxEngineMs = Math.Max(cellActivationMs, Math.Max(terrainWorkMs, sceneSubmissionMs));
+        if (maxEngineMs >= 25d || maxEngineMs >= totalMs * 0.4d)
+        {
+            if (cellActivationMs == maxEngineMs) return FrameSpikeCause.CellActivation;
+            if (terrainWorkMs == maxEngineMs) return FrameSpikeCause.TerrainWork;
+            return FrameSpikeCause.SceneSubmission;
+        }
+
+        if (externalSchedulingMs >= totalMs * 0.5d || externalSchedulingMs >= 25d)
+            return FrameSpikeCause.ExternalScheduling;
+
+        if (cellActivationMs >= terrainWorkMs && cellActivationMs >= sceneSubmissionMs && cellActivationMs >= externalSchedulingMs)
+            return FrameSpikeCause.CellActivation;
+        if (terrainWorkMs >= sceneSubmissionMs && terrainWorkMs >= externalSchedulingMs)
+            return FrameSpikeCause.TerrainWork;
+        if (sceneSubmissionMs >= externalSchedulingMs)
+            return FrameSpikeCause.SceneSubmission;
+        return FrameSpikeCause.ExternalScheduling;
     }
 
     public void ObserveRuntime(ExteriorCellCoordinate cell, int activeCells, int terrainChunks,
@@ -193,6 +368,45 @@ internal sealed class RpgSliceOutdoorBenchmark
             ? "PASS"
             : "TARGETS MISSED";
 
+        var spikeSummary = new StringBuilder();
+        spikeSummary.AppendLine($"Phase attribution for frames >50ms (total={_frameSpikes.Count}, >100ms={_framesOver100Milliseconds}):");
+        foreach (var cause in Enum.GetValues<FrameSpikeCause>())
+        {
+            var count = _frameSpikes.Count(s => s.PrimaryCause == cause);
+            var over100 = _frameSpikes.Count(s => s.PrimaryCause == cause && s.TotalMilliseconds > 100d);
+            spikeSummary.AppendLine($"  - {cause}: {count} frames (>100ms: {over100})");
+        }
+        if (_frameSpikes.Count > 0)
+        {
+            spikeSummary.AppendLine("Classified frames >100ms:");
+            var over100Spikes = _frameSpikes.Where(s => s.TotalMilliseconds > 100d).ToArray();
+            if (over100Spikes.Length == 0)
+            {
+                spikeSummary.AppendLine("  (none)");
+            }
+            else
+            {
+                foreach (var spike in over100Spikes)
+                {
+                    spikeSummary.AppendLine($"  [frame #{spike.FrameIndex}] {spike.TotalMilliseconds:0.00}ms -> {spike.PrimaryCause} ({spike.Details})");
+                }
+            }
+
+            spikeSummary.AppendLine("Classified frames 50ms-100ms:");
+            var under100Spikes = _frameSpikes.Where(s => s.TotalMilliseconds <= 100d).ToArray();
+            if (under100Spikes.Length == 0)
+            {
+                spikeSummary.AppendLine("  (none)");
+            }
+            else
+            {
+                foreach (var spike in under100Spikes)
+                {
+                    spikeSummary.AppendLine($"  [frame #{spike.FrameIndex}] {spike.TotalMilliseconds:0.00}ms -> {spike.PrimaryCause} ({spike.Details})");
+                }
+            }
+        }
+
         return $"RpgSlice {ScenarioName} benchmark: {outcome}\n"
             + (FailureReason is null ? string.Empty : $"Route failure: {FailureReason}.\n")
             + $"Adapter/resolution: {adapter}, {graphicsWidth}x{graphicsHeight}; instancing={(instancingEnabled ? "on" : "fallback")}.\n"
@@ -204,7 +418,8 @@ internal sealed class RpgSliceOutdoorBenchmark
             + (string.IsNullOrWhiteSpace(contentSummary) ? string.Empty : $"Content: {contentSummary}\n")
             + $"Measured cell-boundary crossings={CellBoundaryCrossings}; lap ms=[{string.Join(", ", _lapMilliseconds.Select(value => value.ToString("0", System.Globalization.CultureInfo.InvariantCulture)))}].\n"
             + $"Per-lap peak resources: {string.Join("; ", _lapResourceTrend)}.\n"
-            + $"Crossings: {string.Join("; ", _cellCrossings)}";
+            + $"Crossings: {string.Join("; ", _cellCrossings)}\n"
+            + spikeSummary.ToString().TrimEnd();
     }
 
     private void AdvanceWaypoint()
@@ -230,6 +445,7 @@ internal sealed class RpgSliceOutdoorBenchmark
             _lapClock.Restart();
             _measuredClock.Start();
             _lastFrameTimestamp = Stopwatch.GetTimestamp();
+            ResetFramePhaseCounters();
             Console.WriteLine("RpgSlice benchmark: warmup complete; ten-lap measurement started.");
             Console.Out.Flush();
             return;

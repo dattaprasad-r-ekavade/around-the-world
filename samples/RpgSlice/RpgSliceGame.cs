@@ -303,7 +303,12 @@ public sealed class RpgSliceGame : EngineHost
             if (_streamingSmoke is null)
             {
                 if (!_insideInterior)
-                    _cellStreamer.Update(_player.Pose.Position);
+                {
+                    using (_benchmark.MeasurePhase(BenchmarkPhase.CellActivation))
+                    {
+                        _cellStreamer.Update(_player.Pose.Position);
+                    }
+                }
                 if (_travel is not null)
                     AdvanceDoorTravel();
                 if (_soakDoorCooldownFrames > 0)
@@ -1193,8 +1198,15 @@ public sealed class RpgSliceGame : EngineHost
         _renderer.Begin(LitEffect, _camera.View, _camera.Projection, _camera.Position,
             _camera.Yaw, StoneTextures.StonePalette.Sandstone, _lights);
         if (!_insideInterior)
-            _terrain.Draw(_camera.View, _camera.Projection, _camera.Position, environment);
-        _foliageInstances.Clear();
+        {
+            using (_benchmark.MeasurePhase(BenchmarkPhase.TerrainWork))
+            {
+                _terrain.Draw(_camera.View, _camera.Projection, _camera.Position, environment);
+            }
+        }
+        using (_benchmark.MeasurePhase(BenchmarkPhase.SceneSubmission))
+        {
+            _foliageInstances.Clear();
         var visibleCells = _insideInterior
             ? new[] { _interiorOperation?.ActiveResources }
                 .Where(item => item is not null).Cast<RpgSliceCellStreamer.ActiveCell>()
@@ -1245,6 +1257,7 @@ public sealed class RpgSliceGame : EngineHost
         DrawRpgQuestUi();
         base.Draw(gameTime);
         EndHostFrame(hold: false, exit: Exit);
+        }
     }
 
     private void DrawRpgQuestUi()

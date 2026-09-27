@@ -106,6 +106,53 @@ public sealed class EngineProjectFileTests
         }
     }
 
+    [Fact]
+    public void ProjectWithWorldManifestAndExtraContent_SavesAndLoadsSuccessfully()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var projectPath = Path.Combine(root, EngineProjectFile.DefaultFileName);
+            var manifestPath = Path.Combine(root, "Content", "World", "settlement.json");
+            var extraPath = Path.Combine(root, "Content", "RpgContent.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+            File.WriteAllText(manifestPath, "{}");
+            File.WriteAllText(extraPath, "{}");
+
+            EngineProjectFile.SaveAtomic(projectPath, startupScenePath: null,
+                worldManifestPath: "Content/World/settlement.json",
+                extraContentPaths: ["Content/RpgContent.json"]);
+
+            var project = EngineProjectFile.Load(projectPath);
+
+            Assert.Null(project.StartupScenePath);
+            Assert.Equal("Content/World/settlement.json", project.WorldManifestPath);
+            Assert.Single(project.ExtraContentPaths, "Content/RpgContent.json");
+            Assert.Equal(manifestPath, project.ResolveWorldManifestPath());
+            Assert.Equal(extraPath, project.ResolveContentPath("Content/RpgContent.json"));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Project_RequiresAtLeastStartupSceneOrWorldManifest()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var projectPath = Path.Combine(root, EngineProjectFile.DefaultFileName);
+            Assert.Throws<ArgumentException>(() =>
+                EngineProjectFile.SaveAtomic(projectPath, startupScenePath: null, worldManifestPath: null));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
     private static string NewDirectory()
     {
         var path = Path.Combine(Path.GetTempPath(), "ember-project-file-" + Guid.NewGuid().ToString("N"));

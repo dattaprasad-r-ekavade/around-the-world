@@ -1,10 +1,13 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
+using System.Text.Json.Serialization;
 
 namespace Ember.Project;
 
-/// <summary>Versioned project configuration with one safe project-relative startup scene.</summary>
+/// <summary>Versioned project configuration with safe project-relative startup scene, world manifest, and extra content.</summary>
 public sealed class EngineProjectFile
 {
     public const int CurrentVersion = 1;
@@ -14,26 +17,47 @@ public sealed class EngineProjectFile
     {
         WriteIndented = true,
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
-        PropertyNameCaseInsensitive = true
+        PropertyNameCaseInsensitive = true,
+        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull
     };
 
-    private EngineProjectFile(string filePath, string startupScenePath)
+    private EngineProjectFile(string filePath, string? startupScenePath,
+        string? worldManifestPath = null, IEnumerable<string>? extraContentPaths = null)
     {
         FilePath = filePath;
         RootDirectory = Path.GetDirectoryName(filePath)!;
-        StartupScenePath = NormalizeStartupScenePath(startupScenePath);
+        StartupScenePath = startupScenePath is not null ? NormalizeStartupScenePath(startupScenePath) : null;
+        WorldManifestPath = worldManifestPath is not null ? NormalizeWorldManifestPath(worldManifestPath) : null;
+        ExtraContentPaths = extraContentPaths?.Select(NormalizeRelativeContentPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList().AsReadOnly()
+            ?? (IReadOnlyList<string>)Array.Empty<string>();
     }
 
     public string FilePath { get; }
     public string RootDirectory { get; }
-    public string StartupScenePath { get; }
+    public string? StartupScenePath { get; }
+    public string? WorldManifestPath { get; }
+    public IReadOnlyList<string> ExtraContentPaths { get; }
 
     public string ResolveStartupScenePath()
     {
+        if (StartupScenePath is null)
+            throw new InvalidOperationException($"Project '{FilePath}' does not define a startup scene.");
         var fullPath = ResolveContentPath(StartupScenePath);
         if (!File.Exists(fullPath))
             throw new FileNotFoundException(
                 $"Startup scene '{StartupScenePath}' was not found for project '{FilePath}' at '{fullPath}'.",
+                fullPath);
+        return fullPath;
+    }
+
+    public string ResolveWorldManifestPath()
+    {
+        if (WorldManifestPath is null)
+            throw new InvalidOperationException($"Project '{FilePath}' does not define a world manifest.");
+        var fullPath = ResolveContentPath(WorldManifestPath);
+        if (!File.Exists(fullPath))
+            throw new FileNotFoundException(
+                $"World manifest '{WorldManifestPath}' was not found for project '{FilePath}' at '{fullPath}'.",
                 fullPath);
         return fullPath;
     }
@@ -69,30 +93,44 @@ public sealed class EngineProjectFile
 
         if (document.Version != CurrentVersion)
             throw new InvalidDataException($"Unsupported project version {document.Version}; expected {CurrentVersion}.");
-        if (string.IsNullOrWhiteSpace(document.StartupScene))
-            throw new InvalidDataException("Project startupScene path is missing.");
+        if (string.IsNullOrWhiteSpace(document.StartupScene) && string.IsNullOrWhiteSpace(document.WorldManifest))
+            throw new InvalidDataException("Project must specify at least startupScene or worldManifest.");
 
         EngineProjectFile project;
         try
         {
-            project = new EngineProjectFile(fullPath, document.StartupScene);
+            project = new EngineProjectFile(fullPath, document.StartupScene, document.WorldManifest, document.ExtraContent);
         }
         catch (ArgumentException exception)
         {
-            throw new InvalidDataException($"Project startupScene path is invalid: {exception.Message}", exception);
+            throw new InvalidDataException($"Project path is invalid: {exception.Message}", exception);
         }
-        _ = project.ResolveStartupScenePath();
+
+        if (project.StartupScenePath is not null)
+            _ = project.ResolveStartupScenePath();
+        if (project.WorldManifestPath is not null)
+            _ = project.ResolveWorldManifestPath();
+        foreach (var extra in project.ExtraContentPaths)
+            _ = project.ResolveContentPath(extra);
+
         return project;
     }
 
-    public static void SaveAtomic(string path, string startupScenePath)
+    public static void SaveAtomic(string path, string startupScenePath) =>
+        SaveAtomic(path, startupScenePath, null, null);
+
+    public static void SaveAtomic(string path, string? startupScenePath,
+        string? worldManifestPath, IEnumerable<string>? extraContentPaths = null)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A project file path is required.", nameof(path));
-        if (string.IsNullOrWhiteSpace(startupScenePath))
-            throw new ArgumentException("A startup scene path is required.", nameof(startupScenePath));
+        if (string.IsNullOrWhiteSpace(startupScenePath) && string.IsNullOrWhiteSpace(worldManifestPath))
+            throw new ArgumentException("Either a startup scene path or a world manifest path is required.", nameof(startupScenePath));
 
         var fullPath = Path.GetFullPath(path);
-        var normalizedStartupScene = NormalizeStartupScenePath(startupScenePath);
+        var normalizedStartupScene = startupScenePath is not null ? NormalizeStartupScenePath(startupScenePath) : null;
+        var normalizedWorldManifest = worldManifestPath is not null ? NormalizeWorldManifestPath(worldManifestPath) : null;
+        var normalizedExtraContent = extraContentPaths?.Select(NormalizeRelativeContentPath).Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+
         var directory = Path.GetDirectoryName(fullPath)
             ?? throw new InvalidDataException("Project file path has no parent directory.");
         Directory.CreateDirectory(directory);
@@ -100,13 +138,18 @@ public sealed class EngineProjectFile
         var document = new ProjectDocument
         {
             Version = CurrentVersion,
-            StartupScene = normalizedStartupScene
+            StartupScene = normalizedStartupScene,
+            WorldManifest = normalizedWorldManifest,
+            ExtraContent = normalizedExtraContent is { Count: > 0 } ? normalizedExtraContent : null
         };
         var temporaryPath = fullPath + $".{Guid.NewGuid():N}.tmp";
         try
         {
             using (var stream = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None))
+            {
                 JsonSerializer.Serialize(stream, document, JsonOptions);
+                stream.Flush(flushToDisk: true);
+            }
             if (File.Exists(fullPath)) File.Replace(temporaryPath, fullPath, null);
             else File.Move(temporaryPath, fullPath);
         }
@@ -128,6 +171,21 @@ public sealed class EngineProjectFile
         catch (ArgumentException exception) when (!exception.Message.StartsWith("Startup scene path", StringComparison.Ordinal))
         {
             throw new ArgumentException($"Startup scene path is invalid: {exception.Message}", nameof(path), exception);
+        }
+    }
+
+    private static string NormalizeWorldManifestPath(string path)
+    {
+        try
+        {
+            var normalized = NormalizeRelativeContentPath(path);
+            if (!normalized.EndsWith(".json", StringComparison.OrdinalIgnoreCase))
+                throw new ArgumentException("World manifest path must name a .json manifest file.", nameof(path));
+            return normalized;
+        }
+        catch (ArgumentException exception) when (!exception.Message.StartsWith("World manifest path", StringComparison.Ordinal))
+        {
+            throw new ArgumentException($"World manifest path is invalid: {exception.Message}", nameof(path), exception);
         }
     }
 
@@ -161,5 +219,7 @@ public sealed class EngineProjectFile
     {
         public int Version { get; set; }
         public string? StartupScene { get; set; }
+        public string? WorldManifest { get; set; }
+        public List<string>? ExtraContent { get; set; }
     }
 }
