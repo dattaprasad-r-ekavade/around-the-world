@@ -1595,11 +1595,51 @@ Both live runs used Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, 1280x720
 resource counts remained 10 in House A, 10 in House B and 22 in the exterior; post-warmup
 working-set peak growth was +2.6 MiB and managed-heap peak growth was +0.7 MiB. In the editor,
 after four warmup cycles, preview resources remained 6; working-set peak growth was +13.0 MiB
-and managed-heap peak growth was +0.8 MiB. The 30 MiB diagnostic limit remains provisional
-until M0.3 names a reference PC and establishes budgets. These fixed-count runs do not replace
-the M0.3 30-minute mixed editor/runtime session.
+and managed-heap peak growth was +0.8 MiB. These fixed-count runs do not replace the M0.3
+30-minute mixed editor/runtime session, which establishes separate budgets for its named
+reference PC and paired-Fox content.
 
 RpgSlice artifacts are `%TEMP%\Ember\RpgSlice\LifecycleChecks\lifecycle-check-8319ad4382164dcf8610ab7fec0dc71f.md`,
 the matching `.json`, and `.world.json`. CharacterStudio artifacts are
 `%TEMP%\Ember\CharacterStudio\LifecycleChecks\lifecycle-check-31928220bc9b40bb91cefe0f783aac7a.md`
 and the matching `.json`.
+
+## Active roadmap — M0.3 performance and distribution baseline — 27 September 2026
+
+- Status: **Passed**. Implementation commit: `d29b62c`; the live evidence is recorded below.
+- Added a CharacterStudio mixed editor/runtime reference session selected with
+  `--reference-session-minutes N`. It alternates editor and play-session modes every
+  60 active rendered seconds, records Update-to-Update frame intervals, samples process
+  memory and owned preview resources once per second, and writes full JSON plus Markdown
+  under `%TEMP%\Ember\CharacterStudio\ReferenceSessions`.
+- The collector measures active rendered time and separately reports update gaps over five
+  seconds. An earlier attempt encountered a 5.2-hour host pause and captured only about
+  23 active minutes; it was discarded. The successful run below reached the full 30 active
+  minutes with no excluded host-pause gaps.
+- Initial reference budgets are tied only to this paired-Fox scene and the named PC:
+  p95 <= 50 ms, p99 <= 50 ms, maximum <= 1,000 ms; preview graphics resources exactly 2
+  with no growth; post-warmup peak growth <= 30 MiB working set, <= 30 MiB private memory,
+  and <= 15 MiB managed heap; self-contained win-x64 package <= 135 MiB. These are
+  provisional guardrails for this configuration, not cross-machine performance claims.
+
+### M0.3 verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo --no-restore` | PASS — 269 passed, 0 failed, 0 skipped |
+| `dotnet build Ember.sln --nologo --no-restore` | PASS — 0 warnings, 0 errors |
+| CharacterStudio `--pair --reference-session-minutes 30 --windowed --perf` | PASS — 30.0 active/wall minutes; 57,464 frame intervals; 31 editor/runtime mode changes; 0 lifecycle errors; 0 host-pause gaps over 5s |
+| Paired-Fox frame timing | PASS against initial budgets — average 31.32 ms, p50 31.60 ms, p95 46.47 ms, p99 47.12 ms, max 743.99 ms; 71 intervals >50 ms and 5 >100 ms |
+| Paired-Fox resources and memory | PASS against initial budgets — preview resources 2 throughout; post-warmup peak growth: working set +18.9 MiB, private memory +17.4 MiB, managed heap +7.9 MiB |
+| Self-contained Release publish | PASS — `dotnet publish samples/CharacterStudio/CharacterStudio.csproj --configuration Release --runtime win-x64 --self-contained true --output <temp package> -p:UseAppHost=true -p:PublishSingleFile=false -p:PublishTrimmed=false --nologo`; 352 files, 128.45 MiB total, including 5 asset files (0.2 MiB) and bundled `coreclr.dll`/`hostfxr.dll` |
+| Relocated launch | PASS — ran `CharacterStudio.exe` from `%TEMP%` with the package outside the checkout, restricted `PATH` to Windows system directories (no `dotnet` command available), and saved a 1280x720 editor screenshot; process exit code 0 |
+| Separate SDK-free machine | NOT TESTED — the package was exercised on the named reference PC; restricted `PATH` is not a separate clean-machine test |
+
+The reference PC was `DATTAPRASAD`, Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics,
+1280x720. Frame intervals are wall-clock Update-to-Update measurements including render
+and presentation pacing, not GPU-only timings. The session report and full samples are
+`%TEMP%\Ember\CharacterStudio\ReferenceSessions\reference-session-bde639fdaa85436d9ad78f8a23400cea.md`
+and the matching `.json`. The relocated package is
+`%TEMP%\Ember\CharacterStudio\RelocationChecks\character-studio-win-x64`; the successful
+capture is `relocated-sdk-path-capture.png` in its parent directory. Package size includes
+the self-contained .NET runtime and native dependencies.

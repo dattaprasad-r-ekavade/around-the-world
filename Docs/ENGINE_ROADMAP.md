@@ -44,9 +44,10 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-All milestones after M0.2 remain **Not started** against their new acceptance criteria;
+M0.1, M0.2, and M0.3 have passed; M0.4 is **In progress**; later tasks remain **Not started**
+against their new acceptance criteria;
 existing components are reusable foundations, not a reason to repeat their implementation.
-M0.1 and M0.2 have passed their recorded acceptance checks. Documentation reset is complete.
+Documentation reset is complete.
 
 Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
 or exact UI steps, fixture, configuration, hardware where relevant, result, and artifact
@@ -62,8 +63,23 @@ Dependency: none. Prioritize this before adding features.
 | --- | --- | --- | --- |
 | M0.1 | Repair soak verdicts and diagnostics. | Record actual errors including committed-travel cleanup failures; validate transition count, timeouts, latency, resource trends, and memory separately. Failures produce nonzero exit status. Inject a cleanup error, resource growth, incomplete run, and 1-transition case; each is handled correctly. Export full raw samples and run metadata. | **Passed** |
 | M0.2 | Run live lifecycle coverage. | At least 50 transitions spanning two interiors and exterior boundaries, plus repeated scene reload and play/stop; compare like-for-like resource counts after warmup. Exercise delayed/failed loads and retry, save/restart, and unique identities. No unexplained growth or swallowed errors. Keep this separate from a longer timed soak. | **Passed** |
-| M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | Not started |
-| M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add Windows build/CPU-test CI and a documented graphics/manual gate; keep RPG checks separate. | Not started |
+| M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | **Passed** |
+| M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add Windows build/CPU-test CI and a documented graphics/manual gate; keep RPG checks separate. | **In progress** |
+
+M0.3 reference budgets apply only to CharacterStudio's paired-Fox scene on the named
+reference PC (Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, 1280x720). They are
+initial guardrails derived from the recorded run, not guarantees for other hardware or content.
+
+| Metric | Initial budget | Recorded result |
+| --- | ---: | ---: |
+| Frame interval p95 | <= 50 ms | 46.47 ms |
+| Frame interval p99 | <= 50 ms | 47.12 ms |
+| Maximum frame interval | <= 1,000 ms | 743.99 ms |
+| Owned preview graphics resources after warmup | exactly 2; no growth | 2; no growth |
+| Post-warmup working-set peak growth | <= 30 MiB | 18.9 MiB |
+| Post-warmup private-memory peak growth | <= 30 MiB | 17.4 MiB |
+| Post-warmup managed-heap peak growth | <= 15 MiB | 7.9 MiB |
+| Self-contained win-x64 package | <= 135 MiB | 128.45 MiB |
 
 Gate: corrected machine-readable evidence supports the small-scene baseline. Regional
 expansion remains unapproved. A longer soak establishes bounded behavior for its run,
@@ -144,7 +160,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue with the earliest not-Passed task: M0.3. Split large tasks into independently verifiable changes before coding.
+2. Continue with the earliest not-Passed task: M0.4. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.
