@@ -1,0 +1,11 @@
+<Project>
+  <!-- MonoGame WindowsDX depends on its original .NET Core 2.1 host resolver. It is not an
+       application runtime dependency and placing it beside a .NET 9 apphost makes that apphost
+       load the obsolete hostfxr instead of the installed .NET host. -->
+  <Target Name="RemoveLegacyMonoGameHostFxr" AfterTargets="ResolvePackageAssets">
+    <ItemGroup>
+      <NativeCopyLocalItems Remove="@(NativeCopyLocalItems)"
+                            Condition="'%(NativeCopyLocalItems.NuGetPackageId)' == 'runtime.win-x64.Microsoft.NETCore.DotNetHostResolver'" />
+    </ItemGroup>
+  </Target>
+</Project>

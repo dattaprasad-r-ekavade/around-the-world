@@ -1643,3 +1643,50 @@ and the matching `.json`. The relocated package is
 `%TEMP%\Ember\CharacterStudio\RelocationChecks\character-studio-win-x64`; the successful
 capture is `relocated-sdk-path-capture.png` in its parent directory. Package size includes
 the self-contained .NET runtime and native dependencies.
+
+## Active roadmap — M0.4 persistence audit and repeatable validation — 27 September 2026
+
+- Status: **Passed**. Implementation commits: `4784129` and the follow-up apphost fix recorded
+  with this entry.
+- Added `Ember.IO.AtomicFile` for engine-owned single-file saves. It writes a unique sibling
+  temporary file, flushes it, atomically replaces or creates the destination, and removes the
+  temporary file on failure. Migrated scene, sequence, project, world, path, placement-template,
+  and sequence-export-manifest writes to it. Two related sidecar files still need a separate
+  multi-file protocol.
+- World restore now validates staged identities, changes, and runtime objects before publishing
+  them into live stores. Travel-transaction disposal requests cancellation, waits for the worker,
+  and disposes late prepared objects on the owner thread. This synchronous wait depends on worker
+  code honoring cancellation.
+- Added malformed-schema tests for unknown JSON members and failure-injection tests for partial
+  writes, destination preservation, temporary-file cleanup, restore atomicity, and cancellation
+  disposal. The RPG content-pack parser rejects unknown members; RPG save and sidecar behavior
+  remains a separate check.
+- Added the Windows 2022 GitHub Actions build/CPU-test workflow and the documented
+  [manual graphics gate](MANUAL_GRAPHICS_GATE.md). Fixed a launch failure where MonoGame's old
+  .NET Core 2.1 host resolver was copied next to the .NET 9 framework-dependent apphost.
+  `Directory.Build.targets` now filters only that obsolete copy-local runtime asset; the
+  self-contained package still carries its own .NET 9 host runtime.
+
+### M0.4 verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --configuration Release --no-restore --nologo` | PASS — 277 passed, 0 failed, 0 skipped |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| Framework-dependent CharacterStudio Release apphost | PASS — launched directly after clean build and captured the 1280x720 editor screenshot; no app-local legacy `hostfxr.dll` |
+| Post-fix self-contained win-x64 publish | PASS — 352 files, 134,693,953 bytes (128.45 MiB), with bundled `hostfxr.dll` |
+| Relocated self-contained launch | PASS — launched from `%TEMP%` with `PATH` restricted to Windows system directories, captured a 1280x720 editor screenshot, exit code 0 |
+| GitHub Actions remote run | PENDING — workflow is configured on push/PR; verify the run after pushing these commits |
+| Interactive manual gate | NOT RUN — resize/restore, save/reopen, and play/stop remain to be exercised manually |
+
+The post-fix package and screenshot are under
+`%TEMP%\Ember\CharacterStudio\RelocationChecks\m04-post-hostfxr-win-x64` and its parent
+directory. Restricted `PATH` on this PC does not establish behavior on a separate SDK-free
+machine. The generic editor screenshot does not validate RPG gameplay or RPG multi-file saves.
+
+## Next roadmap task — M1.1 project and asset workflow
+
+M1.1 is **In progress**. The acceptance gate is project create/open and recents, asset browsing,
+static and animated GLB import, project relocation/reopen, and invalid reimport preserving the
+previous valid asset with a useful error. The next step is to audit the existing CharacterStudio
+project and asset paths against that gate, then close the highest-impact gap with focused evidence.

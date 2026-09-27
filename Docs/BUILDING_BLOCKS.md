@@ -878,3 +878,17 @@ with the `BasicEffect` fallback, `UiCanvas`, `InputRouter`, and `--screenshot`.
 
 Keep it in the solution. It is the only thing that can tell you a change to the engine has
 broken a game's ability to compile against it, and it is louder than a document going stale.
+
+## Persistence
+
+### `AtomicFile`
+
+`Ember.IO.AtomicFile.Write(path, write, overwrite: true)` writes through a unique sibling
+temporary file, flushes the bytes to disk, and then moves or atomically replaces the destination.
+If `write` or replacement fails, the existing destination stays intact and the temporary file is
+removed. Pass `overwrite: false` for outputs that must not replace an existing file. The callback
+owns serialization only; leave stream lifetime and flushing to `AtomicFile`.
+
+Use this for engine-owned save documents instead of adding another temporary-file/replace block.
+It cannot make two separate files transactional: callers saving related sidecars need a journal,
+manifest indirection, or another explicit multi-file protocol.
