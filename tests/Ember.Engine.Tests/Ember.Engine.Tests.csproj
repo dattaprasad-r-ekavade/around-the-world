@@ -35,4 +35,9 @@
              CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\..\samples\RpgSlice\RpgSliceTransitionSoak.cs"
+             Link="RpgSliceTransitionSoak.cs" />
+  </ItemGroup>
+
 </Project>

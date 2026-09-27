@@ -31,6 +31,7 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _transitionSoakRequested;
     private readonly int _transitionSoakTarget;
     private RpgSliceTransitionSoak? _transitionSoak;
+    private bool _transitionSoakReportWritten;
     private Stopwatch? _doorTravelTimer;
     private float _transitionSoakSeconds;
     private int _soakDoorCooldownFrames;
@@ -310,7 +311,31 @@ public sealed class RpgSliceGame : EngineHost
                     }
                 }
                 if (_travel is not null)
-                    AdvanceDoorTravel();
+                {
+                    if (_transitionSoakRequested)
+                    {
+                        try
+                        {
+                            AdvanceDoorTravel();
+                        }
+                        catch (Exception error)
+                        {
+                            _transitionSoak?.RecordError("transition execution", error);
+                            FinishTransitionSoak();
+                            base.Update(gameTime);
+                            return;
+                        }
+                    }
+                    else
+                    {
+                        AdvanceDoorTravel();
+                    }
+                }
+                if (_smokeRan)
+                {
+                    base.Update(gameTime);
+                    return;
+                }
                 if (_soakDoorCooldownFrames > 0)
                     _soakDoorCooldownFrames--;
                 var keyboard = (_travelSmokeRequested || _transitionSoakRequested)
@@ -364,7 +389,11 @@ public sealed class RpgSliceGame : EngineHost
                 }
                 else if (_transitionSoakRequested && _transitionSoakSeconds > 300f)
                 {
-                    throw new TimeoutException($"Transition soak did not complete {_transitionSoakTarget} transitions within 300 seconds (completed={_transitionSoak?.CompletedTransitions ?? 0}, elapsed={_transitionSoakSeconds:F1}s).");
+                    var timeout = $"Transition soak did not complete {_transitionSoakTarget} transitions within 300 seconds (completed={_transitionSoak?.CompletedTransitions ?? 0}, elapsed={_transitionSoakSeconds:F1}s).";
+                    _transitionSoak?.RecordTimeout(timeout);
+                    FinishTransitionSoak();
+                    base.Update(gameTime);
+                    return;
                 }
             }
             else if (_streamingSmoke.Tick())
@@ -617,7 +646,13 @@ public sealed class RpgSliceGame : EngineHost
         _travel = null;
         _travelDestination = null;
         Console.WriteLine($"RpgSlice: door travel failed: {failure}");
-        if (_travelSmokeRequested || _transitionSoakRequested)
+        if (_transitionSoakRequested)
+        {
+            _transitionSoak?.RecordError("door travel", failure);
+            FinishTransitionSoak();
+            return;
+        }
+        if (_travelSmokeRequested)
             throw new InvalidOperationException("Door travel failed during smoke or soak.", failure);
     }
 
@@ -655,7 +690,10 @@ public sealed class RpgSliceGame : EngineHost
         }
 
         if (travel.Failure is { } cleanupFailure)
+        {
+            _transitionSoak?.RecordError("committed-travel cleanup", cleanupFailure);
             Console.WriteLine($"RpgSlice: travel committed, but source-cell cleanup reported: {cleanupFailure}");
+        }
 
         _currentCellId = destinationCellId;
         _travel = null;
@@ -685,22 +723,7 @@ public sealed class RpgSliceGame : EngineHost
 
             if (_transitionSoak.IsComplete)
             {
-                var report = _transitionSoak.BuildReport(GraphicsDevice.Adapter.Description,
-                    GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height);
-                var tempPath = Path.Combine(Path.GetTempPath(), "ember-rpgslice-transition-soak.txt");
-                File.WriteAllText(tempPath, report, Encoding.UTF8);
-
-                var repoDocs = Path.GetFullPath(Path.Combine(AppContext.BaseDirectory, "..", "..", "..", "..", "..", "Docs", "TRANSITION_SOAK.md"));
-                if (Directory.Exists(Path.GetDirectoryName(repoDocs)))
-                {
-                    File.WriteAllText(repoDocs, report, Encoding.UTF8);
-                    Console.WriteLine($"RpgSlice: transition soak report written to {repoDocs}");
-                }
-
-                Console.WriteLine(report);
-                Console.WriteLine($"RpgSlice: transition soak report saved to {tempPath}");
-                _smokeRan = true;
-                Exit();
+                FinishTransitionSoak();
                 return;
             }
         }
@@ -724,6 +747,47 @@ public sealed class RpgSliceGame : EngineHost
             _smokeRan = true;
             Exit();
         }
+    }
+
+    private void FinishTransitionSoak()
+    {
+        if (_transitionSoak is null || _transitionSoakReportWritten) return;
+        _transitionSoakReportWritten = true;
+
+        string? markdownPath = null;
+        string? jsonPath = null;
+        try
+        {
+            var reportDirectory = Path.Combine(Path.GetTempPath(), "Ember", "RpgSlice", "TransitionSoaks");
+            Directory.CreateDirectory(reportDirectory);
+            var fileStem = $"transition-soak-{_transitionSoak.RunId:N}";
+            markdownPath = Path.Combine(reportDirectory, fileStem + ".md");
+            jsonPath = Path.Combine(reportDirectory, fileStem + ".json");
+
+            var adapter = GraphicsDevice.Adapter.Description;
+            var width = GraphicsDevice.Viewport.Width;
+            var height = GraphicsDevice.Viewport.Height;
+            File.WriteAllText(jsonPath, _transitionSoak.BuildRawData(adapter, width, height), Encoding.UTF8);
+            File.WriteAllText(markdownPath, _transitionSoak.BuildReport(adapter, width, height), Encoding.UTF8);
+        }
+        catch (Exception error)
+        {
+            _transitionSoak.RecordError("report export", error);
+            Console.Error.WriteLine($"RpgSlice: could not export the transition soak report: {error}");
+        }
+
+        var passed = _transitionSoak.Passed;
+        Environment.ExitCode = _transitionSoak.ExitCode;
+        _smokeRan = true;
+        Console.WriteLine(_transitionSoak.BuildReport(GraphicsDevice.Adapter.Description,
+            GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
+        if (markdownPath is not null && jsonPath is not null)
+        {
+            Console.WriteLine($"RpgSlice: transition soak report saved to {markdownPath}");
+            Console.WriteLine($"RpgSlice: full transition soak samples and run metadata saved to {jsonPath}");
+        }
+        Console.WriteLine($"RpgSlice: transition soak verdict {(passed ? "PASS" : "FAIL")}; process exit code {Environment.ExitCode}.");
+        Exit();
     }
 
     private void PlacePlayerAtSpawn(WorldSpawnLocation spawn)
