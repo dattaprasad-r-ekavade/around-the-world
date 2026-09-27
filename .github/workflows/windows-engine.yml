@@ -17,8 +17,36 @@ jobs:
         with:
           dotnet-version: 9.0.x
       - name: Restore solution
+        id: restore
         run: dotnet restore Ember.sln --nologo
       - name: Run CPU test suite
-        run: dotnet test Ember.sln --configuration Release --no-restore --nologo
+        shell: pwsh
+        run: |
+          $resultsDirectory = Join-Path $env:RUNNER_TEMP 'EmberEngineTestResults'
+          New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
+          dotnet test Ember.sln --configuration Release --no-restore --nologo `
+            --logger 'console;verbosity=normal' `
+            --logger 'trx;LogFileName=cpu-tests.trx' `
+            --results-directory $resultsDirectory
+          $testExitCode = $LASTEXITCODE
+          if ($testExitCode -ne 0) {
+            $trxFiles = Get-ChildItem -LiteralPath $resultsDirectory -Filter '*.trx' -File -Recurse
+            if ($trxFiles.Count -eq 0) {
+              Write-Output '::error title=CPU tests failed::No TRX result file was produced.'
+            }
+            foreach ($trxFile in $trxFiles) {
+              [xml]$trx = Get-Content -LiteralPath $trxFile.FullName -Raw
+              foreach ($result in $trx.GetElementsByTagName('UnitTestResult')) {
+                if ($result.GetAttribute('outcome') -ne 'Failed') { continue }
+                $name = $result.GetAttribute('testName')
+                $errorInfo = $result.SelectSingleNode("*[local-name()='Output']/*[local-name()='ErrorInfo']")
+                $details = if ($errorInfo) { $errorInfo.InnerText } else { 'No failure details were written to the TRX file.' }
+                $message = "$name`: $details" -replace '%', '%25' -replace "`r", '%0D' -replace "`n", '%0A'
+                Write-Output "::error title=CPU test failed::$message"
+              }
+            }
+            exit $testExitCode
+          }
       - name: Build solution
+        if: always() && steps.restore.outcome == 'success'
         run: dotnet build Ember.sln --configuration Release --no-restore --nologo

@@ -66,6 +66,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Func<Guid, CellPathGraph, CellPathRoute, string> _startPathFollow;
     private readonly Func<Guid, string?> _getPathFollowStatus;
     private readonly Action<Guid> _stopPathFollow;
+    private readonly Func<string, string> _createProject;
+    private readonly Func<string, string> _openProject;
+    private readonly Func<string, string> _importGlb;
+    private readonly Func<string?> _getCurrentProjectPath;
+    private readonly Func<IReadOnlyList<string>> _getRecentProjectPaths;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _textEntry = string.Empty;
@@ -147,7 +152,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Action<string, string, Guid> worldCellRenamed, Func<string?> getCurrentScenePath,
         RecoveryCaptureAction captureRecovery, RecoveryApplyAction applyRecovery,
         Func<Guid, CellPathGraph, CellPathRoute, string> startPathFollow,
-        Func<Guid, string?> getPathFollowStatus, Action<Guid> stopPathFollow)
+        Func<Guid, string?> getPathFollowStatus, Action<Guid> stopPathFollow,
+        Func<string, string> createProject, Func<string, string> openProject,
+        Func<string, string> importGlb, Func<string?> getCurrentProjectPath,
+        Func<IReadOnlyList<string>> getRecentProjectPaths)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -181,6 +189,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _startPathFollow = startPathFollow ?? throw new ArgumentNullException(nameof(startPathFollow));
         _getPathFollowStatus = getPathFollowStatus ?? throw new ArgumentNullException(nameof(getPathFollowStatus));
         _stopPathFollow = stopPathFollow ?? throw new ArgumentNullException(nameof(stopPathFollow));
+        _createProject = createProject ?? throw new ArgumentNullException(nameof(createProject));
+        _openProject = openProject ?? throw new ArgumentNullException(nameof(openProject));
+        _importGlb = importGlb ?? throw new ArgumentNullException(nameof(importGlb));
+        _getCurrentProjectPath = getCurrentProjectPath ?? throw new ArgumentNullException(nameof(getCurrentProjectPath));
+        _getRecentProjectPaths = getRecentProjectPaths ?? throw new ArgumentNullException(nameof(getRecentProjectPaths));
         LoadRpgPlacementContent();
         _context = ImGui.CreateContext();
         try
@@ -208,6 +221,13 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     public void CompletePendingEdit(SceneGraph scene) => CommitActiveTransformEdit(scene);
 
+    public void SelectObject(Guid objectId, Guid? assetId = null)
+    {
+        _selectedObjectId = objectId;
+        if (assetId is not null) _selectedAssetId = assetId;
+        _initialSelectionSet = true;
+    }
+
     public void ResetSceneSelection()
     {
         _selectedObjectId = null;
@@ -215,6 +235,30 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _activeTransformObjectId = null;
         _activeTransformStart = null;
         _initialSelectionSet = false;
+    }
+
+    public void OnProjectOpened(string projectRoot, string? worldManifestPath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        _worldManifest = null;
+        _worldManifestPath = worldManifestPath is null
+            ? Path.Combine(projectRoot, WorldManifest.DefaultFileName)
+            : Path.GetFullPath(worldManifestPath);
+        _worldStatus = "Open or create a world manifest.";
+        if (worldManifestPath is not null) LoadWorldManifest();
+        _travelSceneCache.Clear();
+        _doorLinkStatuses.Clear();
+        _recoveryStaging = null;
+        _recoveryStatus = "No recovery snapshot reviewed.";
+        _recoveryReport = string.Empty;
+        _recoveryCanApply = false;
+        _recoveryAutosaveElapsedSeconds = 0f;
+        _selectedWorldCellId = null;
+        _selectedTravelCellId = null;
+        _selectedTravelSpawnId = null;
+        _rpgContentPath = Path.Combine(projectRoot, "RpgContent.json");
+        LoadRpgPlacementContent();
+        ResetSceneSelection();
     }
 
     public void AddTextInput(char character)
@@ -247,6 +291,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         MaybeAutosaveAuthoredProject(scene, elapsedSeconds);
 
         ImGui.NewFrame();
+        DrawProjectWorkspace();
         DrawPanel(scene);
         DrawSequencePanel();
         DrawWorldCellPanel(scene);
@@ -902,8 +947,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         else if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
             _selectedObjectId = null;
 
-        ImGui.SetNextWindowPos(new NumericsVector2(16f, 116f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(370f, 570f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowPos(new NumericsVector2(16f, 224f), ImGuiCond.FirstUseEver);
+        ImGui.SetNextWindowSize(new NumericsVector2(370f, 480f), ImGuiCond.FirstUseEver);
         if (!ImGui.Begin("Character Studio", ImGuiWindowFlags.NoCollapse))
         {
             ImGui.End();

@@ -1,13 +1,132 @@
 using System;
 using System.IO;
+using System.Linq;
 using System.Text.Json.Nodes;
 using Ember.Project;
+using Ember.Scene;
+using SharpGLTF.Schema2;
 using Xunit;
 
 namespace Ember.Engine.Tests;
 
 public sealed class EngineProjectFileTests
 {
+    [Fact]
+    public void CreateEmptyProjectPublishesCompleteProjectAndStartupScene()
+    {
+        var parent = NewDirectory();
+        var destination = Path.Combine(parent, "MyGame");
+        try
+        {
+            var project = EngineProjectWorkspace.CreateEmpty(destination);
+
+            Assert.Equal(Path.Combine(destination, EngineProjectFile.DefaultFileName), project.FilePath);
+            Assert.Equal("Scenes/Main.json", project.StartupScenePath);
+            Assert.Empty(SceneFile.Load(project.ResolveStartupScenePath()).Objects);
+            Assert.True(Directory.Exists(Path.Combine(destination, "Assets")));
+            Assert.DoesNotContain(Directory.EnumerateFileSystemEntries(parent),
+                path => Path.GetFileName(path).Contains(".creating-", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (Directory.Exists(parent)) Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void CreateEmptyProjectDoesNotModifyAnExistingDestination()
+    {
+        var parent = NewDirectory();
+        var destination = Path.Combine(parent, "ExistingGame");
+        Directory.CreateDirectory(destination);
+        var sentinel = Path.Combine(destination, "keep.txt");
+        File.WriteAllText(sentinel, "keep");
+        try
+        {
+            Assert.Throws<IOException>(() => EngineProjectWorkspace.CreateEmpty(destination));
+            Assert.Equal("keep", File.ReadAllText(sentinel));
+            Assert.Single(Directory.EnumerateFileSystemEntries(parent));
+        }
+        finally
+        {
+            if (Directory.Exists(parent)) Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void RecentProjectsMoveOpenedPathToFrontAndKeepAtMostTwelve()
+    {
+        var root = NewDirectory();
+        var store = Path.Combine(root, "settings", "recent.json");
+        try
+        {
+            for (var index = 0; index < 14; index++)
+                EngineProjectWorkspace.RecordRecent(store, Path.Combine(root, $"Game{index}", EngineProjectFile.DefaultFileName));
+            var repeated = Path.Combine(root, "Game3", EngineProjectFile.DefaultFileName);
+            EngineProjectWorkspace.RecordRecent(store, repeated);
+
+            var recent = EngineProjectWorkspace.LoadRecent(store);
+
+            Assert.Equal(12, recent.Count);
+            Assert.Equal(Path.GetFullPath(repeated), recent[0]);
+            Assert.Equal(1, recent.Count(path => string.Equals(path, Path.GetFullPath(repeated), StringComparison.OrdinalIgnoreCase)));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("TextureCoordinateTest.glb", false)]
+    [InlineData("Fox.glb", true)]
+    public void ImportGlbCopiesStaticAndAnimatedAssetsIntoProject(string assetFile, bool animated)
+    {
+        var parent = NewDirectory();
+        try
+        {
+            var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(parent, "Game"));
+            var source = Path.Combine(AppContext.BaseDirectory, "Assets", assetFile);
+            string importedPath;
+            using (var imported = EngineProjectWorkspace.ImportGlb(project, source))
+            {
+                importedPath = project.ResolveContentPath(imported.Reference.SourcePath);
+                var model = ModelRoot.Load(importedPath);
+                Assert.Equal(animated, model.LogicalNodes.Any(node => node.Skin is not null));
+                Assert.True(animated ? model.LogicalAnimations.Count > 0 : model.LogicalAnimations.Count == 0);
+                Assert.StartsWith("Assets/", imported.Reference.SourcePath, StringComparison.Ordinal);
+                imported.Commit();
+            }
+
+            Assert.True(File.Exists(importedPath));
+        }
+        finally
+        {
+            if (Directory.Exists(parent)) Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void UncommittedGlbImportIsRemovedOnDispose()
+    {
+        var parent = NewDirectory();
+        try
+        {
+            var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(parent, "Game"));
+            var source = Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
+            string importedPath;
+            using (var imported = EngineProjectWorkspace.ImportGlb(project, source))
+                importedPath = project.ResolveContentPath(imported.Reference.SourcePath);
+
+            Assert.False(File.Exists(importedPath));
+            Assert.Empty(Directory.EnumerateDirectories(project.ResolveContentPath("Assets")));
+        }
+        finally
+        {
+            if (Directory.Exists(parent)) Directory.Delete(parent, recursive: true);
+        }
+    }
+
     [Fact]
     public void ProjectResolvesItsStartupSceneFromItsOwnDirectory()
     {

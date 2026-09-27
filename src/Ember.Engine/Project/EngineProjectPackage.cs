@@ -184,7 +184,7 @@ public static class EngineProjectPackage
         }
     }
 
-    private static IReadOnlyList<string> ReadExternalUris(string assetPath, GltfAssetReference asset, Guid objectId)
+    internal static IReadOnlyList<string> ReadExternalUris(string assetPath, GltfAssetReference asset, Guid objectId)
     {
         try
         {

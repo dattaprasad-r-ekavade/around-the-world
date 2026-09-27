@@ -66,7 +66,7 @@ public sealed class CharacterStudioGame : EngineHost
     private static readonly Guid CloseCameraTrackId = Guid.Parse("6b9c2e11-954d-4a55-9ad2-7ddfd02c0002");
 
     private SceneGraph _sceneData;
-    private readonly EngineProjectFile? _project;
+    private EngineProjectFile? _project;
     private string _sceneAssetRoot = AppContext.BaseDirectory;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private SceneCommandHistory _editorHistory = new();
@@ -80,6 +80,9 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly string? _openSequencePath;
     private readonly string? _saveSequencePath;
     private readonly string? _startupSequenceExportDirectory;
+    private static string RecentProjectsStorePath => Path.Combine(
+        Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+        "Ember", "CharacterStudio", "recent-projects.json");
     private readonly float? _startupSequenceExportStartTime;
     private readonly float? _startupSequenceExportEndTime;
     private readonly int _startupSequenceExportFrameRate;
@@ -159,6 +162,7 @@ public sealed class CharacterStudioGame : EngineHost
         if (projectPath is not null)
         {
             _project = EngineProjectFile.Load(projectPath);
+            RecordRecentProject(_project.FilePath);
             openPath = _project.ResolveStartupScenePath();
         }
         _openSequencePath = ParseOption(args, "--open-sequence");
@@ -275,7 +279,10 @@ public sealed class CharacterStudioGame : EngineHost
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
                 SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
                 CaptureAuthoringRecovery, ApplyAuthoringRecovery,
-                StartPathFollow, GetPathFollowStatus, StopPathFollow);
+                StartPathFollow, GetPathFollowStatus, StopPathFollow,
+                CreateProjectForEditor, path => OpenProjectForEditor(path), ImportGlbForEditor,
+                () => _project?.FilePath,
+                LoadRecentProjectPaths);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -592,9 +599,11 @@ public sealed class CharacterStudioGame : EngineHost
         });
     }
 
-    private Dictionary<Guid, string> ResolveSceneAssets(SceneGraph? scene = null, string? contentRoot = null)
+    private Dictionary<Guid, string> ResolveSceneAssets(SceneGraph? scene = null, string? contentRoot = null,
+        EngineProjectFile? projectOverride = null)
     {
         scene ??= CurrentScene;
+        var project = projectOverride ?? _project;
         var result = new Dictionary<Guid, string>();
         var references = new Dictionary<Guid, (GltfAssetReference Reference, Guid ObjectId)>();
         foreach (var item in scene.Objects)
@@ -613,8 +622,8 @@ public sealed class CharacterStudioGame : EngineHost
         foreach (var (assetId, entry) in references)
         {
             var (reference, objectId) = entry;
-            var resolvedPath = _project is not null
-                ? _project.ResolveContentPath(reference.SourcePath)
+            var resolvedPath = project is not null
+                ? project.ResolveContentPath(reference.SourcePath)
                 : Path.GetFullPath(reference.SourcePath, contentRoot ?? _sceneAssetRoot);
             if (!File.Exists(resolvedPath))
                 throw new FileNotFoundException(
@@ -1832,6 +1841,136 @@ public sealed class CharacterStudioGame : EngineHost
         _sceneSavePath = fullPath;
         _reimportStatus = $"Scene saved to {Path.GetFileName(fullPath)}.";
         Console.WriteLine($"Saved scene to {fullPath}");
+    }
+
+    private string CreateProjectForEditor(string projectDirectory)
+    {
+        var project = EngineProjectWorkspace.CreateEmpty(projectDirectory);
+        return OpenProjectForEditor(project.FilePath, created: true);
+    }
+
+    private string OpenProjectForEditor(string projectPath, bool created = false)
+    {
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before opening another project.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before opening another project.");
+        if (string.IsNullOrWhiteSpace(projectPath))
+            throw new ArgumentException("A project file or project directory is required.", nameof(projectPath));
+
+        var fullProjectPath = Directory.Exists(projectPath)
+            ? Path.Combine(Path.GetFullPath(projectPath), EngineProjectFile.DefaultFileName)
+            : Path.GetFullPath(projectPath);
+        var project = EngineProjectFile.Load(fullProjectPath);
+        var scenePath = project.ResolveStartupScenePath();
+        var scene = SceneFile.Load(scenePath);
+        PreviewResources? candidatePreview = null;
+        try
+        {
+            var loadedPreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(scene, project.RootDirectory, project), scene);
+            candidatePreview = loadedPreview;
+
+            _editorUi?.CompletePendingEdit(_sceneData);
+            CaptureCharacterSettings();
+            if (_sceneSavePath is not null && !SaveScene())
+                throw new IOException($"The current scene could not be saved; project switch cancelled. {_reimportStatus}");
+            if (_preview is null)
+                throw new InvalidOperationException("The editor preview is not ready to switch projects.");
+
+            var cleanupError = _preview.Reload(() => loadedPreview);
+            candidatePreview = null;
+            _project = project;
+            _sceneAssetRoot = project.RootDirectory;
+            _sceneData = scene;
+            _sceneSavePath = scenePath;
+            _blockedSaveReason = null;
+            _editorHistory = new SceneCommandHistory();
+            _editorUi?.SetHistory(_editorHistory);
+            _editorUi?.OnProjectOpened(project.RootDirectory, project.WorldManifestPath is null
+                ? null
+                : project.ResolveWorldManifestPath());
+            BuildSequencePreview();
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            RecordRecentProject(project.FilePath);
+
+            var verb = created ? "Created and opened" : "Opened";
+            var message = $"{verb} project '{Path.GetFileName(project.RootDirectory)}'.";
+            if (cleanupError is not null) message += $" Previous preview cleanup reported: {cleanupError.Message}";
+            return message;
+        }
+        finally
+        {
+            candidatePreview?.Dispose();
+        }
+    }
+
+    private static IReadOnlyList<string> LoadRecentProjectPaths() =>
+        EngineProjectWorkspace.LoadRecent(RecentProjectsStorePath);
+
+    private void RecordRecentProject(string projectPath)
+    {
+        try
+        {
+            EngineProjectWorkspace.RecordRecent(RecentProjectsStorePath, projectPath);
+        }
+        catch (Exception exception)
+        {
+            _faults.Add($"Could not update recent projects: {exception.Message}");
+        }
+    }
+
+    private string ImportGlbForEditor(string sourcePath)
+    {
+        if (_project is null)
+            throw new InvalidOperationException("Create or open a project before importing a GLB asset.");
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before importing an asset.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before importing an asset.");
+        if (_preview is null)
+            throw new InvalidOperationException("The editor preview is not ready to import an asset.");
+
+        _editorUi?.CompletePendingEdit(_sceneData);
+        CaptureCharacterSettings();
+        using var imported = EngineProjectWorkspace.ImportGlb(_project, sourcePath);
+        var temporaryScenePath = Path.Combine(Path.GetTempPath(), "Ember", "CharacterStudio",
+            "ImportStaging", $"{Guid.NewGuid():N}.json");
+        PreviewResources? candidatePreview = null;
+        try
+        {
+            SceneFile.SaveAtomic(_sceneData, temporaryScenePath);
+            var candidateScene = SceneFile.Load(temporaryScenePath);
+            var existingInstances = candidateScene.Objects
+                .Where(item => item.GltfAsset?.AssetId == imported.Reference.AssetId).ToArray();
+            var positionX = existingInstances.Length == 0
+                ? 0f
+                : existingInstances.Max(item => item.Transform.Position.X) + 100f;
+            var item = SceneObjectFactory.CreateAssetInstance(candidateScene, imported.Reference,
+                new Vector3(positionX, 0f, 0f));
+            candidateScene.Add(item);
+
+            var loadedPreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(candidateScene, _project.RootDirectory, _project), candidateScene);
+            candidatePreview = loadedPreview;
+            _editorHistory.Execute(_sceneData, new CreateSceneObjectCommand(item));
+            var cleanupError = _preview.Reload(() => loadedPreview);
+            candidatePreview = null;
+            imported.Commit();
+            _preview.Current.RebuildCharacterInstances(_sceneData);
+            _editorUi?.SelectObject(item.Id, imported.Reference.AssetId);
+            BuildSequencePreview();
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+
+            var message = $"Imported {Path.GetFileName(sourcePath)} as {imported.Reference.SourcePath} and placed '{item.Name}'. Press S to save the scene.";
+            if (cleanupError is not null) message += $" Previous preview cleanup reported: {cleanupError.Message}";
+            return message;
+        }
+        finally
+        {
+            candidatePreview?.Dispose();
+            if (File.Exists(temporaryScenePath)) File.Delete(temporaryScenePath);
+        }
     }
 
     private string? OpenWorldCell(string scenePath, string worldRoot)

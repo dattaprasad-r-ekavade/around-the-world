@@ -1646,8 +1646,7 @@ the self-contained .NET runtime and native dependencies.
 
 ## Active roadmap — M0.4 persistence audit and repeatable validation — 27 September 2026
 
-- Status: **Passed**. Implementation commits: `4784129` and the follow-up apphost fix recorded
-  with this entry.
+- Status: **In progress**. Implementation commits: `4784129` and `36dd000`.
 - Added `Ember.IO.AtomicFile` for engine-owned single-file saves. It writes a unique sibling
   temporary file, flushes it, atomically replaces or creates the destination, and removes the
   temporary file on failure. Migrated scene, sequence, project, world, path, placement-template,
@@ -1676,7 +1675,7 @@ the self-contained .NET runtime and native dependencies.
 | Framework-dependent CharacterStudio Release apphost | PASS — launched directly after clean build and captured the 1280x720 editor screenshot; no app-local legacy `hostfxr.dll` |
 | Post-fix self-contained win-x64 publish | PASS — 352 files, 134,693,953 bytes (128.45 MiB), with bundled `hostfxr.dll` |
 | Relocated self-contained launch | PASS — launched from `%TEMP%` with `PATH` restricted to Windows system directories, captured a 1280x720 editor screenshot, exit code 0 |
-| GitHub Actions remote run | PENDING — workflow is configured on push/PR; verify the run after pushing these commits |
+| GitHub Actions remote run | FAIL — [run #1](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36336285409) passed restore, but the CPU test step exited 1; job logs require GitHub sign-in, so the workflow now emits failed test details as annotations for the next run |
 | Interactive manual gate | NOT RUN — resize/restore, save/reopen, and play/stop remain to be exercised manually |
 
 The post-fix package and screenshot are under
@@ -1684,9 +1683,38 @@ The post-fix package and screenshot are under
 directory. Restricted `PATH` on this PC does not establish behavior on a separate SDK-free
 machine. The generic editor screenshot does not validate RPG gameplay or RPG multi-file saves.
 
-## Next roadmap task — M1.1 project and asset workflow
+## Active roadmap — M1.1 project and asset workflow — 27 September 2026
 
-M1.1 is **In progress**. The acceptance gate is project create/open and recents, asset browsing,
-static and animated GLB import, project relocation/reopen, and invalid reimport preserving the
-previous valid asset with a useful error. The next step is to audit the existing CharacterStudio
-project and asset paths against that gate, then close the highest-impact gap with focused evidence.
+- Status: **In progress**. This first implementation slice adds a Project window with project
+  creation, opening by project file or folder, and a recent-project selector. Recent projects are
+  stored under `%LOCALAPPDATA%\Ember\CharacterStudio\recent-projects.json`, ordered newest first,
+  deduplicated, and capped at 12.
+- New projects are assembled in a sibling staging directory and published with a directory move.
+  They contain `ember.project.json`, an empty `Scenes/Main.json`, and an `Assets` folder. Existing
+  destinations are rejected without changing their contents.
+- The editor can import a `.glb` from a typed path into a unique project `Assets` folder. Local
+  external buffer/image dependencies are copied while preserving their relative layout. The
+  candidate scene and graphics preview are built before the new asset is committed to the scene;
+  a failed import removes its copied files and leaves the previous scene and preview active.
+  Imported models are added to the scene and appear in its asset list for additional placement.
+- Reimport continues to use the existing `R` action. `ReloadableAsset` builds a replacement
+  before swapping, so invalid GLB data leaves the last valid preview active and reports the error.
+
+### M1.1 verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --configuration Release --no-restore --nologo` | PASS — 283 passed, 0 failed, 0 skipped |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| Workspace CPU coverage | PASS — starter project creation/no-overwrite, recent ordering/deduplication/cap, static and animated GLB imports, and uncommitted import cleanup |
+| Relocated project graphics launch | PASS — opened a project after moving its folder outside the checkout; static `TextureCoordinateTest.glb` and animated `Fox.glb` loaded from project-relative paths; screenshot 1280x720; exit code 0 |
+| Project-window visual capture | PASS — controls render in CharacterStudio. Desktop automation did not register ImGui text/click actions, so create/open/import buttons were not exercised interactively |
+
+The graphics fixture and screenshot are under
+`%TEMP%\Ember\CharacterStudio\M11ProjectWorkflow-39786d2da1694cacbd16f61e6a8236e4`.
+The fixture was assembled for the relocated launch; create/import services were covered by CPU
+tests. M1.1 remains open until the button-driven editor workflow is exercised, including invalid
+reimport through the visible editor path. The Project window currently accepts typed paths rather
+than providing native file/folder pickers. M0.4's Windows test run failed remotely, so the next
+priority is to get actionable diagnostics and make that workflow green before advancing the M1.1
+gate.
