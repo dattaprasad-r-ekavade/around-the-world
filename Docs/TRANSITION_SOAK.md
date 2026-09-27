@@ -1,4 +1,6 @@
-﻿# RPG Slice — Transition Soak Report
+> Review qualification (27 September 2026): retained historical measurements, not an accepted reliability gate. The generator hardcodes zero errors and bases PASS only on working-set delta; resource trends and full cleanup are not validated. See PROJECT_REVIEW.md and roadmap M0.1. The latency below is transition latency, not frame time.
+
+# RPG Slice — Transition Soak Report
 
 Run date: 2026-09-26 20:50:17 UTC
 Host adapter: Intel(R) UHD Graphics (1280x720)

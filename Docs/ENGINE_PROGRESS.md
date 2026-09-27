@@ -1,3 +1,5 @@
+> Historical implementation log. As of 27 September 2026, Docs/ENGINE_ROADMAP.md is the sole active plan. Earlier completion percentages, expansion approvals and next-task instructions are superseded; see Docs/PROJECT_REVIEW.md.
+
 # Ember implementation progress
 
 ## Baseline — task 01
@@ -1513,3 +1515,53 @@ Limit: the courtyard GLB is linked into the RpgSlice build output. A `--world` p
 | `tools/publish-rpg-slice.ps1 -Validate` | PASS — self-contained win-x64 build outside repository passes settlement smoke (with `--perf`), persistence smoke (isolated save), travel smoke, and quest smoke |
 | RpgSlice `--settlement-benchmark --windowed --time-paused` | PASS — 10 laps, 20 cell crossings, 873,335 frames, 0 frames >100ms, 13 frames >50ms classified with phase attribution |
 
+
+
+## Roadmap reset and current review — 27 September 2026
+
+Replaced the RPG-first plan with the lightweight 3D engine/scene-generator roadmap.
+Preserved the previous roadmap and expansion decision under Docs/archive. Added
+PROJECT_REVIEW.md; corrected the active expansion status and qualified the old soak
+report. Updated README product direction and stale sequence-persistence wording.
+
+Build passed with zero warnings/errors. Full engine CPU tests: 254 passed, one activation
+queue test failed (expected 3 steps, actual 4); RPG save round-trip passed. No new live
+UI, graphics, soak or distribution proof is claimed. Existing user content was untouched.
+Next implementation task: M0.1; also investigate the observed queue test failure in M0.
+Targeted rerun of the failed activation-queue test passed (1/1). The full-suite failure
+remains recorded; intermittent behavior requires investigation, not a blanket green claim.
+
+## Active roadmap — M0.1 transition soak verdicts and diagnostics — 27 September 2026
+
+- Status: **Passed** against the M0.1 acceptance checks. Implementation commit: `6bf847e`.
+- Replaced hardcoded soak success claims with independent checks for exact transition count,
+  timeout, valid latency samples, per-destination resource growth, working-set growth,
+  managed-heap growth, and recorded errors. A committed travel with a cleanup error remains
+  a completed transition but fails the overall verdict. Inconclusive resource or memory
+  trends fail the run rather than being presented as stable.
+- Added complete JSON output containing run ID, UTC timestamps, adapter/resolution, host
+  details, thresholds, check outcomes, all transition samples, and errors. Markdown and JSON
+  artifacts use unique files under `%TEMP%\Ember\RpgSlice\TransitionSoaks`; the app no
+  longer overwrites `Docs/TRANSITION_SOAK.md` during a run. Failed verdicts set process exit
+  code 1; passing verdicts set exit code 0.
+- CPU failure-injection tests cover committed-travel cleanup errors, resource growth,
+  working-set growth, incomplete runs, timeouts, invalid latency, and a one-transition run.
+  The one-transition case writes its sample and reports resource/memory trend checks as
+  inconclusive without indexing an invalid warmup sample.
+
+### M0.1 verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo --no-restore` | PASS — 264 tests, 0 failed, 0 skipped |
+| `dotnet build Ember.sln --nologo --no-restore` | PASS — 0 warnings, 0 errors |
+| RpgSlice `--transition-soak --transitions 1 --windowed` | PASS for the failure-path check — 1/1 transition recorded; trend verdict was correctly inconclusive; process exit code 1 |
+| RpgSlice `--transition-soak --transitions 10 --windowed` | PASS — 10/10; transition latency avg 3.8 ms / p95 16.4 ms / max 16.4 ms; no per-cell resource growth; working-set peak growth +0.9 MiB; managed-heap peak growth +0.2 MiB; 0 errors; process exit code 0 |
+
+Live checks ran on Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, at 1280x720.
+The 10-transition artifacts are
+`%TEMP%\Ember\RpgSlice\TransitionSoaks\transition-soak-343d6e8f19694236a4cbf4e7f63f9214.md`
+and the same path with `.json`. The 1-transition artifacts use run ID
+`be8c6350aa2845008478c28aac0b472a`. Cleanup-error and growth injection were CPU tests;
+no live cleanup fault was injected. The 30 MiB memory-growth limit is provisional pending
+the reference-PC budget work in M0.3. M0.2's two-interior lifecycle run remains not started.

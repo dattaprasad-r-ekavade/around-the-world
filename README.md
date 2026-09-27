@@ -1,16 +1,19 @@
 # Ember
 
-A small first-person game engine for MonoGame — and the building blocks that came with it.
+A lightweight 3D engine and scene-authoring toolkit built on MonoGame, evolving toward one workflow for games, cutscenes, and generated scenes.
 
 **This repository is the engine.** Ember lives here and is edited here: `src/Ember.Engine` and
 `src/Ember.Scripting` are owned in this repo, not mirrored from anywhere. The default workflow
 is to open a file under `src/` and change it.
 
-It is not a general-purpose engine and does not want to be. It is the reusable half of a
-shipping game — Ratna Bay, a first-person roguelike — lifted out after the fact, with
-everything that named that game left behind. Every piece here has been run for real: the frame
-loop, the walk, the lighting, the procedural textures and the synthesised audio are the ones a
-finished game uses, not a demo's.
+Ember began as reusable systems extracted from Ratna Bay. Its current foundation includes
+3D scenes, GLB assets and animation, physics, editing, sequences, world streaming, and packaging.
+The objective is a compact local tool for creating or generating a scene, refining it visually,
+and delivering either a playable game or a cutscene. That complete workflow is still in progress.
+
+Start with the [active roadmap](Docs/ENGINE_ROADMAP.md) and
+[current project review](Docs/PROJECT_REVIEW.md). The RPG slice is an integration example;
+regional world expansion and full editor readiness are not established by its implementation checklist.
 
 Two things in this repo are games built on the engine, and they are consumers of it, never part
 of it:
@@ -32,8 +35,7 @@ static/skinned directional shadows with draw-count and static-culling diagnostic
 clone** runs the current scene copy; **E / Interact** plays a sample imported chime, and **P / Stop
 and restore** discards play-mode edits. Behavior assignments and character physics are not yet
 saved/wired into this editor. Scenes with a skinned character also show a sequence panel for
-play/pause, absolute-time scrubbing, camera cuts, and toggling the sequence preview. Sequence assets
-are currently generated in memory and are not saved yet. A general project asset browser and
+play/pause, absolute-time scrubbing, camera cuts, and toggling the sequence preview. Sequence assets are generated in memory by default and can be saved/reopened through companion JSON files; complete timeline authoring remains planned. A general project asset browser and
 broader gameplay tools remain on the roadmap. The supported GLB subset is documented in
 [`Docs/BUILDING_BLOCKS.md`](Docs/BUILDING_BLOCKS.md).
 
@@ -53,8 +55,7 @@ you can drive from the command line.
 ## Quick start
 
 Requires the .NET 9 SDK on Windows. (Windows-only today: the engine is built on MonoGame's
-WindowsDX backend and uses WinForms for the window. Moving to DesktopGL is a backend swap, not
-a rewrite of anything here.)
+WindowsDX backend and uses WinForms for the window. Other backends and platforms require separate implementation and validation.)
 
 ```powershell
 dotnet build Ember.sln
