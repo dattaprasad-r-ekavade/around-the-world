@@ -32,6 +32,14 @@ public sealed class RpgSliceGame : EngineHost
     private readonly int _transitionSoakTarget;
     private RpgSliceTransitionSoak? _transitionSoak;
     private bool _transitionSoakReportWritten;
+    private readonly bool _lifecycleCheckRequested;
+    private readonly int _lifecycleCheckTarget;
+    private RpgSliceLifecycleCheck? _lifecycleCheck;
+    private bool _lifecycleFailureArmed;
+    private bool _lifecycleFailureRecorded;
+    private bool _lifecycleReportWritten;
+    private Guid[] _lifecycleInteriorCellIds = Array.Empty<Guid>();
+    private int _lifecycleNextInteriorIndex;
     private Stopwatch? _doorTravelTimer;
     private float _transitionSoakSeconds;
     private int _soakDoorCooldownFrames;
@@ -112,13 +120,17 @@ public sealed class RpgSliceGame : EngineHost
         _transitionSoakRequested = HasArgument(args, "--transition-soak");
         _transitionSoakTarget = int.TryParse(ParseOption(args, "--transitions"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var targetTransitions)
             ? targetTransitions : RpgSliceTransitionSoak.DefaultTargetTransitions;
+        _lifecycleCheckRequested = HasArgument(args, "--lifecycle-check");
+        _lifecycleCheckTarget = int.TryParse(ParseOption(args, "--lifecycle-transitions"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var lifecycleTransitions)
+            ? lifecycleTransitions : RpgSliceLifecycleCheck.MinimumTransitions;
         _benchmarkRequested = HasArgument(args, "--benchmark");
         _timePaused = HasArgument(args, "--time-paused");
         if ((_smokeControls ? 1 : 0) + (_streamingSmokeRequested ? 1 : 0)
             + (_travelSmokeRequested ? 1 : 0) + (_persistenceSmokeRequested ? 1 : 0)
             + (_rpgIntegrationSmokeRequested ? 1 : 0) + (_questSmokeRequested ? 1 : 0)
             + (_settlementSmokeRequested ? 1 : 0) + (_benchmarkRequested ? 1 : 0)
-            + (_settlementBenchmarkRequested ? 1 : 0) + (_transitionSoakRequested ? 1 : 0) > 1)
+            + (_settlementBenchmarkRequested ? 1 : 0) + (_transitionSoakRequested ? 1 : 0)
+            + (_lifecycleCheckRequested ? 1 : 0) > 1)
             throw new ArgumentException("Choose one RpgSlice smoke or benchmark mode.", nameof(args));
         var configuredSavePath = ParseOption(args, "--save");
         var smokeRequested = _persistenceSmokeRequested || _rpgIntegrationSmokeRequested || _questSmokeRequested
@@ -131,7 +143,7 @@ public sealed class RpgSliceGame : EngineHost
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Ember", "RpgSlice", "world-save.json"));
         _rpgSavePath = _worldSavePath + ".rpg.json";
-        if (_benchmarkRequested || _settlementBenchmarkRequested || _transitionSoakRequested)
+        if (_benchmarkRequested || _settlementBenchmarkRequested || _transitionSoakRequested || _lifecycleCheckRequested)
             _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
         {
@@ -241,7 +253,7 @@ public sealed class RpgSliceGame : EngineHost
             _interiorOperation = _cellStreamer.LoadCell(initialCell.Id);
             _insideInterior = true;
         }
-        var characterSettings = _transitionSoakRequested
+        var characterSettings = _transitionSoakRequested || _lifecycleCheckRequested
             ? new PhysicsCharacterSettings { MoveSpeed = 15f }
             : null;
         _player = new PhysicsCharacterController(_physics, initialLocation.Position, characterSettings);
@@ -285,6 +297,19 @@ public sealed class RpgSliceGame : EngineHost
             _transitionSoak = new RpgSliceTransitionSoak(_transitionSoakTarget);
             Console.WriteLine($"RpgSlice: transition soak started; targeting {_transitionSoakTarget} interior/exterior transitions.");
         }
+        else if (_lifecycleCheckRequested)
+        {
+            _lifecycleInteriorCellIds = _world.Cells
+                .Where(cell => cell.Kind == WorldCellKind.Interior)
+                .OrderBy(cell => cell.ScenePath, StringComparer.OrdinalIgnoreCase)
+                .Select(cell => cell.Id)
+                .Take(2)
+                .ToArray();
+            if (_lifecycleInteriorCellIds.Length < 2)
+                throw new InvalidDataException("Live lifecycle check requires at least two interior cells in the world manifest.");
+            _lifecycleCheck = new RpgSliceLifecycleCheck(_lifecycleCheckTarget);
+            Console.WriteLine($"RpgSlice: live lifecycle check started; targeting {_lifecycleCheckTarget} transitions across {_lifecycleInteriorCellIds.Length} interiors and exterior boundaries.");
+        }
         else if (_persistenceSmokeRequested)
         {
             if (loadedSave is not null)
@@ -312,7 +337,7 @@ public sealed class RpgSliceGame : EngineHost
                 }
                 if (_travel is not null)
                 {
-                    if (_transitionSoakRequested)
+                    if (_transitionSoakRequested || _lifecycleCheckRequested)
                     {
                         try
                         {
@@ -320,8 +345,16 @@ public sealed class RpgSliceGame : EngineHost
                         }
                         catch (Exception error)
                         {
-                            _transitionSoak?.RecordError("transition execution", error);
-                            FinishTransitionSoak();
+                            if (_lifecycleCheckRequested)
+                            {
+                                _lifecycleCheck?.RecordUnexpectedError("transition execution", error);
+                                FinishLifecycleCheck();
+                            }
+                            else
+                            {
+                                _transitionSoak?.RecordError("transition execution", error);
+                                FinishTransitionSoak();
+                            }
                             base.Update(gameTime);
                             return;
                         }
@@ -338,14 +371,14 @@ public sealed class RpgSliceGame : EngineHost
                 }
                 if (_soakDoorCooldownFrames > 0)
                     _soakDoorCooldownFrames--;
-                var keyboard = (_travelSmokeRequested || _transitionSoakRequested)
+                var keyboard = (_travelSmokeRequested || _transitionSoakRequested || _lifecycleCheckRequested)
                     ? FindNearbyDoor() is not null && _soakDoorCooldownFrames == 0 ? new KeyboardState(Keys.E) : new KeyboardState()
                     : _rpgIntegrationSmokeRequested ? new KeyboardState()
                     : _questSmokeRequested
                         ? _questSmoke!.CreateKeyboard(_player.Pose.Position, _camera, _rpgGameplay!)
                         : Keyboard.GetState();
                 var dt = RealSeconds(gameTime);
-                UpdateMovement(keyboard, dt, IsActive || _questSmokeRequested || _transitionSoakRequested);
+                UpdateMovement(keyboard, dt, IsActive || _questSmokeRequested || _transitionSoakRequested || _lifecycleCheckRequested);
                 if (_questSmokeRequested)
                 {
                     _questSmokeSeconds += dt;
@@ -356,7 +389,7 @@ public sealed class RpgSliceGame : EngineHost
                     _rpgIntegrationSmokeSeconds += dt;
                     _rpgIntegrationSmokeFrames++;
                 }
-                if (_transitionSoakRequested)
+                if (_transitionSoakRequested || _lifecycleCheckRequested)
                 {
                     _transitionSoakSeconds += dt;
                 }
@@ -392,6 +425,13 @@ public sealed class RpgSliceGame : EngineHost
                     var timeout = $"Transition soak did not complete {_transitionSoakTarget} transitions within 300 seconds (completed={_transitionSoak?.CompletedTransitions ?? 0}, elapsed={_transitionSoakSeconds:F1}s).";
                     _transitionSoak?.RecordTimeout(timeout);
                     FinishTransitionSoak();
+                    base.Update(gameTime);
+                    return;
+                }
+                else if (_lifecycleCheckRequested && _transitionSoakSeconds > 300f)
+                {
+                    _lifecycleCheck?.RecordTimeout($"Live lifecycle check did not complete {_lifecycleCheckTarget} transitions within 300 seconds (completed={_lifecycleCheck?.CompletedTransitions ?? 0}, elapsed={_transitionSoakSeconds:F1}s).");
+                    FinishLifecycleCheck();
                     base.Update(gameTime);
                     return;
                 }
@@ -462,15 +502,32 @@ public sealed class RpgSliceGame : EngineHost
             _player.RequestJump();
 
         var moveDirection = _camera.MoveDirection(input.ReadMovement());
-        if ((_travelSmokeRequested || _transitionSoakRequested) && _travel is null
-            && (_travelSmokePhase is TravelSmokePhase.ApproachExteriorDoor or TravelSmokePhase.ApproachInteriorDoor || _transitionSoakRequested))
+        if ((_travelSmokeRequested || _transitionSoakRequested || _lifecycleCheckRequested) && _travel is null
+            && (_travelSmokePhase is TravelSmokePhase.ApproachExteriorDoor or TravelSmokePhase.ApproachInteriorDoor
+                || _transitionSoakRequested || _lifecycleCheckRequested))
         {
             var targetDoor = FindSmokeTargetDoor()
-                ?? throw new InvalidOperationException("Target door not found for smoke or transition soak.");
+                ?? throw new InvalidOperationException("Target door not found for smoke, soak, or lifecycle check.");
             var targetTransform = GetCurrentActiveCell().Scene.GetWorldMatrix(targetDoor.Id)
                 * GetCurrentActiveCell().WorldTransform;
-            moveDirection = new Vector3(targetTransform.M41 - _player.Pose.Position.X, 0f,
-                targetTransform.M43 - _player.Pose.Position.Z);
+            if (_lifecycleCheckRequested && !_insideInterior && _lifecycleNextInteriorIndex == 1)
+            {
+                // Go around the market stall and central boulder before approaching House B.
+                // A straight line from the return spawn hits the stall at (20, 24), while
+                // moving east first also runs directly into it.
+                var playerPosition = _player.Pose.Position;
+                var waypoint = playerPosition.Z > 11f
+                    ? new Vector3(16f, playerPosition.Y, 10f)
+                    : playerPosition.X < 25f
+                        ? new Vector3(26f, playerPosition.Y, 10f)
+                        : new Vector3(targetTransform.M41, playerPosition.Y, targetTransform.M43);
+                moveDirection = waypoint - playerPosition;
+            }
+            else
+            {
+                moveDirection = new Vector3(targetTransform.M41 - _player.Pose.Position.X, 0f,
+                    targetTransform.M43 - _player.Pose.Position.Z);
+            }
             if (moveDirection.LengthSquared() > 1e-6f) moveDirection.Normalize();
         }
         _player.SetMoveInput(_travel is null && _rpgGameplay?.HasOpenDialogue != true
@@ -610,6 +667,11 @@ public sealed class RpgSliceGame : EngineHost
         var destinationSpawn = WorldTravelValidator.ResolveDestination(_world, targetScenes, door);
         if (_world.FindCell(door.DestinationCellId)?.Kind == WorldCellKind.Exterior)
             _cellStreamer.UnloadAndForgetCell(door.DestinationCellId);
+        if (_lifecycleCheckRequested && !_lifecycleFailureArmed)
+        {
+            _cellStreamer.DelayAndFailNextPreparation(TimeSpan.FromMilliseconds(150));
+            _lifecycleFailureArmed = true;
+        }
         _travelDestination = new WorldCellLoadOperation<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>();
         _travel = new WorldCellTravelTransaction<RpgSliceCellStreamer.PreparedCell, RpgSliceCellStreamer.ActiveCell>(
             _currentCellId,
@@ -646,6 +708,22 @@ public sealed class RpgSliceGame : EngineHost
         _travel = null;
         _travelDestination = null;
         Console.WriteLine($"RpgSlice: door travel failed: {failure}");
+        if (_lifecycleCheckRequested)
+        {
+            if (!_lifecycleFailureRecorded && _cellStreamer.InjectedPreparationFailureCount == 1
+                && failure is IOException)
+            {
+                _lifecycleCheck?.RecordExpectedPreparationFailure(failure);
+                _lifecycleFailureRecorded = true;
+                _soakDoorCooldownFrames = 4;
+                Console.WriteLine("RpgSlice: source remains active; retrying the injected failed destination load.");
+                return;
+            }
+
+            _lifecycleCheck?.RecordUnexpectedError("door travel", failure);
+            FinishLifecycleCheck();
+            return;
+        }
         if (_transitionSoakRequested)
         {
             _transitionSoak?.RecordError("door travel", failure);
@@ -692,12 +770,43 @@ public sealed class RpgSliceGame : EngineHost
         if (travel.Failure is { } cleanupFailure)
         {
             _transitionSoak?.RecordError("committed-travel cleanup", cleanupFailure);
+            _lifecycleCheck?.RecordUnexpectedError("committed-travel cleanup", cleanupFailure);
             Console.WriteLine($"RpgSlice: travel committed, but source-cell cleanup reported: {cleanupFailure}");
         }
 
         _currentCellId = destinationCellId;
         _travel = null;
         _travelDestination = null;
+
+        if (_lifecycleCheckRequested && _lifecycleCheck is not null)
+        {
+            var activeDestination = destinationOperation.ActiveResources
+                ?? throw new InvalidOperationException("Lifecycle transition completed without active destination resources.");
+            _lifecycleCheck.RecordCellIdentities(destinationCellId, activeDestination.Scene, _worldPersistence.Identities);
+            var fromName = DescribeLifecycleCell(sourceCellId);
+            var toName = DescribeLifecycleCell(destinationCellId);
+            var activeCells = destination.Kind == WorldCellKind.Interior ? 1 : _cellStreamer.ActiveCellCount;
+            var terrainChunks = destination.Kind == WorldCellKind.Interior ? 0 : _terrain.CachedChunkCount;
+            var trackedResources = 2 + terrainChunks + 4
+                + (_foliageInstancer?.OwnedGraphicsResourceCount ?? 0)
+                + _staticAssets.OwnedGraphicsResourceCount;
+            long workingSet;
+            using (var process = Process.GetCurrentProcess())
+                workingSet = process.WorkingSet64;
+            _lifecycleCheck.RecordTransition(fromName, toName, activeCells,
+                terrainChunks, trackedResources, workingSet);
+
+            if (destination.Kind == WorldCellKind.Exterior
+                && _world.FindCell(sourceCellId)?.Kind == WorldCellKind.Interior)
+                _lifecycleNextInteriorIndex = (_lifecycleNextInteriorIndex + 1) % _lifecycleInteriorCellIds.Length;
+
+            Console.WriteLine($"RpgSlice: lifecycle transition {_lifecycleCheck.CompletedTransitions}/{_lifecycleCheck.TargetTransitions}: {fromName} -> {toName}; identities={_worldPersistence.Identities.Count}; resources={trackedResources}; WS={workingSet / (1024d * 1024d):F1} MiB.");
+            if (_lifecycleCheck.IsComplete)
+            {
+                FinishLifecycleCheck();
+                return;
+            }
+        }
 
         if (_transitionSoakRequested && _transitionSoak is not null)
         {
@@ -790,6 +899,83 @@ public sealed class RpgSliceGame : EngineHost
         Exit();
     }
 
+    private string DescribeLifecycleCell(Guid cellId)
+    {
+        var cell = _world.FindCell(cellId)
+            ?? throw new InvalidOperationException($"Lifecycle route refers to missing cell {cellId}.");
+        return cell.Kind == WorldCellKind.Exterior
+            ? $"Exterior ({cell.ExteriorCoordinate?.X ?? 0}, {cell.ExteriorCoordinate?.Z ?? 0})"
+            : Path.GetFileNameWithoutExtension(cell.ScenePath);
+    }
+
+    private void FinishLifecycleCheck()
+    {
+        if (_lifecycleCheck is null || _lifecycleReportWritten) return;
+        _lifecycleReportWritten = true;
+
+        var artifactDirectory = Path.Combine(Path.GetTempPath(), "Ember", "RpgSlice", "LifecycleChecks");
+        Directory.CreateDirectory(artifactDirectory);
+        var fileStem = $"lifecycle-check-{_lifecycleCheck.RunId:N}";
+        var markdownPath = Path.Combine(artifactDirectory, fileStem + ".md");
+        var jsonPath = Path.Combine(artifactDirectory, fileStem + ".json");
+        var savePath = Path.Combine(artifactDirectory, fileStem + ".world.json");
+        try
+        {
+            _worldPersistence.RequestSave(savePath, CapturePlayerLocation);
+            if (!_worldPersistence.ProcessStableBoundary(travelInProgress: false))
+                throw new IOException("Lifecycle world save did not process at the stable boundary.");
+            if (!_worldPersistence.TryDequeueSaveResult(out var saveResult))
+                throw new IOException("Lifecycle world save did not produce a completion result.");
+            if (saveResult.Failure is not null) throw saveResult.Failure;
+
+            var restoredWorld = WorldSaveFile.Load(savePath, _world);
+            var restartedSession = new WorldPersistenceSession(_world, restoredWorld);
+            var currentLocation = CapturePlayerLocation();
+            if (restartedSession.RestoredPlayerLocation != currentLocation)
+                throw new InvalidDataException("Save/restart did not restore the live player cell and transform.");
+
+            var originalIdentities = _worldPersistence.Identities.ExportSnapshot();
+            var restoredIdentities = restartedSession.Identities.ExportSnapshot();
+            if (!originalIdentities.SequenceEqual(restoredIdentities)
+                || restoredIdentities.Select(entry => entry.InstanceId.Value).Distinct().Count() != restoredIdentities.Count)
+                throw new InvalidDataException("Save/restart changed or duplicated world instance identities.");
+
+            var currentScene = SceneFile.Load(_world.ResolveScenePath(_currentCellId));
+            restartedSession.PrepareCell(_currentCellId, currentScene);
+            _lifecycleCheck.RecordSaveRestart(true,
+                $"player restored in {DescribeLifecycleCell(_currentCellId)}; {restoredIdentities.Count} unique identity mappings restored from {Path.GetFileName(savePath)}");
+        }
+        catch (Exception error)
+        {
+            _lifecycleCheck.RecordUnexpectedError("save/restart", error);
+            _lifecycleCheck.RecordSaveRestart(false, error.Message);
+        }
+
+        try
+        {
+            var adapter = GraphicsDevice.Adapter.Description;
+            var width = GraphicsDevice.Viewport.Width;
+            var height = GraphicsDevice.Viewport.Height;
+            File.WriteAllText(jsonPath, _lifecycleCheck.BuildRawData(adapter, width, height), Encoding.UTF8);
+            File.WriteAllText(markdownPath, _lifecycleCheck.BuildReport(adapter, width, height), Encoding.UTF8);
+        }
+        catch (Exception error)
+        {
+            _lifecycleCheck.RecordUnexpectedError("report export", error);
+            Console.Error.WriteLine($"RpgSlice: could not export the live lifecycle report: {error}");
+        }
+
+        Environment.ExitCode = _lifecycleCheck.ExitCode;
+        _smokeRan = true;
+        Console.WriteLine(_lifecycleCheck.BuildReport(GraphicsDevice.Adapter.Description,
+            GraphicsDevice.Viewport.Width, GraphicsDevice.Viewport.Height));
+        Console.WriteLine($"RpgSlice: lifecycle report {markdownPath}");
+        Console.WriteLine($"RpgSlice: lifecycle samples {jsonPath}");
+        Console.WriteLine($"RpgSlice: lifecycle world save {savePath}");
+        Console.WriteLine($"RpgSlice: lifecycle verdict {(_lifecycleCheck.Passed ? "PASS" : "FAIL")}; process exit code {Environment.ExitCode}.");
+        Exit();
+    }
+
     private void PlacePlayerAtSpawn(WorldSpawnLocation spawn)
     {
         var characterSettings = _transitionSoakRequested
@@ -838,6 +1024,11 @@ public sealed class RpgSliceGame : EngineHost
     {
         var active = TryGetCurrentActiveCell();
         if (active is null) return null;
+        if (_lifecycleCheckRequested && !_insideInterior && _lifecycleInteriorCellIds.Length > 0)
+        {
+            var targetCellId = _lifecycleInteriorCellIds[_lifecycleNextInteriorIndex % _lifecycleInteriorCellIds.Length];
+            return active.Scene.Objects.FirstOrDefault(item => item.Door?.DestinationCellId == targetCellId);
+        }
         return _insideInterior
             ? active.Scene.Objects.FirstOrDefault(item => item.Door is not null)
             : active.Scene.Objects.FirstOrDefault(item => item.Door is not null && item.Name == "Door to House A");

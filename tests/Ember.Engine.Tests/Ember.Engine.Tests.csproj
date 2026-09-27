@@ -38,6 +38,8 @@
   <ItemGroup>
     <Compile Include="..\..\samples\RpgSlice\RpgSliceTransitionSoak.cs"
              Link="RpgSliceTransitionSoak.cs" />
+    <Compile Include="..\..\samples\RpgSlice\RpgSliceLifecycleCheck.cs"
+             Link="RpgSliceLifecycleCheck.cs" />
   </ItemGroup>
 
 </Project>

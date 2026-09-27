@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
@@ -24,6 +25,8 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     private readonly RpgSliceStaticAssets _staticAssets;
     private readonly CellAssetReferencePool<TerrainPatchSize, TerrainPatchTopology> _terrainTopologyPool = new();
     private readonly WorldCellStreamer<PreparedCell, ActiveCell> _streamer;
+    private long _nextInjectedFailureDelayTicks;
+    private int _injectedPreparationFailureCount;
     private bool _disposed;
 
     public RpgSliceCellStreamer(WorldManifest world, PhysicsWorld physics,
@@ -68,6 +71,7 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     public IEnumerable<ActiveCell> ActiveCells => _streamer.ActiveCells;
     public int ActiveCellCount => _streamer.ActiveCellCount;
     public int ActivationAttemptCount => _streamer.ActivationAttemptCount;
+    public int InjectedPreparationFailureCount => Volatile.Read(ref _injectedPreparationFailureCount);
     public double LongestActivationMilliseconds => _streamer.LongestActivationMilliseconds;
     public string? LoadingStatus => _streamer.LoadingStatus;
 
@@ -90,8 +94,21 @@ internal sealed class RpgSliceCellStreamer : IDisposable
     public void AdoptActiveCell(Guid cellId, WorldCellLoadOperation<PreparedCell, ActiveCell> operation) =>
         _streamer.AdoptActiveCell(cellId, operation);
 
-    public Task<PreparedCell> PrepareCellAsync(Guid cellId, CancellationToken cancellationToken) =>
-        PrepareCellCoreAsync(cellId, cancellationToken);
+    public void DelayAndFailNextPreparation(TimeSpan delay)
+    {
+        if (delay <= TimeSpan.Zero)
+            throw new ArgumentOutOfRangeException(nameof(delay), "The injected delay must be positive.");
+        if (Interlocked.CompareExchange(ref _nextInjectedFailureDelayTicks, delay.Ticks, 0) != 0)
+            throw new InvalidOperationException("An injected preparation failure is already armed.");
+    }
+
+    public Task<PreparedCell> PrepareCellAsync(Guid cellId, CancellationToken cancellationToken)
+    {
+        var delayTicks = Interlocked.Exchange(ref _nextInjectedFailureDelayTicks, 0);
+        return delayTicks > 0
+            ? DelayThenFailPreparationAsync(delayTicks, cancellationToken)
+            : PrepareCellCoreAsync(cellId, cancellationToken);
+    }
 
     public WorldCellLoadOperation<PreparedCell, ActiveCell> LoadCell(Guid cellId)
     {
@@ -154,6 +171,14 @@ internal sealed class RpgSliceCellStreamer : IDisposable
         cancellationToken.ThrowIfCancellationRequested();
         return Task.FromResult(new PreparedCell(cellId, coordinate, scene,
             worldTransform, terrainStride, terrainVertices, TerrainPatchIntervals, _staticAssets));
+    }
+
+    private async Task<PreparedCell> DelayThenFailPreparationAsync(long delayTicks,
+        CancellationToken cancellationToken)
+    {
+        await Task.Delay(TimeSpan.FromTicks(delayTicks), cancellationToken).ConfigureAwait(false);
+        Interlocked.Increment(ref _injectedPreparationFailureCount);
+        throw new IOException("Lifecycle check injected a delayed destination preparation failure.");
     }
 
     private ActivationStepper CreateActivationStepper() =>

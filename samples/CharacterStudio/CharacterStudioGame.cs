@@ -1,10 +1,12 @@
 using System;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.Globalization;
 using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text;
+using System.Text.Json;
 using Ember.Authoring;
 using Ember.Assets;
 using Ember.Audio;
@@ -30,6 +32,29 @@ namespace CharacterStudio;
 /// </summary>
 public sealed class CharacterStudioGame : EngineHost
 {
+    private sealed record LifecycleCycleSample(int Cycle, bool PlayStarted, bool PlayStopped,
+        bool SceneReloaded, int SceneObjectCount, int OwnedPreviewGraphicsResources,
+        long WorkingSetBytes, long ManagedHeapBytes);
+
+    private enum LifecycleSmokeStage { StartPlaySession, StopPlaySession, ReloadScene, Complete }
+
+    private sealed class LifecycleSmokeState
+    {
+        public required Guid RunId { get; init; }
+        public required DateTimeOffset StartedUtc { get; init; }
+        public required string ScenePath { get; init; }
+        public required string VerifyPath { get; init; }
+        public required string MarkdownPath { get; init; }
+        public required string JsonPath { get; init; }
+        public required string AuthoredSnapshot { get; init; }
+        public required int InitialResourceCount { get; init; }
+        public required Guid[] InitialSceneIds { get; init; }
+        public List<LifecycleCycleSample> Samples { get; } = new();
+        public List<string> Errors { get; } = new();
+        public int CompletedCycles { get; set; }
+        public LifecycleSmokeStage Stage { get; set; } = LifecycleSmokeStage.StartPlaySession;
+    }
+
     private static readonly Guid PreviewInstanceId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
     private static readonly GltfAssetReference DefaultAsset = new(
         Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"), "Assets/TextureCoordinateTest.glb");
@@ -48,6 +73,8 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly SceneLighting _sceneLighting = new();
     private readonly List<string> _faults = new();
     private readonly string? _savePath;
+    private readonly bool _lifecycleSmokeRequested;
+    private readonly int _lifecycleSmokeCycles;
     private string? _sceneSavePath;
     private readonly string? _openSequencePath;
     private readonly string? _saveSequencePath;
@@ -81,6 +108,7 @@ public sealed class CharacterStudioGame : EngineHost
     private float _sequenceExportRestoreTime;
     private bool _sequenceExportRestoreWasPlaying;
     private bool _sequenceExportRestorePreviewEnabled;
+    private LifecycleSmokeState? _lifecycleSmoke;
     private Vector3 _sequenceExportRestoreCameraPosition;
     private Quaternion _sequenceExportRestoreCameraRotation;
     private float _sequenceExportRestoreFieldOfView;
@@ -104,6 +132,12 @@ public sealed class CharacterStudioGame : EngineHost
     {
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _savePath = ParseOption(args, "--save");
+        _lifecycleSmokeRequested = HasArgument(args, "--lifecycle-smoke");
+        _lifecycleSmokeCycles = ParseIntOption(args, "--lifecycle-cycles", 10);
+        if (_lifecycleSmokeCycles < 1)
+            throw new ArgumentOutOfRangeException(nameof(args), "--lifecycle-cycles must be positive.");
+        if (!_lifecycleSmokeRequested && ParseOption(args, "--lifecycle-cycles") is not null)
+            throw new ArgumentException("--lifecycle-cycles requires --lifecycle-smoke.", nameof(args));
         var openPath = ParseOption(args, "--open");
         var projectPath = ParseOption(args, "--project");
         if (projectPath is not null && openPath is not null)
@@ -116,6 +150,9 @@ public sealed class CharacterStudioGame : EngineHost
         _openSequencePath = ParseOption(args, "--open-sequence");
         _saveSequencePath = ParseOption(args, "--save-sequence");
         _startupSequenceExportDirectory = ParseOption(args, "--export-sequence");
+        if (_lifecycleSmokeRequested && (_openSequencePath is not null || _saveSequencePath is not null
+            || _startupSequenceExportDirectory is not null))
+            throw new ArgumentException("--lifecycle-smoke cannot be combined with sequence open, save, or export options.", nameof(args));
         var hasStartupExportOptions = HasArgument(args, "--export-start")
             || HasArgument(args, "--export-end") || HasArgument(args, "--export-fps")
             || HasArgument(args, "--export-width") || HasArgument(args, "--export-height");
@@ -292,6 +329,7 @@ public sealed class CharacterStudioGame : EngineHost
 
             if (_savePath is not null) SaveScene();
             foreach (var fault in _faults) Console.WriteLine($"character studio: {fault}");
+            if (_lifecycleSmokeRequested) RunLifecycleSmoke();
         }
         catch
         {
@@ -309,10 +347,18 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void Update(GameTime gameTime)
     {
         BeginHostFrame();
-            _input.Sample();
+        _input.Sample();
         var mouse = _input.CurrentMouse;
         _editorUi?.Update((float)gameTime.ElapsedGameTime.TotalSeconds,
             _input.CurrentKeyboard, mouse, LogicalMouse(mouse), CurrentScene);
+        if (_lifecycleSmoke is not null)
+        {
+            AdvanceLifecycleSmoke();
+            _input.Commit();
+            base.Update(gameTime);
+            return;
+        }
+
         var uiCapturesMouse = _editorUi?.WantsMouse ?? false;
         var uiCapturesKeyboard = _editorUi?.WantsKeyboard ?? false;
 
@@ -925,6 +971,188 @@ public sealed class CharacterStudioGame : EngineHost
     private void BeforeSceneStructureChange() => CaptureCharacterSettings();
 
     private void AfterSceneStructureChange() => _preview?.Current.RebuildCharacterInstances(CurrentScene);
+
+    private void RunLifecycleSmoke()
+    {
+        if (_preview is null)
+            throw new InvalidOperationException("Lifecycle smoke requires a loaded graphics preview.");
+
+        var runId = Guid.NewGuid();
+        var runStartedUtc = DateTimeOffset.UtcNow;
+        var outputDirectory = Path.Combine(Path.GetTempPath(), "Ember", "CharacterStudio", "LifecycleChecks");
+        Directory.CreateDirectory(outputDirectory);
+        var scenePath = Path.Combine(outputDirectory, $"lifecycle-source-{runId:N}.scene.json");
+        var verifyPath = Path.Combine(outputDirectory, $"lifecycle-verify-{runId:N}.scene.json");
+        var markdownPath = Path.Combine(outputDirectory, $"lifecycle-check-{runId:N}.md");
+        var jsonPath = Path.Combine(outputDirectory, $"lifecycle-check-{runId:N}.json");
+        SceneFile.SaveAtomic(_sceneData, scenePath);
+        _lifecycleSmoke = new LifecycleSmokeState
+        {
+            RunId = runId,
+            StartedUtc = runStartedUtc,
+            ScenePath = scenePath,
+            VerifyPath = verifyPath,
+            MarkdownPath = markdownPath,
+            JsonPath = jsonPath,
+            AuthoredSnapshot = File.ReadAllText(scenePath),
+            InitialResourceCount = _preview.Current.OwnedGraphicsResourceCount,
+            InitialSceneIds = _sceneData.Objects.Select(item => item.Id).OrderBy(id => id).ToArray()
+        };
+        Console.WriteLine($"CharacterStudio: live lifecycle check started; {_lifecycleSmokeCycles} play/stop and reload cycles will run across rendered frames.");
+    }
+
+    private void AdvanceLifecycleSmoke()
+    {
+        if (_lifecycleSmoke is not { } state) return;
+
+        try
+        {
+            switch (state.Stage)
+            {
+                case LifecycleSmokeStage.StartPlaySession:
+                {
+                    var cycle = state.CompletedCycles + 1;
+                    StartPlaySession();
+                    if (_playSession is null || !_playSession.Behaviours.IsStarted
+                        || ReferenceEquals(_sceneData, _playSession.RuntimeScene))
+                        throw new InvalidOperationException($"Play cycle {cycle} did not start an isolated runtime scene.");
+                    if (_reimportStatus.Contains("cleanup", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException($"Play cycle {cycle} reported a preview cleanup problem: {_reimportStatus}");
+                    state.Stage = LifecycleSmokeStage.StopPlaySession;
+                    break;
+                }
+                case LifecycleSmokeStage.StopPlaySession:
+                {
+                    var cycle = state.CompletedCycles + 1;
+                    StopPlaySession();
+                    if (_playSession is not null)
+                        throw new InvalidOperationException($"Play cycle {cycle} did not stop and restore the authored scene.");
+                    if (_reimportStatus.Contains("issue", StringComparison.OrdinalIgnoreCase)
+                        || _reimportStatus.Contains("cleanup", StringComparison.OrdinalIgnoreCase))
+                        throw new InvalidOperationException($"Play cycle {cycle} reported cleanup trouble: {_reimportStatus}");
+
+                    SceneFile.SaveAtomic(_sceneData, state.VerifyPath);
+                    if (!string.Equals(state.AuthoredSnapshot, File.ReadAllText(state.VerifyPath), StringComparison.Ordinal))
+                        throw new InvalidDataException($"Play cycle {cycle} changed authored scene data.");
+                    state.Stage = LifecycleSmokeStage.ReloadScene;
+                    break;
+                }
+                case LifecycleSmokeStage.ReloadScene:
+                {
+                    var cycle = state.CompletedCycles + 1;
+                    var reloadedScene = SceneFile.Load(state.ScenePath);
+                    var reloadedIds = reloadedScene.Objects.Select(item => item.Id).OrderBy(id => id).ToArray();
+                    if (!state.InitialSceneIds.SequenceEqual(reloadedIds))
+                        throw new InvalidDataException($"Scene reload {cycle} changed the authored object IDs.");
+                    var cleanupError = _preview!.Reload(() => PreviewResources.Load(
+                        GraphicsDevice, ResolveSceneAssets(reloadedScene, _sceneAssetRoot), reloadedScene));
+                    if (cleanupError is not null)
+                        throw new InvalidOperationException($"Scene reload {cycle} could not release the previous preview.", cleanupError);
+                    _sceneData = reloadedScene;
+                    _editorHistory = new SceneCommandHistory();
+                    _editorUi?.SetHistory(_editorHistory);
+                    _editorUi?.ResetSceneSelection();
+                    _farLodByObjectId.Clear();
+                    BuildSequencePreview();
+
+                    var resources = _preview.Current.OwnedGraphicsResourceCount;
+                    if (resources != state.InitialResourceCount)
+                        throw new InvalidOperationException($"Preview resource count changed after cycle {cycle}: expected {state.InitialResourceCount}, actual {resources}.");
+                    using (var process = Process.GetCurrentProcess())
+                    {
+                        process.Refresh();
+                        state.Samples.Add(new LifecycleCycleSample(cycle, true, true, true,
+                            _sceneData.Objects.Count, resources, process.WorkingSet64, GC.GetTotalMemory(false)));
+                    }
+                    state.CompletedCycles++;
+                    state.Stage = state.CompletedCycles == _lifecycleSmokeCycles
+                        ? LifecycleSmokeStage.Complete
+                        : LifecycleSmokeStage.StartPlaySession;
+                    break;
+                }
+                case LifecycleSmokeStage.Complete:
+                    WriteLifecycleSmokeReport(state);
+                    break;
+            }
+        }
+        catch (Exception error)
+        {
+            state.Errors.Add($"{error.GetType().Name}: {error.Message}");
+            if (_playSession is not null)
+            {
+                try
+                {
+                    StopPlaySession();
+                    if (_playSession is not null)
+                        state.Errors.Add("Cleanup: play session remained active after the lifecycle check failed.");
+                }
+                catch (Exception cleanupError)
+                {
+                    state.Errors.Add($"Cleanup: {cleanupError.GetType().Name}: {cleanupError.Message}");
+                }
+            }
+            state.Stage = LifecycleSmokeStage.Complete;
+        }
+    }
+
+    private void WriteLifecycleSmokeReport(LifecycleSmokeState state)
+    {
+        var passed = state.Errors.Count == 0 && state.CompletedCycles == _lifecycleSmokeCycles;
+        var payload = new
+        {
+            schemaVersion = 1,
+            run = new
+            {
+                runId = state.RunId,
+                startedUtc = state.StartedUtc,
+                generatedUtc = DateTimeOffset.UtcNow,
+                machineName = Environment.MachineName,
+                operatingSystem = System.Runtime.InteropServices.RuntimeInformation.OSDescription,
+                framework = System.Runtime.InteropServices.RuntimeInformation.FrameworkDescription,
+                adapter = GraphicsDevice.Adapter.Description,
+                viewportWidth = GraphicsDevice.Viewport.Width,
+                viewportHeight = GraphicsDevice.Viewport.Height,
+                targetCycles = _lifecycleSmokeCycles,
+                completedCycles = state.CompletedCycles,
+                initialOwnedPreviewGraphicsResources = state.InitialResourceCount,
+                passed
+            },
+            errors = state.Errors,
+            cycles = state.Samples
+        };
+        var report = new StringBuilder();
+        report.AppendLine("# CharacterStudio Play/Stop and Scene Reload Lifecycle Check");
+        report.AppendLine();
+        report.AppendLine($"Run ID: {state.RunId:N}");
+        report.AppendLine($"Target/completed cycles: {_lifecycleSmokeCycles}/{state.CompletedCycles}");
+        report.AppendLine($"Initial owned preview graphics resources: {state.InitialResourceCount}");
+        report.AppendLine($"Adapter/resolution: {GraphicsDevice.Adapter.Description}, {GraphicsDevice.Viewport.Width}x{GraphicsDevice.Viewport.Height}");
+        report.AppendLine("Lifecycle steps were advanced across rendered frames.");
+        report.AppendLine();
+        report.AppendLine("| Cycle | Play started | Play stopped | Scene reloaded | Preview resources | Working set MiB | Managed heap MiB |");
+        report.AppendLine("| ---: | --- | --- | --- | ---: | ---: | ---: |");
+        foreach (var sample in state.Samples)
+        {
+            report.AppendLine($"| {sample.Cycle} | {sample.PlayStarted} | {sample.PlayStopped} | {sample.SceneReloaded} | {sample.OwnedPreviewGraphicsResources} | {sample.WorkingSetBytes / (1024d * 1024d):F1} | {sample.ManagedHeapBytes / (1024d * 1024d):F1} |");
+        }
+        if (state.Errors.Count > 0)
+        {
+            report.AppendLine();
+            report.AppendLine("## Errors");
+            foreach (var error in state.Errors) report.AppendLine($"- {error}");
+        }
+        report.AppendLine();
+        report.AppendLine(passed ? "**PASS** - play/stop and repeated scene reload completed with stable owned preview resources."
+            : "**FAIL** - one or more play/stop or scene reload checks failed.");
+        File.WriteAllText(state.JsonPath, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
+        File.WriteAllText(state.MarkdownPath, report.ToString(), Encoding.UTF8);
+        Console.WriteLine(report.ToString());
+        Console.WriteLine($"CharacterStudio lifecycle report saved to {state.MarkdownPath}");
+        Console.WriteLine($"CharacterStudio lifecycle samples saved to {state.JsonPath}");
+        Environment.ExitCode = passed ? 0 : 1;
+        _lifecycleSmoke = null;
+        Exit();
+    }
 
     private void StartPlaySession()
     {
@@ -1853,6 +2081,8 @@ public sealed class CharacterStudioGame : EngineHost
         public Dictionary<Guid, CharacterInstanceState> CharacterInstances { get; } = new();
         public Dictionary<Guid, List<GltfBoneAttachment>> AttachmentsByInstanceId { get; } = new();
         public bool HasSkinnedCharacters => Assets.Values.Any(asset => asset.SkinnedCharacter is not null);
+        public int OwnedGraphicsResourceCount => Assets.Values.Sum(asset =>
+            asset.MeshBuffers.Count + asset.SkinnedMeshBuffers.Count + asset.Textures.Count);
         public int MaximumJointCount => Assets.Values
             .Where(asset => asset.SkinnedCharacter is not null)
             .Max(asset => asset.SkinnedCharacter!.Skin.JointNodeIndices.Count);
