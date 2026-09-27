@@ -1564,4 +1564,42 @@ The 10-transition artifacts are
 and the same path with `.json`. The 1-transition artifacts use run ID
 `be8c6350aa2845008478c28aac0b472a`. Cleanup-error and growth injection were CPU tests;
 no live cleanup fault was injected. The 30 MiB memory-growth limit is provisional pending
-the reference-PC budget work in M0.3. M0.2's two-interior lifecycle run remains not started.
+the reference-PC budget work in M0.3.
+
+## Active roadmap — M0.2 live lifecycle coverage — 27 September 2026
+
+- Status: **Passed**. Implementation commit: `a4a74af`.
+- Added a fixed-count RpgSlice lifecycle check separate from the timed transition soak. It
+  drives at least 50 real door transitions across House A, House B and the exterior; injects
+  one delayed destination-preparation failure and retries while the source stays active;
+  checks stable, unique world-instance IDs across scene reloads; samples like-for-like cell
+  resource counts after warmup; and saves/restores the world before exporting JSON and Markdown.
+- Added a CharacterStudio live smoke that performs play, stop and scene reload over rendered
+  frames. It verifies that play uses an isolated scene, authored scene serialization and object
+  IDs survive each cycle, and owned preview graphics-resource counts remain stable.
+- The RpgSlice House B route required explicit waypoints around the authored market stall;
+  the first harness attempt timed out at 2 transitions. The corrected live route completed all
+  50 transitions. A burst-mode editor probe also inflated working-set readings; pacing each
+  lifecycle step across actual rendered frames removed that harness artifact.
+
+### M0.2 verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet test Ember.sln --nologo --no-restore` | PASS — 269 passed, 0 failed, 0 skipped |
+| `dotnet build Ember.sln --nologo --no-restore` | PASS — 0 warnings, 0 errors |
+| RpgSlice `--lifecycle-check --lifecycle-transitions 50 --windowed` | PASS — 50/50 transitions in 101.3s; both interiors and exterior reached; 50/50 identity reload checks; one delayed load failure retried; save/restart restored 48 unique identities; 0 unexpected errors |
+| CharacterStudio `--lifecycle-smoke --lifecycle-cycles 50 --windowed` | PASS — 50/50 play-stop and reload cycles across rendered frames; six owned preview resources throughout; authored scene unchanged; 0 errors |
+
+Both live runs used Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, 1280x720. RpgSlice
+resource counts remained 10 in House A, 10 in House B and 22 in the exterior; post-warmup
+working-set peak growth was +2.6 MiB and managed-heap peak growth was +0.7 MiB. In the editor,
+after four warmup cycles, preview resources remained 6; working-set peak growth was +13.0 MiB
+and managed-heap peak growth was +0.8 MiB. The 30 MiB diagnostic limit remains provisional
+until M0.3 names a reference PC and establishes budgets. These fixed-count runs do not replace
+the M0.3 30-minute mixed editor/runtime session.
+
+RpgSlice artifacts are `%TEMP%\Ember\RpgSlice\LifecycleChecks\lifecycle-check-8319ad4382164dcf8610ab7fec0dc71f.md`,
+the matching `.json`, and `.world.json`. CharacterStudio artifacts are
+`%TEMP%\Ember\CharacterStudio\LifecycleChecks\lifecycle-check-31928220bc9b40bb91cefe0f783aac7a.md`
+and the matching `.json`.

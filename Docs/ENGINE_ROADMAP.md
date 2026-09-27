@@ -44,9 +44,9 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-All milestones except M0.1 remain **Not started** against their new acceptance criteria;
+All milestones after M0.2 remain **Not started** against their new acceptance criteria;
 existing components are reusable foundations, not a reason to repeat their implementation.
-M0.1 has passed its CPU and short live-run acceptance checks. Documentation reset is complete.
+M0.1 and M0.2 have passed their recorded acceptance checks. Documentation reset is complete.
 
 Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
 or exact UI steps, fixture, configuration, hardware where relevant, result, and artifact
@@ -61,7 +61,7 @@ Dependency: none. Prioritize this before adding features.
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
 | M0.1 | Repair soak verdicts and diagnostics. | Record actual errors including committed-travel cleanup failures; validate transition count, timeouts, latency, resource trends, and memory separately. Failures produce nonzero exit status. Inject a cleanup error, resource growth, incomplete run, and 1-transition case; each is handled correctly. Export full raw samples and run metadata. | **Passed** |
-| M0.2 | Run live lifecycle coverage. | At least 50 transitions spanning two interiors and exterior boundaries, plus repeated scene reload and play/stop; compare like-for-like resource counts after warmup. Exercise delayed/failed loads and retry, save/restart, and unique identities. No unexplained growth or swallowed errors. Keep this separate from a longer timed soak. | Not started |
+| M0.2 | Run live lifecycle coverage. | At least 50 transitions spanning two interiors and exterior boundaries, plus repeated scene reload and play/stop; compare like-for-like resource counts after warmup. Exercise delayed/failed loads and retry, save/restart, and unique identities. No unexplained growth or swallowed errors. Keep this separate from a longer timed soak. | **Passed** |
 | M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | Not started |
 | M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add Windows build/CPU-test CI and a documented graphics/manual gate; keep RPG checks separate. | Not started |
 
@@ -144,7 +144,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Start M0.1. Split large tasks into independently verifiable changes before coding.
+2. Continue with the earliest not-Passed task: M0.3. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.
