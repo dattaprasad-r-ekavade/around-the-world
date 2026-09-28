@@ -1898,3 +1898,32 @@ M0.4 and M1.1 retain their interactive gates.
 Next: verify browse → preview → Add, Cancel cleanup, undo, save/reopen and Play/Stop using a
 relocated project. Continue the remaining Home, selection, transform, resize and DPI checks before
 closing UX.2 or dependent release gates.
+
+## Windows CI cell-queue timing follow-up — 28 September 2026
+
+### M0.4 reliability slice
+
+- The Windows workflow for commit `ababa01` failed in
+  [run #4](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36388878483).
+  Its annotation showed that the nine-cell fairness test hit its 200-frame guard while using a
+  20 ms wall-clock budget per simulated frame. This made a cost/cell fairness test sensitive to
+  runner scheduling.
+- The queue now accepts an optional `TimeProvider`; production still uses the system monotonic
+  clock. The broad nine-cell test uses a generous time window to focus on cost and cell limits, and
+  a fake-clock test deterministically confirms that elapsed-time exhaustion stops later work in the
+  same frame.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Cell activation queue tests | PASS — 5 passed, 0 failed |
+| Full CPU test suite | PASS — 284 passed, 0 failed, 0 skipped |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Windows CI after the fix | Pending push and hosted rerun. |
+
+M0.4 remains **In progress** pending hosted CI confirmation and the native Windows graphics gate.
+The test fix does not close resize, save/reopen, or Play/Stop interaction checks.
+
+Next: push this reliability fix and verify the Windows workflow result, then continue the manual
+graphics gate without marking unobserved desktop actions as passed.

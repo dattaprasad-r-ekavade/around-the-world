@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Diagnostics;
 
 namespace Ember.World;
 
@@ -47,11 +46,12 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
     private readonly long _maximumCostPerFrame;
     private readonly int _maximumCellsPerFrame;
     private readonly TimeSpan _maximumElapsedPerFrame;
+    private readonly TimeProvider _timeProvider;
     private long _queuedEstimatedCost;
     private bool _disposed;
 
     public CellActivationQueue(long maximumCostPerFrame, int maximumCellsPerFrame,
-        TimeSpan maximumElapsedPerFrame)
+        TimeSpan maximumElapsedPerFrame, TimeProvider? timeProvider = null)
     {
         if (maximumCostPerFrame <= 0)
             throw new ArgumentOutOfRangeException(nameof(maximumCostPerFrame), "Per-frame activation cost must be positive.");
@@ -63,6 +63,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
         _maximumCostPerFrame = maximumCostPerFrame;
         _maximumCellsPerFrame = maximumCellsPerFrame;
         _maximumElapsedPerFrame = maximumElapsedPerFrame;
+        _timeProvider = timeProvider ?? TimeProvider.System;
     }
 
     public int PendingCount => _pending.Count;
@@ -98,7 +99,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
     public CellActivationQueueFrameMetrics ProcessFrame()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        var timer = Stopwatch.StartNew();
+        var startedAt = _timeProvider.GetTimestamp();
         var cellsProcessed = 0;
         var cellsCompleted = 0;
         long costConsumed = 0;
@@ -107,7 +108,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
         while (_pending.Count > 0
             && cellsProcessed < maximumActivationsThisFrame
             && costConsumed < _maximumCostPerFrame
-            && timer.Elapsed < _maximumElapsedPerFrame)
+            && _timeProvider.GetElapsedTime(startedAt) < _maximumElapsedPerFrame)
         {
             var activation = _pending.Dequeue();
             var remainingBudget = _maximumCostPerFrame - costConsumed;
@@ -148,7 +149,7 @@ public sealed class CellActivationQueue<TPrepared, TActive> : IDisposable
             _pending.Count,
             costConsumed,
             _queuedEstimatedCost,
-            timer.Elapsed.TotalMilliseconds);
+            _timeProvider.GetElapsedTime(startedAt).TotalMilliseconds);
         return LastFrameMetrics;
     }
 

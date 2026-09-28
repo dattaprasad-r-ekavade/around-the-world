@@ -16,7 +16,7 @@ public sealed class CellActivationQueueTests
         const long frameCostLimit = 100;
         const int frameCellLimit = 4;
         var queue = new CellActivationQueue<PreparedProbe, ActiveProbe>(
-            frameCostLimit, frameCellLimit, TimeSpan.FromMilliseconds(20));
+            frameCostLimit, frameCellLimit, TimeSpan.FromSeconds(1));
         var operations = new List<(WorldCellLoadOperation<PreparedProbe, ActiveProbe> Operation, Task Preparation)>();
         var steppers = new List<ActivationStepper>();
         var slowCell = new ExteriorCellCoordinate(1, 1);
@@ -88,6 +88,41 @@ public sealed class CellActivationQueueTests
                 else if (operation.State == CellLifecycleState.Ready) operation.Discard();
                 else if (operation.State == CellLifecycleState.Preparing) operation.Cancel();
             }
+        }
+    }
+
+    [Fact]
+    public void QueueStopsWhenActivationExceedsElapsedBudget()
+    {
+        var time = new ManualTimeProvider();
+        var queue = new CellActivationQueue<PreparedProbe, ActiveProbe>(
+            maximumCostPerFrame: 100, maximumCellsPerFrame: 4,
+            maximumElapsedPerFrame: TimeSpan.FromMilliseconds(1), timeProvider: time);
+        var first = CreateReadyOperation(new PreparedProbe(new ExteriorCellCoordinate(0, 0), 1));
+        var second = CreateReadyOperation(new PreparedProbe(new ExteriorCellCoordinate(1, 0), 1));
+        var secondStepper = new ActivationStepper(second);
+        try
+        {
+            queue.Enqueue(first, new TimeAdvancingStepper(() => time.Advance(TimeSpan.FromMilliseconds(3))));
+            queue.Enqueue(second, secondStepper);
+
+            var metrics = queue.ProcessFrame();
+
+            Assert.Equal(1, metrics.CellsProcessed);
+            Assert.Equal(1, metrics.CellsCompleted);
+            Assert.Equal(1, metrics.PendingCells);
+            Assert.InRange(metrics.ElapsedMilliseconds, 2.9, 3.1);
+            Assert.Equal(CellLifecycleState.Active, first.State);
+            Assert.Equal(CellLifecycleState.Ready, second.State);
+            Assert.Equal(0, secondStepper.StepCount);
+        }
+        finally
+        {
+            queue.Dispose();
+            if (first.State == CellLifecycleState.Active) first.Unload();
+            else if (first.State == CellLifecycleState.Ready) first.Discard();
+            if (second.State == CellLifecycleState.Active) second.Unload();
+            else if (second.State == CellLifecycleState.Ready) second.Discard();
         }
     }
 
@@ -195,6 +230,35 @@ public sealed class CellActivationQueueTests
 
     private sealed class ActiveProbe : IDisposable
     {
+        public void Dispose() { }
+    }
+
+    private static WorldCellLoadOperation<PreparedProbe, ActiveProbe> CreateReadyOperation(PreparedProbe prepared)
+    {
+        var operation = new WorldCellLoadOperation<PreparedProbe, ActiveProbe>();
+        var preparation = operation.PrepareAsync(_ => Task.FromResult(prepared));
+        Assert.True(preparation.Wait(TimeSpan.FromSeconds(5)));
+        operation.PumpCompletions();
+        Assert.Equal(CellLifecycleState.Ready, operation.State);
+        return operation;
+    }
+
+    private sealed class ManualTimeProvider : TimeProvider
+    {
+        private long _timestamp;
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+        public override long GetTimestamp() => _timestamp;
+        public void Advance(TimeSpan elapsed) => _timestamp += elapsed.Ticks;
+    }
+
+    private sealed class TimeAdvancingStepper(Action advance) : ICellActivationStepper<PreparedProbe, ActiveProbe>
+    {
+        public CellActivationStepResult<ActiveProbe> Step(PreparedProbe prepared, long maximumCost)
+        {
+            advance();
+            return new CellActivationStepResult<ActiveProbe>(1, true, new ActiveProbe());
+        }
+
         public void Dispose() { }
     }
 
