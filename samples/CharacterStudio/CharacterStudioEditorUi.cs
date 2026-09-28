@@ -132,6 +132,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private TransformTool _transformTool = TransformTool.Move;
     private bool _initialSelectionSet;
     private bool _showHome;
+    private bool _snapMoveToGrid;
+    private float _moveGridStep = 10f;
     private bool _showAddLibrary = true;
     private bool _showToolMenu;
     private bool _showSequenceTools;
@@ -273,6 +275,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public Guid? SelectedObjectId => _selectedObjectId;
     public bool IsMoveToolSelected => _transformTool == TransformTool.Move;
     public bool IsHomeVisible => _showHome;
+    public bool SnapMoveToGrid => _snapMoveToGrid;
+    public float MoveGridStep => _moveGridStep;
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
@@ -2012,6 +2016,17 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                     () => Resize(scene, selected, 0.9f),
                     () => Resize(scene, selected, 1.1f));
                 break;
+        }
+
+        ImGui.Separator();
+        ImGui.Checkbox("Snap Move to grid", ref _snapMoveToGrid);
+        if (_snapMoveToGrid)
+        {
+            var gridStep = _moveGridStep;
+            ImGui.SetNextItemWidth(110f);
+            if (ImGui.InputFloat("Grid step", ref gridStep, 0.5f, 5f, "%.2f"))
+                _moveGridStep = Math.Clamp(gridStep, 0.1f, 1_000f);
+            ImGui.TextDisabled("World units");
         }
     }
 

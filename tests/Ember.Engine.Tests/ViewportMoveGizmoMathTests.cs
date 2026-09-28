@@ -59,4 +59,23 @@ public sealed class ViewportMoveGizmoMathTests
         Assert.False(ViewportMoveGizmoMath.TryConvertWorldPositionToParentSpace(
             Vector3.One, parentWorld, out _));
     }
+
+    [Fact]
+    public void SnapsPositiveAndNegativeWorldCoordinatesToNearestGridPoint()
+    {
+        var snapped = ViewportMoveGizmoMath.SnapWorldPosition(
+            new Vector3(12.4f, -12.6f, 3.9f), 5f);
+
+        Assert.Equal(new Vector3(10f, -15f, 5f), snapped);
+    }
+
+    [Theory]
+    [InlineData(0f)]
+    [InlineData(-1f)]
+    [InlineData(float.NaN)]
+    public void RejectsInvalidGridSteps(float step)
+    {
+        Assert.Throws<System.ArgumentOutOfRangeException>(() =>
+            ViewportMoveGizmoMath.SnapWorldPosition(Vector3.Zero, step));
+    }
 }

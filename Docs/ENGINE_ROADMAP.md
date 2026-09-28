@@ -78,9 +78,10 @@ per-step Why? explanations, two levels of offline hints, action-based completion
 project-local completion record. Its button-driven walkthrough and UX.5 novice observations remain
 unverified.
 M1.2 now has a nested selectable object hierarchy, a command-based parent action that preserves
-world placement when the new local transform can be represented without shear, and a viewport Move
-gizmo with parent-aware axis dragging and one undoable edit on release. Turn/Size gizmos, snapping,
-live drag verification, and save/reopen evidence remain open.
+world placement when the new local transform can be represented without shear, a viewport Move gizmo
+with parent-aware axis dragging and one undoable edit on release, and optional world-grid snapping for
+Move. Turn/Size gizmos, rotation/scale snapping, live drag verification, and save/reopen evidence
+remain open.
 Preserve completed reliability work.
 
 Execution order: complete M0.4's interactive verification and continue UX.1–UX.4 alongside
@@ -217,7 +218,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice now catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls, then add selected-asset reimport with invalid-replacement recovery. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 now has nested selection, undoable world-preserving reparenting, and a first viewport Move gizmo; implement Turn/Size gizmos and snapping, then verify hierarchy and transforms through visible selection, drag, undo/redo, and save/reopen. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice now catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls, then add selected-asset reimport with invalid-replacement recovery. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 now has nested selection, undoable world-preserving reparenting, a viewport Move gizmo, and optional world-grid snapping for Move; implement Turn/Size gizmos and rotation/scale snapping, then verify hierarchy and transforms through visible selection, drag, undo/redo, and save/reopen. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.

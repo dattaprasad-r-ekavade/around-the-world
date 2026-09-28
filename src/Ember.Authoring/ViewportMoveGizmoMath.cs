@@ -121,6 +121,22 @@ public static class ViewportMoveGizmoMath
         return IsFinite(parentLocalPosition);
     }
 
+    public static Vector3 SnapWorldPosition(Vector3 worldPosition, float gridStep)
+    {
+        if (!IsFinite(worldPosition))
+            throw new ArgumentOutOfRangeException(nameof(worldPosition), "World position must be finite.");
+        if (!float.IsFinite(gridStep) || gridStep <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(gridStep), "Grid step must be finite and positive.");
+
+        return new Vector3(
+            SnapCoordinate(worldPosition.X, gridStep),
+            SnapCoordinate(worldPosition.Y, gridStep),
+            SnapCoordinate(worldPosition.Z, gridStep));
+    }
+
+    private static float SnapCoordinate(float value, float gridStep) =>
+        MathF.Round(value / gridStep, MidpointRounding.AwayFromZero) * gridStep;
+
     private static bool IsVisible(Vector3 projected) =>
         IsFinite(projected) && projected.Z is >= 0f and <= 1f;
 

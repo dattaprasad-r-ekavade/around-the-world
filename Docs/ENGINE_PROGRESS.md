@@ -2170,23 +2170,24 @@ undo/redo and save/reopen checks open until exercised in the editor.
   the completed move participates in the existing undo/redo history. Camera orbit and ImGui mouse
   actions are suppressed during the drag. Invalid or singular parent transforms do not apply a
   non-finite position.
-- Turn/Size viewport handles and snapping are still unimplemented. The gizmo is hidden in Home,
-  Play, sequence preview and sequence export states.
+- Optional world-grid snapping is available for Move, with a configurable grid step. Turn/Size
+  viewport handles and rotation/scale snapping are still unimplemented. The gizmo is hidden in
+  Home, Play, sequence preview and sequence export states.
 
 ### Verification evidence
 
 | Check | Result |
 | --- | --- |
-| `ViewportMoveGizmoMathTests` | PASS — 4 tests cover screen-axis picking, pointer-to-world movement, parent-space conversion through rotation/scale, and singular-parent rejection |
+| `ViewportMoveGizmoMathTests` | PASS — 8 tests cover screen-axis picking, pointer-to-world movement, parent-space conversion through rotation/scale, singular-parent rejection, world-grid rounding and invalid grid steps |
 | Release solution build | PASS — 0 warnings, 0 errors |
 | Full `Ember.Engine.Tests` run | INCOMPLETE — 296 passed and 4 existing world-cell preparation/time-budget tests failed under the full run; each of those 4 passed when rerun alone |
-| CharacterStudio Release capture | PASS — `ReleaseAShowcase.json`, 1280×720; selected Fox and all three handles visible; exit 0, stderr empty; `%TEMP%/Ember/M12MoveGizmo-90cf373fccc540a89a58806c1fbc775d/move-gizmo.png` |
+| CharacterStudio Release capture | PASS — `ReleaseAShowcase.json`, 1280×720; selected Fox, all three handles and the Move grid-snap control visible; exit 0, stderr empty; `%TEMP%/Ember/M12MoveSnap-0e5933e18c314698b92b09f9c5a81ff4/move-snap.png` |
 | Live axis drag, undo/redo and save/reopen | NOT RUN — capture verifies rendering only; desktop input was not exercised |
 
 M1.2 remains **In progress**. The scene-view Move gizmo is rendered and its projection and local-space
 math are covered, but the live interaction and persistence workflow are not yet proven. The full CPU
 suite also needs a stable green run; isolated reruns do not turn its four full-run timeouts into a pass.
 
-Next: add Turn/Size handles and snapping, then exercise Move, Turn, Size, parent selection and
-reparenting through visible controls, undo/redo, and save/reopen. Rerun the full CPU suite and Windows
-CI after those changes.
+Next: add Turn/Size handles and rotation/scale snapping, then exercise Move, Turn, Size, parent
+selection and reparenting through visible controls, undo/redo, and save/reopen. Rerun the full CPU
+suite and Windows CI after those changes.

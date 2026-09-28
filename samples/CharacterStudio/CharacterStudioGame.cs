@@ -573,6 +573,9 @@ public sealed class CharacterStudioGame : EngineHost
         var delta = ViewportMoveGizmoMath.CalculateMoveDelta(drag.Handle,
             drag.PointerStart, logicalMouse);
         var worldPosition = drag.StartWorldPosition + delta;
+        if (_editorUi is { SnapMoveToGrid: true } editorUi)
+            worldPosition = ViewportMoveGizmoMath.SnapWorldPosition(worldPosition,
+                editorUi.MoveGridStep);
         var localPosition = worldPosition;
         if (drag.HasParent && !ViewportMoveGizmoMath.TryConvertWorldPositionToParentSpace(
             worldPosition, drag.ParentWorld, out localPosition))
