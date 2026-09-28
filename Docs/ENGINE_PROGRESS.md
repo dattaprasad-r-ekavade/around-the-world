@@ -1715,9 +1715,8 @@ The graphics fixture and screenshot are under
 The fixture was assembled for the relocated launch; create/import services were covered by CPU
 tests. M1.1 remains open until the button-driven editor workflow is exercised, including invalid
 reimport through the visible editor path. The Project window currently accepts typed paths rather
-than providing native file/folder pickers. M0.4's Windows test run failed remotely, so the next
-priority is to get actionable diagnostics and make that workflow green before advancing the M1.1
-gate.
+than providing native file/folder pickers. At the time of this review the latest recorded Windows
+test run had failed remotely; the later successful rerun and current UX.1 work are recorded below.
 
 ## Creator-first roadmap update — 28 September 2026
 
@@ -1728,8 +1727,8 @@ active roadmap. Updated M1–M5 acceptance and README direction: learn through s
 visible edits and play; use optional lessons and later designer-game missions on the
 same command layer and project data. Advanced tools remain available on demand.
 
-M0.1–M0.3 recorded passes are preserved; M0.4 and M1.1 remain In progress. New UX work
-is Not started. Fresh local Release test suite passed 283/283; RPG check passed.
+At the time of this review, M0.1–M0.3 recorded passes were preserved; M0.4 and M1.1 remained
+In progress, and new UX work was Not started. Fresh local Release test suite passed 283/283; RPG check passed.
 Release solution build could not copy DLLs locked by running CharacterStudio (39692);
 the session was not closed. Remote CI was not rechecked because gh is unavailable.
 No fresh live UI/novice/soak test was claimed; no runtime implementation was changed.
@@ -1744,3 +1743,158 @@ loop, offline contextual explanations and hints, and evidence of learning throug
 unguided variation. Connected lesson scope to M1, M2 and M3 so lessons never depend on
 unimplemented tools. Teaching is required in the first release; the later designer-game
 presentation remains an extension of the same editor and project model.
+
+## Latest validation and UX.1 workspace slice — 28 September 2026
+
+Pulled `origin/master` from `43f06a7` to `be78c2e`. The prior report's remote failure is now
+superseded: GitHub Actions run [36341384329](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36341384329)
+completed successfully for `be78c2e50873969de9cb62b7171cb76945b8beab`. That run predates the
+local UX.1 edits below, so those edits have local build and CPU evidence only.
+
+### UX.1 implementation slice
+
+- CharacterStudio now opens Home when no project or saved scene was supplied. Home offers
+  Make a game, Make a film, Open a project, and recent projects. Game/film creation uses the
+  existing project service; the film route explains that an animated model is needed for
+  Animate and Finish.
+- The editing view has one top toolbar, an Add to scene library on the left, and an Inspector
+  on the right. Save, Undo/Redo, Play/Stop, Animate and Finish are visible. World, RPG,
+  sequence/export and performance details are opt-in under More tools; Reset workspace layout
+  restores the default panel visibility.
+- The permanent render/shortcut overlay is now opt-in as Performance details. At 1280x720,
+  the default side panels leave a 780-pixel center span (61% of logical width) for the scene.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors after the local UI changes |
+| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 283 passed, 0 failed, 0 skipped when run alone |
+| Activation-queue review finding | RESOLVED — accepts partial-budget steps; focused test passed five consecutive runs |
+| `dotnet run --project tests/Ember.Rpg.Check/Ember.Rpg.Check.csproj --configuration Release --no-build --no-restore` | PASS — save then load equals original |
+| Home graphics capture | PASS — CharacterStudio exited 0; 1280x720; `%TEMP%\Ember\UX1\home-clean.png` |
+| Open-scene workspace capture | PASS — ReleaseAShowcase opened and rendered at 1280x720; no panel overlap; `%TEMP%\Ember\UX1\editor-workspace.png` |
+| Interactive manual gate | NOT RUN — resize/DPI, create/open/import buttons, save/reopen and Play/Stop were not operated interactively |
+
+The activation-queue review finding came from asserting exactly three steps even though a
+cell may share the last partial frame budget and need an extra call. The test now asserts at
+least three steps and yields while async preparation remains in flight. The production queue
+was unchanged. The focused test passed five consecutive runs, and the full suite passed
+283/283 after this fix.
+
+An earlier validation attempt ran the full test suite alongside the RPG check and reported
+several async cell-preparation timeouts. Those timeouts did not reproduce when the full suite
+ran alone. Runner contention is possible but not proven; revisit if they recur.
+
+M0.4 remains **In progress** until its interactive graphics checks are recorded. M1.1 remains
+**In progress** because create/open/import/reimport through the visible workflow and native
+pickers are unverified. UX.1 is **In progress**: Home and the default layout were captured, but
+resize and DPI acceptance remain open. The direct `--open` scene capture does not prove the
+project workflow or button-driven actions.
+
+## Visible transform actions and browse workflow — 28 September 2026
+
+Fetched `origin`. `master` was already at `origin/master` (`be78c2e`), so no incoming master
+commit needed merging. The newly fetched `cursor/engine-code-review-2-f580` branch is based on
+the older `43f06a7` tree and carries historical review notes; it was not merged into the active
+teaching-engine roadmap.
+
+### UX.2 and UX.3 implementation slice
+
+- Home uses a project name and a native folder picker to choose the project location. Open
+  Project uses a native picker for `ember.project.json`; Add to scene uses a `.glb` picker rooted
+  at the active project. Invalid project folder names and project/import/open failures receive
+  readable feedback.
+- The Inspector exposes Move, Turn and Size actions for the selected hierarchy item. Move
+  changes one scene axis by 25 scene units, Turn applies 15 degrees around a local axis, and Size
+  changes uniform scale by 10 percent with bounded scale values. Every button action is stored
+  as a `TransformEditCommand`, so existing Undo/Redo operates on it. Numeric transforms are under
+  More details.
+- Existing state-aware status covers standalone scenes, missing projects, project readiness,
+  create/import/save errors and temporary Play changes. This is a start toward UX.3, not completion
+  of contextual help or its manual accessibility checks.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors after the transform controls were added |
+| Home capture | PASS — 1280×720, exit 0, `%TEMP%\Ember\UX2\home-browse.png` |
+| Relocated self-contained CharacterStudio capture | PASS — opened packaged `ReleaseAShowcase.json` outside the checkout, rendered the scene and transform controls at 1280×720, exit 0; `%TEMP%\Ember\UX2\relocated-workspace.png` |
+| Self-contained win-x64 package | PASS — 128.39 MiB, below the M0.3 135 MiB guardrail; `%TEMP%\Ember\UX2\publish-9100ed772ccd4ba7a6615fc5daf2a40f` |
+| CPU test suite | NOT RUN in this batch, per instruction. The earlier 283/283 result predates these editor-control changes and is not evidence for them. |
+| Interactive UI checks | NOT RUN — native dialog selection, transform clicks/undo, Play/Stop, save/reopen, resize and DPI remain unverified. |
+
+UX.2 remains **In progress**: starter thumbnails, a preview before placing a model, and viewport
+pointer selection are still missing; selection currently works from the visible object list. The
+native pickers and transform actions have only been visually captured, not operated interactively.
+UX.3 remains **In progress** pending richer contextual help and keyboard/focus/scaling checks. M0.4,
+UX.1 and M1.1 remain **In progress** pending their live interactive gates.
+
+Next: continue UX.2 with starter/model previews and viewport selection, then use the desktop
+workflow to verify the picker, transform, undo, save/reopen and Play/Stop paths before closing M0.4,
+UX.1 or M1.1.
+
+## Starter projects and scene-view selection — 28 September 2026
+
+### UX.2 implementation slice
+
+- Home now draws separate Game and Film starter thumbnails that match their contents. The Game
+  starter uses the courtyard with Fox Walk and Run characters; the Film starter uses the courtyard
+  with one animated Fox. Both routes use the same project format and copy the GLBs plus their
+  attribution README into the new project.
+- Starter creation builds in a sibling staging directory, copies the chosen starter scene to
+  `Scenes/Main.json`, and moves the completed directory to its final location. The film scene is
+  [FilmStarter.json](../samples/CharacterStudio/Scenes/FilmStarter.json). New projects select the
+  animated character so its existing clip controls are immediately visible.
+- A short, unobstructed click in the central scene view now selects the nearest object using its
+  transformed mesh bounds. A drag remains orbit-camera input. The current picker is an AABB broad
+  phase; overlapping mesh bounds can select the wrong object, so triangle-level picking remains a
+  refinement for M1.2.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors after the editor and project-creation changes |
+| Self-contained win-x64 publish | PASS — 128.41 MiB; latest package includes both starter scenes, Fox/courtyard assets and attribution README; `%TEMP%\Ember\UX2\roadmap-step-1a320cee92d74c288d90e6ee929a821b` |
+| Home starter-card capture | PASS — 1280×720, exit 0; `%TEMP%\Ember\UX2\home-latest.png` |
+| Relocated Game and Film project smoke launches | PASS — both manually assembled from the published bundled scene/assets/manifest, launched with latest package `--project`, rendered at 1280×720 and exited 0; Film opens with the Fox selected and its clip controls visible; `%TEMP%\Ember\UX2\starter-final-smoke-972ec7f35e5a4edc922e3f99bb1b370d` |
+| CPU tests | NOT RUN in this batch, per instruction. |
+| Home creation and viewport click interaction | NOT RUN — the Home buttons, staging/move operation and mouse selection were not exercised interactively. |
+
+UX.2 remains **In progress**: model import still places immediately, so there is no preview-before-placement step. The scene-view picker code is in place but not proven by a live mouse action. UX.1, UX.3, M0.4 and M1.1 retain their open interactive gates.
+
+Next: separate model import from scene placement and render a temporary preview with explicit Add and Cancel actions. Then verify the Home starter buttons, native pickers, scene selection, Move/Turn/Size undo, save/reopen and Play/Stop through actual desktop input.
+
+## Model import preview before placement — 28 September 2026
+
+### UX.2 implementation slice
+
+- Browsing for a GLB now imports it into a temporary project asset and renders it beside the
+  authored scene. The preview owns its own render resources and animated characters continue to
+  play while it is visible; it is not part of scene data, undo history or saves.
+- **Add to scene** creates an undoable scene object, loads the authored scene preview with the new
+  asset, selects the object and frames the scene. **Cancel preview** releases its render resources
+  and removes the staged project asset. Browsing a second model replaces the first preview only
+  after the new model loads successfully.
+- Opening another project or cell, entering Play, returning Home or closing the editor releases a
+  pending preview. Camera framing includes the preview in the editor and excludes it from sequence
+  export bounds.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors after the temporary preview and Add/Cancel flow were implemented |
+| CPU tests | NOT RUN, per instruction. |
+| Interactive model browse, preview, Add, Cancel and undo | NOT RUN — the desktop controls and project-file cleanup still need live verification. |
+
+UX.2 remains **In progress**. The preview-before-placement behavior is implemented, but the full
+button-driven import and rollback path has not been exercised with desktop input. Earlier picker,
+selection, transform, save/reopen, resize, DPI and Play/Stop gates also remain open. UX.1, UX.3,
+M0.4 and M1.1 retain their interactive gates.
+
+Next: verify browse → preview → Add, Cancel cleanup, undo, save/reopen and Play/Stop using a
+relocated project. Continue the remaining Home, selection, transform, resize and DPI checks before
+closing UX.2 or dependent release gates.

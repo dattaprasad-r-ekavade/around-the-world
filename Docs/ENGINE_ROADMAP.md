@@ -51,18 +51,25 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4 and M1.1 are **In progress**; later tasks remain **Not started**
-against their new acceptance criteria;
-existing components are reusable foundations, not a reason to repeat their implementation.
+M0.1 through M0.3 have passed; M0.4, M1.1 and UX.1–UX.3 are **In progress**; later tasks
+remain **Not started** against their new acceptance criteria. Existing components are
+reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
-M0.4 remains open despite a commit title saying it was closed (remote CI/manual evidence
-is incomplete). M1.1 services exist but the visible button-driven workflow is unproven.
-New UX tasks below are **Not started**. Preserve completed reliability work.
+M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
+passes on the pulled baseline; interactive resize/save/reopen/play-stop evidence remains
+incomplete. The reviewed activation-queue test now allows valid partial-budget steps and the
+full local CPU suite passes. M1.1 services and native project/model pickers exist but the
+visible button-driven workflow is unproven. UX.1 has a first local Home and scene-first
+workspace implementation; resize and DPI checks remain. UX.2 has starter thumbnails, atomic
+Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view
+selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
+verification of these controls remains open.
+Preserve completed reliability work.
 
-Execution order: close M0.4 verification, then prioritize UX.1–UX.3 alongside completion
-of M1.1. Do not add more default panels while this work is pending. UX.4 and UX.5 are
-required for the M1 gate; UX.6 follows the first M2 interaction. Design/specification work
-can proceed while CI is being repaired; do not call dependent release gates Passed.
+Execution order: complete M0.4's interactive verification and continue UX.1–UX.3 alongside
+completion of M1.1. Do not add more default panels while this work is pending. UX.4 and UX.5
+are required for the M1 gate; UX.6 follows the first M2 interaction. Work may proceed while
+manual evidence is pending, but do not call dependent release gates Passed.
 
 Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
 or exact UI steps, fixture, configuration, hardware where relevant, result, and artifact
@@ -108,9 +115,9 @@ contract in CREATOR_EXPERIENCE.md. These tasks precede additional advanced edito
 
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
-| UX.1 | Replace all-panels startup with Home and a scene-first workspace. | Home offers Game, Film and Open; the default editor has one toolbar, an Add library and contextual selection panel. World/RPG/debug/export panels are closed until requested. No overlapping windows; at least 60% scene area at 1280×720; reset layout, resize and DPI checks pass. | Not started |
-| UX.2 | Make common actions visual and understandable. | File/folder pickers, starter thumbnails, model preview, click selection and visible Move/Turn/Size/Play/Undo/Save actions complete the basic loop. No typed paths, JSON, manifests or required shortcuts. Advanced values remain discoverable in More details. | Not started |
-| UX.3 | Provide safe feedback and contextual help. | State-aware empty/disabled/error messages offer a next action; a missing model can be located through Browse. Save status, undo, recovery and Play/Stop are understandable. Keyboard focus, readable scaling and non-color-only states pass manual checks. | Not started |
+| UX.1 | Replace all-panels startup with Home and a scene-first workspace. | Home offers Game, Film and Open; the default editor has one toolbar, an Add library and contextual selection panel. World/RPG/debug/export panels are closed until requested. No overlapping windows; at least 60% scene area at 1280×720; reset layout, resize and DPI checks pass. | **In progress** |
+| UX.2 | Make common actions visual and understandable. | File/folder pickers, starter thumbnails, model preview, click selection and visible Move/Turn/Size/Play/Undo/Save actions complete the basic loop. No typed paths, JSON, manifests or required shortcuts. Advanced values remain discoverable in More details. | **In progress** |
+| UX.3 | Provide safe feedback and contextual help. | State-aware empty/disabled/error messages offer a next action; a missing model can be located through Browse. Save status, undo, recovery and Play/Stop are understandable. Keyboard focus, readable scaling and non-color-only states pass manual checks. | **In progress** |
 | UX.4 | Build a skippable first-creation lesson. | A starter enables add → move → play → undo → save/reopen without code; one concept per step, detected from real actions, with replayable help. Teach objects and transforms through explain → change → predict → play → reflect → vary. Contextual Why?/hints work offline; free creation is always available. The lesson uses normal commands and project data. | Not started |
 | UX.5 | Observe novice use and revise. | Three first-time users complete the starter loop within 10 minutes each without facilitator intervention; record errors/help/confusion and a later unaided repeat. All can undo, Play/Stop and reopen safely, explain their change, and repeat it on a different object without step-by-step hints. No participants means In progress with the usability gate pending, not a developer-inferred pass. | Not started |
 | UX.6 | Prototype one designer-game mission. | After M2.1, build/test/save a small challenge through an optional mission using the same authoring commands. Teach triggers, actions, goals and playtesting; after guidance, the creator makes a different interaction and explains its rule. Explain consequences and recognize completion; never lock editing behind progression. Free edit and mission mode reopen the same project unchanged. | Not started |
@@ -193,7 +200,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Close M0.4 verification, then implement UX.1 first with M1.1 integration. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks and finish UX.1–UX.3 with the M1.1 workflow. Next separate model import from placement and show a preview before adding it; verify scene-view picking, layout reset, resize, DPI, project pickers and edit/save/play actions through visible controls before closing any gate. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.

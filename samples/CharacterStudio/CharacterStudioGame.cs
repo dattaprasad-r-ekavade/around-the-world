@@ -55,6 +55,29 @@ public sealed class CharacterStudioGame : EngineHost
         public LifecycleSmokeStage Stage { get; set; } = LifecycleSmokeStage.StartPlaySession;
     }
 
+    private sealed class PendingAssetPlacementPreview : IDisposable
+    {
+        public PendingAssetPlacementPreview(EngineProjectAssetImport import, PreviewResources resources,
+            SceneGraph scene, SceneObject item)
+        {
+            Import = import;
+            Resources = resources;
+            Scene = scene;
+            Item = item;
+        }
+
+        public EngineProjectAssetImport Import { get; }
+        public PreviewResources Resources { get; }
+        public SceneGraph Scene { get; }
+        public SceneObject Item { get; }
+
+        public void Dispose()
+        {
+            try { Resources.Dispose(); }
+            finally { Import.Dispose(); }
+        }
+    }
+
     private static readonly Guid PreviewInstanceId = Guid.Parse("01234567-89ab-cdef-0123-456789abcdef");
     private static readonly GltfAssetReference DefaultAsset = new(
         Guid.Parse("89abcdef-0123-4567-89ab-cdef01234567"), "Assets/TextureCoordinateTest.glb");
@@ -91,6 +114,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly PlaybackOptions _playbackOptions;
     private SceneResourceScope? _sceneResources;
     private ReloadableAsset<PreviewResources>? _preview;
+    private PendingAssetPlacementPreview? _pendingAssetPlacementPreview;
     private CharacterStudioEditorUi? _editorUi;
     private DirectionalShadowMap? _shadowMap;
     private Effect? _shadowEffect;
@@ -116,6 +140,7 @@ public sealed class CharacterStudioGame : EngineHost
     private CharacterStudioReferenceSession? _referenceSession;
     private readonly Stopwatch _referenceFrameClock = new();
     private bool _referenceFirstFrame = true;
+    private bool _showDiagnostics;
     private double _referenceNextModeSwitchSeconds = 60d;
     private double _referenceNextMemorySampleSeconds = 1d;
     private string? _referenceMarkdownPath;
@@ -129,6 +154,9 @@ public sealed class CharacterStudioGame : EngineHost
     private PhysicsWorld? _pathPreviewWorld;
     private PhysicsFixedStepper? _pathPreviewStepper;
     private MouseState _lastMouse;
+    private Vector2 _viewportClickOrigin;
+    private bool _viewportPointerWasDown;
+    private bool _viewportClickPending;
     private bool _hasMouse;
     private int _sceneDrawCalls;
     private int _shadowDrawCalls;
@@ -281,8 +309,9 @@ public sealed class CharacterStudioGame : EngineHost
                 CaptureAuthoringRecovery, ApplyAuthoringRecovery,
                 StartPathFollow, GetPathFollowStatus, StopPathFollow,
                 CreateProjectForEditor, path => OpenProjectForEditor(path), ImportGlbForEditor,
+                GetPendingAssetPreviewName, AcceptPendingAssetPreview, CancelPendingAssetPreview,
                 () => _project?.FilePath,
-                LoadRecentProjectPaths);
+                LoadRecentProjectPaths, visible => _showDiagnostics = visible);
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -399,6 +428,7 @@ public sealed class CharacterStudioGame : EngineHost
 
         var uiCapturesMouse = _editorUi?.WantsMouse ?? false;
         var uiCapturesKeyboard = _editorUi?.WantsKeyboard ?? false;
+        ProcessViewportSelection(mouse, LogicalMouse(mouse), uiCapturesMouse);
 
         var sequenceExportRunning = _sequenceExportJob?.IsRunning == true;
         if (!sequenceExportRunning && !uiCapturesKeyboard && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
@@ -435,10 +465,68 @@ public sealed class CharacterStudioGame : EngineHost
                 _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 foreach (var state in preview.CharacterInstances.Values)
                     state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
+                if (_pendingAssetPlacementPreview is { } pending)
+                    foreach (var state in pending.Resources.CharacterInstances.Values)
+                        state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
             }
         }
         base.Update(gameTime);
+    }
+
+    private void ProcessViewportSelection(MouseState mouse, Vector2 logicalMouse, bool uiCapturesMouse)
+    {
+        var pointerDown = mouse.LeftButton == ButtonState.Pressed;
+        if (pointerDown && !_viewportPointerWasDown)
+        {
+            _viewportClickOrigin = logicalMouse;
+            _viewportClickPending = _playSession is null && !_sequencePreviewEnabled
+                && !uiCapturesMouse && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false);
+        }
+        else if (!pointerDown && _viewportPointerWasDown)
+        {
+            var isClick = _viewportClickPending
+                && Vector2.DistanceSquared(_viewportClickOrigin, logicalMouse) <= 16f
+                && !uiCapturesMouse
+                && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false);
+            if (isClick) SelectSceneObjectAt(logicalMouse);
+            _viewportClickPending = false;
+        }
+
+        _viewportPointerWasDown = pointerDown;
+    }
+
+    private void SelectSceneObjectAt(Vector2 logicalMouse)
+    {
+        var logicalViewport = new Viewport(0, 0, LogicalWidth, LogicalHeight);
+        var nearPoint = logicalViewport.Unproject(new Vector3(logicalMouse, 0f),
+            _camera.Projection, _camera.View, Matrix.Identity);
+        var farPoint = logicalViewport.Unproject(new Vector3(logicalMouse, 1f),
+            _camera.Projection, _camera.View, Matrix.Identity);
+        var direction = farPoint - nearPoint;
+        if (direction.LengthSquared() <= 0.000001f) return;
+        direction.Normalize();
+        var ray = new Ray(nearPoint, direction);
+        SceneObject? nearest = null;
+        float nearestDistance = float.PositiveInfinity;
+
+        foreach (var item in _sceneData.Objects)
+        {
+            if (!item.Enabled || GetSceneObjectBounds(item) is not { } bounds) continue;
+            var distance = ray.Intersects(new BoundingBox(bounds.Min, bounds.Max));
+            if (distance is not { } hitDistance || hitDistance < 0f || hitDistance >= nearestDistance) continue;
+            nearest = item;
+            nearestDistance = hitDistance;
+        }
+
+        if (nearest is null)
+        {
+            _editorUi?.ClearObjectSelection();
+            return;
+        }
+
+        var assetId = nearest.GltfAsset?.AssetId ?? nearest.StaticMeshLod?.NearAsset.AssetId;
+        _editorUi?.SelectObject(nearest.Id, assetId);
     }
 
     protected override void Draw(GameTime gameTime)
@@ -465,14 +553,18 @@ public sealed class CharacterStudioGame : EngineHost
         GraphicsDevice.BlendState = BlendState.Opaque;
         GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
         DrawShadowedScene(lightViewProjection);
+        if (_playSession is null) DrawPendingAssetPlacementPreview();
 
-        _ui.Begin();
-        var statusRows = GetStatusRows();
-        var statusHeight = Math.Max(48, 22 * statusRows.Count + 20);
-        _ui.Panel(new Rectangle(16, 16, 760, statusHeight), new Color(12, 16, 24, 230), new Color(82, 101, 122));
-        for (var row = 0; row < statusRows.Count; row++)
-            _ui.TextFit(statusRows[row], new Vector2(28, 25 + (row * 22)), 736f, 1f, Color.White);
-        _ui.End();
+        if (_showDiagnostics)
+        {
+            _ui.Begin();
+            var statusRows = GetStatusRows();
+            var statusHeight = Math.Max(48, 22 * statusRows.Count + 20);
+            _ui.Panel(new Rectangle(16, 16, 760, statusHeight), new Color(12, 16, 24, 230), new Color(82, 101, 122));
+            for (var row = 0; row < statusRows.Count; row++)
+                _ui.TextFit(statusRows[row], new Vector2(28, 25 + (row * 22)), 736f, 1f, Color.White);
+            _ui.End();
+        }
 
         base.Draw(gameTime);
         _editorUi?.Render();
@@ -489,6 +581,7 @@ public sealed class CharacterStudioGame : EngineHost
     protected override void UnloadContent()
     {
         Window.TextInput -= HandleTextInput;
+        CancelPendingAssetPreview(updateStatus: false, frameScene: false);
         _sequenceExportJob?.Cancel();
         _sequenceExportTarget?.Dispose();
         _sequenceExportTarget = null;
@@ -664,38 +757,53 @@ public sealed class CharacterStudioGame : EngineHost
         return result;
     }
 
-    private Bounds3? GetSceneBounds()
+    private Bounds3? GetSceneObjectBounds(SceneObject item)
+    {
+        if (_preview is null) return null;
+        return GetSceneObjectBounds(CurrentScene, item, _preview.Current);
+    }
+
+    private static Bounds3? GetSceneObjectBounds(SceneGraph scene, SceneObject item, PreviewResources preview)
+    {
+        var reference = item.StaticMeshLod?.NearAsset ?? item.GltfAsset;
+        if (reference is null || !preview.Assets.TryGetValue(reference.AssetId, out var asset)) return null;
+
+        var instanceWorld = scene.GetWorldMatrix(item.Id);
+        if (asset.SkinnedCharacter is { } character)
+        {
+            var localBounds = asset.AnimatedBounds
+                ?? character.LocalBounds.Transform(character.Skin.MeshNodeRestWorldMatrix);
+            return localBounds.Transform(instanceWorld);
+        }
+
+        if (asset.Scene is not { } importedScene) return null;
+        Bounds3? result = null;
+        foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
+        foreach (var part in parts)
+        {
+            if (part.Mesh.LocalBounds is not { } localBounds) continue;
+            var bounds = localBounds.Transform(importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld);
+            result = result is { } current ? current.Encapsulate(bounds) : bounds;
+        }
+
+        return result;
+    }
+
+    private Bounds3? GetSceneBounds(bool includePendingAssetPreview = true)
     {
         if (_preview is null) return null;
         Bounds3? result = null;
         foreach (var item in CurrentScene.Objects)
         {
             if (!item.Enabled) continue;
-            var reference = item.StaticMeshLod?.NearAsset ?? item.GltfAsset;
-            if (reference is null
-                || !_preview.Current.Assets.TryGetValue(reference.AssetId, out var asset)) continue;
-            var instanceWorld = CurrentScene.GetWorldMatrix(item.Id);
-            if (asset.SkinnedCharacter is { } character)
-            {
-                var localBounds = asset.AnimatedBounds
-                    ?? character.LocalBounds.Transform(character.Skin.MeshNodeRestWorldMatrix);
-                var bounds = localBounds.Transform(instanceWorld);
-                result = result is { } current ? current.Encapsulate(bounds) : bounds;
-                continue;
-            }
-
-            if (asset.Scene is not { } importedScene) continue;
-            foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
-            {
-                var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
-                foreach (var part in parts)
-                {
-                    if (part.Mesh.LocalBounds is not { } localBounds) continue;
-                    var bounds = localBounds.Transform(world);
-                    result = result is { } current ? current.Encapsulate(bounds) : bounds;
-                }
-            }
+            if (GetSceneObjectBounds(CurrentScene, item, _preview.Current) is not { } bounds) continue;
+            result = result is { } current ? current.Encapsulate(bounds) : bounds;
         }
+
+        if (includePendingAssetPreview && _playSession is null && _sequenceExportJob?.IsRunning != true
+            && _pendingAssetPlacementPreview is { } pending
+            && GetSceneObjectBounds(pending.Scene, pending.Item, pending.Resources) is { } previewBounds)
+            result = result is { } current ? current.Encapsulate(previewBounds) : previewBounds;
 
         return result;
     }
@@ -847,6 +955,66 @@ public sealed class CharacterStudioGame : EngineHost
                 _sceneDrawCalls++;
                 asset.MeshBuffers[part.Mesh].Draw(effect);
             }
+        }
+    }
+
+    private void DrawPendingAssetPlacementPreview()
+    {
+        if (_pendingAssetPlacementPreview is not { } pending || _shadowEffect is not { } effect) return;
+        if (pending.Item.GltfAsset is not { } reference
+            || !pending.Resources.Assets.TryGetValue(reference.AssetId, out var asset)) return;
+
+        var instanceWorld = pending.Scene.GetWorldMatrix(pending.Item.Id);
+        if (asset.SkinnedCharacter is { } character)
+        {
+            if (!pending.Resources.CharacterInstances.TryGetValue(pending.Item.Id, out var state)) return;
+            foreach (var primitive in character.Primitives)
+            {
+                var world = state.Pose.MeshNodeWorldMatrix * instanceWorld;
+                SetSceneMaterial(effect, world, primitive.Material.BaseColorFactor,
+                    primitive.Material.BaseColorImageIndex is { } imageIndex
+                        ? asset.Textures[imageIndex]
+                        : _white,
+                    primitive.Material.HasBaseColorImage,
+                    primitive.Material.AlphaMode == GltfAlphaMode.Mask,
+                    primitive.Material.AlphaCutoff);
+                GraphicsDevice.RasterizerState = primitive.Material.DoubleSided
+                    ? RasterizerState.CullNone
+                    : RasterizerState.CullCounterClockwise;
+                effect.CurrentTechnique = effect.Techniques["SkinnedScene"];
+                _sceneDrawCalls++;
+                _skinnedDrawCalls++;
+                asset.SkinnedMeshBuffers[primitive.Mesh].Draw(effect, state.Pose);
+            }
+            return;
+        }
+
+        if (asset.Scene is not { } importedScene) return;
+        var cameraFrustum = new BoundingFrustum(_camera.View * _camera.Projection);
+        foreach (var (nodeId, parts) in importedScene.MeshesByNodeId)
+        foreach (var part in parts)
+        {
+            var world = importedScene.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+            if (part.Mesh.LocalBounds is { } localBounds
+                && !StaticSceneCuller.IsVisible(localBounds, world, cameraFrustum))
+            {
+                _culledStaticDrawCalls++;
+                continue;
+            }
+
+            SetSceneMaterial(effect, world, part.Material.BaseColorFactor,
+                part.Material.HasBaseColorImage
+                    ? asset.Textures[part.Material.BaseColorImageIndex!.Value]
+                    : _white,
+                part.Material.HasBaseColorImage,
+                part.Material.AlphaMode == GltfAlphaMode.Mask,
+                part.Material.AlphaCutoff);
+            GraphicsDevice.RasterizerState = part.Material.DoubleSided
+                ? RasterizerState.CullNone
+                : RasterizerState.CullCounterClockwise;
+            effect.CurrentTechnique = effect.Techniques["StaticScene"];
+            _sceneDrawCalls++;
+            asset.MeshBuffers[part.Mesh].Draw(effect);
         }
     }
 
@@ -1351,6 +1519,7 @@ public sealed class CharacterStudioGame : EngineHost
     private void StartPlaySession()
     {
         if (_playSession is not null || _preview is null) return;
+        CancelPendingAssetPreview();
         ScenePlaySession? candidate = null;
         ImportedAudioClip? candidateAudio = null;
         try
@@ -1843,10 +2012,48 @@ public sealed class CharacterStudioGame : EngineHost
         Console.WriteLine($"Saved scene to {fullPath}");
     }
 
-    private string CreateProjectForEditor(string projectDirectory)
+    private string CreateProjectForEditor(string projectDirectory, bool isFilm)
     {
-        var project = EngineProjectWorkspace.CreateEmpty(projectDirectory);
-        return OpenProjectForEditor(project.FilePath, created: true);
+        var destination = Path.TrimEndingDirectorySeparator(Path.GetFullPath(projectDirectory));
+        if (Directory.Exists(destination) || File.Exists(destination))
+            throw new IOException($"Project destination already exists: '{destination}'.");
+
+        var parent = Path.GetDirectoryName(destination)
+            ?? throw new InvalidDataException("Project destination has no parent directory.");
+        Directory.CreateDirectory(parent);
+        var staging = Path.Combine(parent, $".{Path.GetFileName(destination)}.starter-{Guid.NewGuid():N}");
+        try
+        {
+            var stagedProject = EngineProjectWorkspace.CreateEmpty(staging);
+            var bundledContent = AppContext.BaseDirectory;
+            var projectAssets = stagedProject.ResolveContentPath("Assets");
+            foreach (var assetName in new[] { "Fox.glb", "ReleaseACourtyard.glb", "README.md" })
+            {
+                var source = Path.Combine(bundledContent, "Assets", assetName);
+                if (!File.Exists(source))
+                    throw new FileNotFoundException($"The bundled starter asset '{assetName}' is missing.", source);
+                File.Copy(source, Path.Combine(projectAssets, assetName));
+            }
+
+            var templateName = isFilm ? "FilmStarter.json" : "ReleaseAShowcase.json";
+            var sourceScene = Path.Combine(bundledContent, "Scenes", templateName);
+            if (!File.Exists(sourceScene))
+                throw new FileNotFoundException($"The bundled starter scene '{templateName}' is missing.", sourceScene);
+            File.Copy(sourceScene, stagedProject.ResolveStartupScenePath(), overwrite: true);
+            Directory.Move(staging, destination);
+        }
+        finally
+        {
+            if (Directory.Exists(staging)) Directory.Delete(staging, recursive: true);
+        }
+
+        var projectPath = Path.Combine(destination, EngineProjectFile.DefaultFileName);
+        var openedMessage = OpenProjectForEditor(projectPath, created: true);
+        if (_sceneData.Objects.FirstOrDefault(item => item.CharacterSettings is not null) is { } starterCharacter)
+            _editorUi?.SelectObject(starterCharacter.Id, starterCharacter.GltfAsset?.AssetId);
+        return isFilm
+            ? $"{openedMessage} The starter includes an animated character and a courtyard for your first shot."
+            : $"{openedMessage} The starter includes a courtyard and two animated characters to explore and edit.";
     }
 
     private string OpenProjectForEditor(string projectPath, bool created = false)
@@ -1878,6 +2085,7 @@ public sealed class CharacterStudioGame : EngineHost
             if (_preview is null)
                 throw new InvalidOperationException("The editor preview is not ready to switch projects.");
 
+            CancelPendingAssetPreview();
             var cleanupError = _preview.Reload(() => loadedPreview);
             candidatePreview = null;
             _project = project;
@@ -1931,45 +2139,117 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null)
             throw new InvalidOperationException("The editor preview is not ready to import an asset.");
 
-        _editorUi?.CompletePendingEdit(_sceneData);
-        CaptureCharacterSettings();
-        using var imported = EngineProjectWorkspace.ImportGlb(_project, sourcePath);
-        var temporaryScenePath = Path.Combine(Path.GetTempPath(), "Ember", "CharacterStudio",
-            "ImportStaging", $"{Guid.NewGuid():N}.json");
+        EngineProjectAssetImport? imported = null;
         PreviewResources? candidatePreview = null;
         try
         {
-            SceneFile.SaveAtomic(_sceneData, temporaryScenePath);
-            var candidateScene = SceneFile.Load(temporaryScenePath);
-            var existingInstances = candidateScene.Objects
-                .Where(item => item.GltfAsset?.AssetId == imported.Reference.AssetId).ToArray();
-            var positionX = existingInstances.Length == 0
-                ? 0f
-                : existingInstances.Max(item => item.Transform.Position.X) + 100f;
-            var item = SceneObjectFactory.CreateAssetInstance(candidateScene, imported.Reference,
-                new Vector3(positionX, 0f, 0f));
-            candidateScene.Add(item);
+            imported = EngineProjectWorkspace.ImportGlb(_project, sourcePath);
+            var previewScene = new SceneGraph();
+            var item = SceneObjectFactory.CreateAssetInstance(previewScene, imported.Reference, Vector3.Zero);
+            previewScene.Add(item);
+            candidatePreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(previewScene, _project.RootDirectory, _project), previewScene);
+            if (candidatePreview.HasSkinnedCharacters)
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    candidatePreview.MaximumJointCount);
 
-            var loadedPreview = PreviewResources.Load(GraphicsDevice,
-                ResolveSceneAssets(candidateScene, _project.RootDirectory, _project), candidateScene);
-            candidatePreview = loadedPreview;
-            _editorHistory.Execute(_sceneData, new CreateSceneObjectCommand(item));
-            var cleanupError = _preview.Reload(() => loadedPreview);
+            if (GetSceneBounds(includePendingAssetPreview: false) is { } sceneBounds
+                && GetSceneObjectBounds(previewScene, item, candidatePreview) is { } modelBounds)
+            {
+                var gap = Math.Clamp(modelBounds.Size.X * 0.15f, 2f, 20f);
+                item.Transform.Position += new Vector3(sceneBounds.Max.X + gap - modelBounds.Min.X, 0f, 0f);
+            }
+
+            var pending = new PendingAssetPlacementPreview(imported, candidatePreview, previewScene, item);
+            imported = null;
             candidatePreview = null;
-            imported.Commit();
-            _preview.Current.RebuildCharacterInstances(_sceneData);
-            _editorUi?.SelectObject(item.Id, imported.Reference.AssetId);
-            BuildSequencePreview();
-            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            var previousPending = _pendingAssetPlacementPreview;
+            _pendingAssetPlacementPreview = pending;
+            try { previousPending?.Dispose(); }
+            catch (Exception exception) { _faults.Add($"Previous model preview cleanup: {exception.Message}"); }
 
-            var message = $"Imported {Path.GetFileName(sourcePath)} as {imported.Reference.SourcePath} and placed '{item.Name}'. Press S to save the scene.";
-            if (cleanupError is not null) message += $" Previous preview cleanup reported: {cleanupError.Message}";
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            var cleanupNote = previousPending is null ? string.Empty : " Replaced the previous preview.";
+            var message = $"Previewing {Path.GetFileName(sourcePath)} in the scene.{cleanupNote} Choose Add to scene or Cancel preview.";
+            _reimportStatus = message;
             return message;
         }
         finally
         {
             candidatePreview?.Dispose();
-            if (File.Exists(temporaryScenePath)) File.Delete(temporaryScenePath);
+            imported?.Dispose();
+        }
+    }
+
+    private string? GetPendingAssetPreviewName() => _pendingAssetPlacementPreview is { } pending
+        ? Path.GetFileName(pending.Import.Reference.SourcePath)
+        : null;
+
+    private string AcceptPendingAssetPreview()
+    {
+        var pending = _pendingAssetPlacementPreview
+            ?? throw new InvalidOperationException("Browse for a model before adding it to the scene.");
+        if (_project is null || _preview is null)
+            throw new InvalidOperationException("The project preview is not ready to add this model.");
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before adding a model to the scene.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before adding a model.");
+
+        _editorUi?.CompletePendingEdit(_sceneData);
+        CaptureCharacterSettings();
+        var candidateScene = SceneGraphCloner.Clone(_sceneData);
+        var item = SceneObjectFactory.CreateAssetInstance(candidateScene, pending.Import.Reference,
+            pending.Item.Transform.Position);
+        item.Transform.Rotation = pending.Item.Transform.Rotation;
+        item.Transform.Scale = pending.Item.Transform.Scale;
+        candidateScene.Add(item);
+
+        PreviewResources? candidatePreview = null;
+        try
+        {
+            var loadedPreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(candidateScene, _project.RootDirectory, _project), candidateScene);
+            candidatePreview = loadedPreview;
+            if (candidatePreview.HasSkinnedCharacters)
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    candidatePreview.MaximumJointCount);
+
+            BeforeSceneStructureChange();
+            _editorHistory.Execute(_sceneData, new CreateSceneObjectCommand(item));
+            var cleanupError = _preview.Reload(() => loadedPreview);
+            candidatePreview = null;
+            pending.Import.Commit();
+            _pendingAssetPlacementPreview = null;
+            _editorUi?.SelectObject(item.Id, pending.Import.Reference.AssetId);
+            BuildSequencePreview();
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+
+            var message = $"Added '{item.Name}' to the scene. Save the scene to keep the placement.";
+            if (cleanupError is not null) message += $" Previous preview cleanup reported: {cleanupError.Message}";
+            try { pending.Dispose(); }
+            catch (Exception exception) { message += $" Preview cleanup reported: {exception.Message}"; }
+            _reimportStatus = message;
+            return message;
+        }
+        finally
+        {
+            candidatePreview?.Dispose();
+        }
+    }
+
+    private void CancelPendingAssetPreview() => CancelPendingAssetPreview(updateStatus: true, frameScene: true);
+
+    private void CancelPendingAssetPreview(bool updateStatus, bool frameScene)
+    {
+        var pending = _pendingAssetPlacementPreview;
+        if (pending is null) return;
+        _pendingAssetPlacementPreview = null;
+        try { pending.Dispose(); }
+        finally
+        {
+            if (updateStatus) _reimportStatus = "Model preview canceled; the asset was not added to the scene.";
+            if (frameScene && GetSceneBounds() is { } bounds) _camera.Frame(bounds);
         }
     }
 
@@ -2003,6 +2283,7 @@ public sealed class CharacterStudioGame : EngineHost
                     attachmentCandidate = new AttachmentBoxRenderer(GraphicsDevice);
             }
 
+            CancelPendingAssetPreview();
             var cleanupError = _preview.Reload(() => loadedPreview);
             replacement = null; // ownership transferred to ReloadableAsset
             if (attachmentCandidate is not null)

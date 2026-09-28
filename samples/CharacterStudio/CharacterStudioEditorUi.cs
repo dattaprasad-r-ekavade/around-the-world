@@ -33,7 +33,15 @@ internal delegate string RecoveryApplyAction(AuthoredProjectRecoveryStaging stag
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed partial class CharacterStudioEditorUi : IDisposable
 {
+    private enum TransformTool
+    {
+        Move,
+        Turn,
+        Size
+    }
+
     private readonly IntPtr _context;
+    private readonly IntPtr _windowHandle;
     private readonly ImGuiIOPtr _io;
     private readonly ImGuiMonoGameRenderer _renderer;
     private SceneCommandHistory _history;
@@ -66,14 +74,17 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Func<Guid, CellPathGraph, CellPathRoute, string> _startPathFollow;
     private readonly Func<Guid, string?> _getPathFollowStatus;
     private readonly Action<Guid> _stopPathFollow;
-    private readonly Func<string, string> _createProject;
+    private readonly Func<string, bool, string> _createProject;
     private readonly Func<string, string> _openProject;
     private readonly Func<string, string> _importGlb;
+    private readonly Func<string?> _getPendingAssetPreviewName;
+    private readonly Func<string> _acceptPendingAssetPreview;
+    private readonly Action _cancelPendingAssetPreview;
     private readonly Func<string?> _getCurrentProjectPath;
     private readonly Func<IReadOnlyList<string>> _getRecentProjectPaths;
+    private readonly Action<bool> _setDiagnosticsVisible;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
-    private string _textEntry = string.Empty;
     private string _sequenceExportDirectory = Path.Combine(Environment.CurrentDirectory, "SequenceFrames");
     private string _worldManifestPath = Path.Combine(Environment.CurrentDirectory, WorldManifest.DefaultFileName);
     private string _worldStatus = "Open or create a world manifest.";
@@ -111,7 +122,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private Guid? _selectedAssetId;
     private Guid? _activeTransformObjectId;
     private Transform? _activeTransformStart;
+    private TransformTool _transformTool = TransformTool.Move;
     private bool _initialSelectionSet;
+    private bool _showHome;
+    private bool _showAddLibrary = true;
+    private bool _showToolMenu;
+    private bool _showSequenceTools;
+    private bool _showWorldTools;
+    private bool _showRpgTools;
+    private bool _showDiagnostics;
     private bool _wantsMouse;
     private bool _wantsKeyboard;
     private int _lastWheel;
@@ -153,12 +172,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         RecoveryCaptureAction captureRecovery, RecoveryApplyAction applyRecovery,
         Func<Guid, CellPathGraph, CellPathRoute, string> startPathFollow,
         Func<Guid, string?> getPathFollowStatus, Action<Guid> stopPathFollow,
-        Func<string, string> createProject, Func<string, string> openProject,
-        Func<string, string> importGlb, Func<string?> getCurrentProjectPath,
-        Func<IReadOnlyList<string>> getRecentProjectPaths)
+        Func<string, bool, string> createProject, Func<string, string> openProject,
+        Func<string, string> importGlb, Func<string?> getPendingAssetPreviewName,
+        Func<string> acceptPendingAssetPreview, Action cancelPendingAssetPreview,
+        Func<string?> getCurrentProjectPath,
+        Func<IReadOnlyList<string>> getRecentProjectPaths, Action<bool> setDiagnosticsVisible)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
+        _windowHandle = device.PresentationParameters.DeviceWindowHandle;
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _beforeStructureChange = beforeStructureChange ?? throw new ArgumentNullException(nameof(beforeStructureChange));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
@@ -192,8 +214,17 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _createProject = createProject ?? throw new ArgumentNullException(nameof(createProject));
         _openProject = openProject ?? throw new ArgumentNullException(nameof(openProject));
         _importGlb = importGlb ?? throw new ArgumentNullException(nameof(importGlb));
+        _getPendingAssetPreviewName = getPendingAssetPreviewName
+            ?? throw new ArgumentNullException(nameof(getPendingAssetPreviewName));
+        _acceptPendingAssetPreview = acceptPendingAssetPreview
+            ?? throw new ArgumentNullException(nameof(acceptPendingAssetPreview));
+        _cancelPendingAssetPreview = cancelPendingAssetPreview
+            ?? throw new ArgumentNullException(nameof(cancelPendingAssetPreview));
         _getCurrentProjectPath = getCurrentProjectPath ?? throw new ArgumentNullException(nameof(getCurrentProjectPath));
         _getRecentProjectPaths = getRecentProjectPaths ?? throw new ArgumentNullException(nameof(getRecentProjectPaths));
+        _setDiagnosticsVisible = setDiagnosticsVisible ?? throw new ArgumentNullException(nameof(setDiagnosticsVisible));
+        _showHome = _getCurrentProjectPath() is null && _getCurrentScenePath() is null;
+        _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         LoadRpgPlacementContent();
         _context = ImGui.CreateContext();
         try
@@ -228,6 +259,24 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _initialSelectionSet = true;
     }
 
+    public void ClearObjectSelection()
+    {
+        _selectedObjectId = null;
+        _initialSelectionSet = true;
+    }
+
+    public bool IsSceneViewportPoint(Vector2 logicalPosition)
+    {
+        if (_showHome || logicalPosition.X < 0f || logicalPosition.X >= _logicalWidth
+            || logicalPosition.Y < 48f || logicalPosition.Y >= _logicalHeight)
+            return false;
+
+        if (_showAddLibrary && _logicalWidth >= 1_050 && logicalPosition.X < 220f)
+            return false;
+        var inspectorWidth = Math.Min(280f, _logicalWidth * 0.24f);
+        return logicalPosition.X < _logicalWidth - inspectorWidth;
+    }
+
     public void ResetSceneSelection()
     {
         _selectedObjectId = null;
@@ -240,6 +289,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public void OnProjectOpened(string projectRoot, string? worldManifestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         _worldManifest = null;
         _worldManifestPath = worldManifestPath is null
             ? Path.Combine(projectRoot, WorldManifest.DefaultFileName)
@@ -291,21 +341,432 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         MaybeAutosaveAuthoredProject(scene, elapsedSeconds);
 
         ImGui.NewFrame();
-        DrawProjectWorkspace();
-        DrawPanel(scene);
-        DrawSequencePanel();
-        DrawWorldCellPanel(scene);
-        DrawRpgAuthoringPanel(scene);
+        if (_showHome)
+        {
+            DrawHomeWorkspace();
+        }
+        else
+        {
+            DrawMainToolbar(scene);
+            if (!_showHome)
+            {
+                DrawAddLibrary(scene);
+                DrawPanel(scene);
+                DrawMoreToolsMenu();
+                if (_showSequenceTools) DrawSequencePanel();
+                if (_showWorldTools) DrawWorldCellPanel(scene);
+                if (_showRpgTools) DrawRpgAuthoringPanel(scene);
+            }
+        }
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
     }
 
+    private void DrawHomeWorkspace()
+    {
+        ImGui.SetNextWindowPos(NumericsVector2.Zero);
+        ImGui.SetNextWindowSize(_io.DisplaySize);
+        var flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove
+            | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings;
+        if (!ImGui.Begin("Ember Home", flags))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var panelWidth = Math.Min(800f, Math.Max(360f, _logicalWidth - 48f));
+        var panelHeight = Math.Min(510f, Math.Max(360f, _logicalHeight - 48f));
+        ImGui.SetCursorPos(new NumericsVector2(
+            Math.Max(24f, (_logicalWidth - panelWidth) * 0.5f),
+            Math.Max(24f, (_logicalHeight - panelHeight) * 0.5f)));
+        var showHomeChoices = ImGui.BeginChild("Home choices",
+            new NumericsVector2(panelWidth, panelHeight), ImGuiChildFlags.Borders);
+        if (showHomeChoices)
+        {
+            ImGui.Dummy(new NumericsVector2(0f, 12f));
+            ImGui.Text("EMBER · MAKE SOMETHING REAL");
+            ImGui.TextWrapped("Choose a starting point. You can change direction whenever you like.");
+            ImGui.Separator();
+
+            ImGui.Text("Name your project");
+            ImGui.SetNextItemWidth(-1f);
+            ImGui.InputTextWithHint("##homeProjectName", "Project name", ref _projectName, 128);
+            ImGui.TextWrapped($"Save in: {_projectParentDirectory}");
+            if (ImGui.Button("Choose a folder…"))
+            {
+                var selectedFolder = CharacterStudioFilePickers.PickProjectParent(
+                    _projectParentDirectory, _windowHandle);
+                if (selectedFolder is not null) _projectParentDirectory = selectedFolder;
+            }
+            ImGui.Dummy(new NumericsVector2(0f, 6f));
+
+            var twoStarterColumns = panelWidth >= 620f;
+            var cardWidth = twoStarterColumns
+                ? Math.Max(140f, (panelWidth - 48f) * 0.5f)
+                : Math.Max(140f, panelWidth - 24f);
+            DrawStarterThumbnail(false, cardWidth, 72f);
+            if (twoStarterColumns) ImGui.SameLine();
+            DrawStarterThumbnail(true, cardWidth, 72f);
+            if (ImGui.Button("Make a game\nCourtyard + two characters", new NumericsVector2(cardWidth, 72f)))
+                CreateProjectFromHome(isFilm: false);
+            if (twoStarterColumns) ImGui.SameLine();
+            if (ImGui.Button("Make a film\nCourtyard + one animated character", new NumericsVector2(cardWidth, 72f)))
+                CreateProjectFromHome(isFilm: true);
+
+            ImGui.Dummy(new NumericsVector2(0f, 4f));
+            if (ImGui.Button("Open a project…", new NumericsVector2(-1f, 38f)))
+            {
+                var projectFile = CharacterStudioFilePickers.PickProjectFile(
+                    _projectParentDirectory, _windowHandle);
+                if (projectFile is not null) OpenProjectFromHome(projectFile);
+            }
+
+            var recentProjects = _getRecentProjectPaths();
+            if (recentProjects.Count > 0)
+            {
+                var recentLabel = recentProjects.Select(path => Path.GetFileName(Path.GetDirectoryName(path)))
+                    .FirstOrDefault(name => !string.IsNullOrWhiteSpace(name)) ?? "Recent projects";
+                if (ImGui.BeginCombo("Recent projects", recentLabel))
+                {
+                    foreach (var projectPath in recentProjects)
+                    {
+                        var name = Path.GetFileName(Path.GetDirectoryName(projectPath));
+                        if (ImGui.Selectable($"{name}##{projectPath}"))
+                            OpenProjectFromHome(projectPath);
+                    }
+                    ImGui.EndCombo();
+                }
+            }
+
+            if (_getCurrentProjectPath() is not null || _getCurrentScenePath() is not null)
+            {
+                if (ImGui.Button("Continue editing", new NumericsVector2(-1f, 38f))) _showHome = false;
+            }
+            if (!string.IsNullOrWhiteSpace(_projectWorkspaceStatus))
+                ImGui.TextWrapped(_projectWorkspaceStatus);
+        }
+        ImGui.EndChild();
+        ImGui.End();
+    }
+
+    private static void DrawStarterThumbnail(bool isFilm, float width, float height)
+    {
+        var origin = ImGui.GetCursorScreenPos();
+        var drawList = ImGui.GetWindowDrawList();
+        static uint Color(float red, float green, float blue) =>
+            ImGui.GetColorU32(new NumericsVector4(red, green, blue, 1f));
+
+        var right = origin.X + width;
+        var bottom = origin.Y + height;
+        drawList.AddRectFilled(origin, new NumericsVector2(right, bottom), Color(0.08f, 0.12f, 0.16f));
+        drawList.AddRectFilled(new NumericsVector2(origin.X + 8f, origin.Y + height * 0.62f),
+            new NumericsVector2(right - 8f, bottom - 7f), Color(0.11f, 0.24f, 0.22f));
+        drawList.AddRectFilled(new NumericsVector2(origin.X + 18f, origin.Y + 14f),
+            new NumericsVector2(origin.X + width * 0.38f, origin.Y + height * 0.66f), Color(0.37f, 0.25f, 0.18f));
+        drawList.AddRectFilled(new NumericsVector2(right - width * 0.38f, origin.Y + 20f),
+            new NumericsVector2(right - 18f, origin.Y + height * 0.66f), Color(0.42f, 0.29f, 0.20f));
+
+        var characterCount = isFilm ? 1 : 2;
+        for (var index = 0; index < characterCount; index++)
+        {
+            var centerX = origin.X + width * (isFilm ? 0.52f : index == 0 ? 0.50f : 0.72f);
+            var centerY = origin.Y + height * 0.55f;
+            var foxColor = Color(0.88f, 0.48f, 0.13f);
+            drawList.AddRectFilled(new NumericsVector2(centerX - 13f, centerY - 4f),
+                new NumericsVector2(centerX + 12f, centerY + 8f), foxColor);
+            drawList.AddCircleFilled(new NumericsVector2(centerX + 11f, centerY - 8f), 7f, foxColor, 12);
+            drawList.AddRectFilled(new NumericsVector2(centerX + 12f, centerY - 17f),
+                new NumericsVector2(centerX + 16f, centerY - 10f), foxColor);
+            drawList.AddLine(new NumericsVector2(centerX - 7f, centerY + 7f),
+                new NumericsVector2(centerX - 9f, centerY + 16f), foxColor, 3f);
+            drawList.AddLine(new NumericsVector2(centerX + 5f, centerY + 7f),
+                new NumericsVector2(centerX + 7f, centerY + 16f), foxColor, 3f);
+        }
+
+        if (isFilm)
+        {
+            var frameColor = Color(0.82f, 0.83f, 0.72f);
+            drawList.AddLine(new NumericsVector2(origin.X + 28f, origin.Y + 8f),
+                new NumericsVector2(right - 28f, origin.Y + 8f), frameColor, 2f);
+            drawList.AddLine(new NumericsVector2(origin.X + 28f, origin.Y + 8f),
+                new NumericsVector2(origin.X + 28f, bottom - 15f), frameColor, 2f);
+            drawList.AddLine(new NumericsVector2(right - 28f, origin.Y + 8f),
+                new NumericsVector2(right - 28f, bottom - 15f), frameColor, 2f);
+            drawList.AddRectFilled(new NumericsVector2(origin.X + 8f, bottom - 5f),
+                new NumericsVector2(origin.X + width * 0.62f, bottom - 2f), Color(0.75f, 0.31f, 0.20f));
+        }
+
+        ImGui.Dummy(new NumericsVector2(width, height));
+    }
+
+    private void CreateProjectFromHome(bool isFilm)
+    {
+        try
+        {
+            var projectName = _projectName.Trim();
+            if (string.IsNullOrWhiteSpace(projectName) || projectName is "." or ".."
+                || projectName.IndexOfAny(Path.GetInvalidFileNameChars()) >= 0
+                || projectName.EndsWith(".", StringComparison.Ordinal)
+                || projectName.EndsWith(" ", StringComparison.Ordinal))
+                throw new ArgumentException("Choose a project name that can be used as a folder name.");
+
+            var projectDirectory = Path.Combine(_projectParentDirectory, projectName);
+            _projectWorkspaceStatus = _createProject(projectDirectory, isFilm);
+            _projectName = projectName;
+            _showSequenceTools = false;
+            _showHome = false;
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not create the project: {exception.Message}";
+        }
+    }
+
+    private void OpenProjectFromHome(string path)
+    {
+        try
+        {
+            _projectWorkspaceStatus = _openProject(path);
+            _showHome = false;
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not open the project: {exception.Message}";
+        }
+    }
+
+    private string GetWorkspaceReadyMessage()
+    {
+        var projectPath = _getCurrentProjectPath();
+        if (projectPath is not null)
+            return $"Ready to edit {Path.GetFileName(Path.GetDirectoryName(projectPath))}. Select an object to change it, or use Add to place something new.";
+        if (_getCurrentScenePath() is not null)
+            return "This scene is open on its own. Create or open a project to add models and keep your work together.";
+        return "Choose Make a game or Make a film to create a project.";
+    }
+
+    private void DrawMainToolbar(SceneGraph scene)
+    {
+        ImGui.SetNextWindowPos(NumericsVector2.Zero);
+        ImGui.SetNextWindowSize(new NumericsVector2(_logicalWidth, 48f));
+        var flags = ImGuiWindowFlags.NoTitleBar | ImGuiWindowFlags.NoMove
+            | ImGuiWindowFlags.NoResize | ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoSavedSettings;
+        if (!ImGui.Begin("Main toolbar", flags))
+        {
+            ImGui.End();
+            return;
+        }
+
+        if (ImGui.Button("Home"))
+        {
+            CommitActiveTransformEdit(scene);
+            if (_getPendingAssetPreviewName() is not null)
+            {
+                _cancelPendingAssetPreview();
+                _projectWorkspaceStatus = "Model preview canceled; the asset was not added to the scene.";
+            }
+            _showHome = true;
+        }
+        ImGui.SameLine();
+        var scenePath = _getCurrentScenePath();
+        var canSave = scenePath is not null && !_isPlaying();
+        if (!canSave) ImGui.BeginDisabled();
+        if (ImGui.Button("Save") && scenePath is not null)
+        {
+            try
+            {
+                _saveSceneAs(scenePath);
+                _projectWorkspaceStatus = $"Saved {Path.GetFileName(scenePath)}.";
+            }
+            catch (Exception exception)
+            {
+                _projectWorkspaceStatus = $"Could not save the scene: {exception.Message}";
+            }
+        }
+        if (!canSave) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (!_history.CanUndo) ImGui.BeginDisabled();
+        if (ImGui.Button("Undo")) RunHistoryAction(scene, undo: true);
+        if (!_history.CanUndo) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (!_history.CanRedo) ImGui.BeginDisabled();
+        if (ImGui.Button("Redo")) RunHistoryAction(scene, undo: false);
+        if (!_history.CanRedo) ImGui.EndDisabled();
+        ImGui.SameLine();
+        if (ImGui.Button(_isPlaying() ? "Stop" : "Play"))
+        {
+            if (_isPlaying()) _stopPlay();
+            else _startPlay();
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Animate"))
+        {
+            _showSequenceTools = true;
+            _showWorldTools = false;
+            _showRpgTools = false;
+            if (_getSequenceInfo() is null)
+                _projectWorkspaceStatus = "Add an animated character to this scene to create a film sequence.";
+        }
+        ImGui.SameLine();
+        if (ImGui.Button("Finish"))
+        {
+            _showSequenceTools = true;
+            _showWorldTools = false;
+            _showRpgTools = false;
+            if (_getSequenceInfo() is null)
+                _projectWorkspaceStatus = "A film sequence is needed before frames can be exported.";
+        }
+        ImGui.SameLine();
+        if (ImGui.Button(_showAddLibrary ? "Hide Add" : "Add")) _showAddLibrary = !_showAddLibrary;
+        ImGui.SameLine();
+        if (ImGui.Button(_showToolMenu ? "Close tools" : "More tools")) _showToolMenu = !_showToolMenu;
+
+        var currentProject = _getCurrentProjectPath();
+        if (currentProject is not null)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled(Path.GetFileName(Path.GetDirectoryName(currentProject)));
+        }
+        ImGui.End();
+    }
+
+    private void DrawMoreToolsMenu()
+    {
+        if (!_showToolMenu) return;
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 48f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(220f, _logicalWidth), 196f));
+        if (!ImGui.Begin("More tools", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
+        {
+            ImGui.End();
+            return;
+        }
+
+        var showSequenceTools = _showSequenceTools;
+        if (ImGui.Checkbox("Animate and Finish", ref showSequenceTools))
+        {
+            _showSequenceTools = showSequenceTools;
+            if (showSequenceTools) _showWorldTools = _showRpgTools = false;
+        }
+        var showWorldTools = _showWorldTools;
+        if (ImGui.Checkbox("World Cells", ref showWorldTools))
+        {
+            _showWorldTools = showWorldTools;
+            if (showWorldTools) _showSequenceTools = _showRpgTools = false;
+        }
+        var showRpgTools = _showRpgTools;
+        if (ImGui.Checkbox("RPG authoring", ref showRpgTools))
+        {
+            _showRpgTools = showRpgTools;
+            if (showRpgTools) _showSequenceTools = _showWorldTools = false;
+        }
+        if (ImGui.Checkbox("Performance details", ref _showDiagnostics))
+            _setDiagnosticsVisible(_showDiagnostics);
+        ImGui.Separator();
+        if (ImGui.Button("Reset workspace layout"))
+        {
+            _showAddLibrary = true;
+            _showToolMenu = false;
+            _showSequenceTools = false;
+            _showWorldTools = false;
+            _showRpgTools = false;
+            _showDiagnostics = false;
+            _setDiagnosticsVisible(false);
+        }
+        ImGui.End();
+    }
+
+    private void DrawAddLibrary(SceneGraph scene)
+    {
+        if (!_showAddLibrary || _logicalWidth < 1_050) return;
+        const float libraryWidth = 220f;
+        ImGui.SetNextWindowPos(new NumericsVector2(0f, 48f));
+        ImGui.SetNextWindowSize(new NumericsVector2(libraryWidth, Math.Max(160f, _logicalHeight - 48f)));
+        if (!ImGui.Begin("Add to scene", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
+        {
+            ImGui.End();
+            return;
+        }
+
+        if (ImGui.Button("Add empty object", new NumericsVector2(-1f, 34f))) CreateEmpty(scene);
+        ImGui.Separator();
+        ImGui.Text("Add a model");
+        var canImport = _getCurrentProjectPath() is not null;
+        if (!canImport) ImGui.BeginDisabled();
+        var pendingPreviewName = _getPendingAssetPreviewName();
+        if (pendingPreviewName is not null)
+        {
+            ImGui.TextWrapped($"Previewing {pendingPreviewName}. It is not in the scene yet.");
+            if (ImGui.Button("Add to scene", new NumericsVector2(-1f, 34f)))
+            {
+                try { _projectWorkspaceStatus = _acceptPendingAssetPreview(); }
+                catch (Exception exception) { _projectWorkspaceStatus = $"Could not add the model: {exception.Message}"; }
+            }
+            if (ImGui.Button("Cancel preview", new NumericsVector2(-1f, 30f)))
+            {
+                try
+                {
+                    _cancelPendingAssetPreview();
+                    _projectWorkspaceStatus = "Model preview canceled; the asset was not added to the scene.";
+                }
+                catch (Exception exception) { _projectWorkspaceStatus = $"Could not cancel the preview: {exception.Message}"; }
+            }
+        }
+        if (ImGui.Button("Browse for a model…", new NumericsVector2(-1f, 34f)))
+        {
+            var projectPath = _getCurrentProjectPath();
+            var modelPath = CharacterStudioFilePickers.PickGltfFile(
+                projectPath is null ? null : Path.GetDirectoryName(projectPath), _windowHandle);
+            if (modelPath is not null)
+            {
+                try
+                {
+                    _projectWorkspaceStatus = _importGlb(modelPath);
+                }
+                catch (Exception exception)
+                {
+                    _projectWorkspaceStatus = $"Could not add the model: {exception.Message}";
+                }
+            }
+        }
+        if (!canImport) ImGui.EndDisabled();
+        if (!canImport) ImGui.TextWrapped("Create or open a project before adding a model.");
+
+        var availableAssets = GetSceneAssets(scene);
+        if (_selectedAssetId is null || availableAssets.All(asset => asset.AssetId != _selectedAssetId))
+            _selectedAssetId = availableAssets.FirstOrDefault()?.AssetId;
+        ImGui.Separator();
+        ImGui.Text("Models in this scene");
+        ImGui.BeginChild("Scene assets", new NumericsVector2(0f, Math.Max(64f, _logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
+        foreach (var asset in availableAssets)
+        {
+            var label = $"{Path.GetFileName(asset.SourcePath)}##asset-{asset.AssetId:N}";
+            if (ImGui.Selectable(label, _selectedAssetId == asset.AssetId))
+                _selectedAssetId = asset.AssetId;
+        }
+        ImGui.EndChild();
+        var selectedAsset = availableAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
+        if (selectedAsset is null) ImGui.BeginDisabled();
+        if (ImGui.Button("Add another instance", new NumericsVector2(-1f, 34f)) && selectedAsset is not null)
+            PlaceAsset(scene, selectedAsset);
+        if (selectedAsset is null) ImGui.EndDisabled();
+        if (!string.IsNullOrWhiteSpace(_projectWorkspaceStatus))
+            ImGui.TextWrapped(_projectWorkspaceStatus);
+        ImGui.End();
+    }
+
+    private static GltfAssetReference[] GetSceneAssets(SceneGraph scene) => scene.Objects
+        .Where(item => item.GltfAsset is not null)
+        .Select(item => item.GltfAsset!)
+        .GroupBy(asset => asset.AssetId)
+        .Select(group => group.First())
+        .ToArray();
+
     private void DrawRpgAuthoringPanel(SceneGraph scene)
     {
-        ImGui.SetNextWindowPos(new NumericsVector2(800f, 16f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(450f, 688f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("RPG Authoring", ImGuiWindowFlags.NoCollapse))
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 56f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _logicalWidth), Math.Max(180f, _logicalHeight - 64f)));
+        if (!ImGui.Begin("RPG Authoring", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
@@ -618,9 +1079,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void DrawWorldCellPanel(SceneGraph scene)
     {
-        ImGui.SetNextWindowPos(new NumericsVector2(400f, 16f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(380f, 660f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("World Cells", ImGuiWindowFlags.NoCollapse))
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 56f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(380f, _logicalWidth), Math.Max(180f, _logicalHeight - 64f)));
+        if (!ImGui.Begin("World Cells", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
@@ -941,59 +1402,34 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         if (!_initialSelectionSet)
         {
-            _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
+            _selectedObjectId = scene.Objects.FirstOrDefault(item => item.CharacterSettings is not null)?.Id
+                ?? scene.Objects.FirstOrDefault()?.Id;
             _initialSelectionSet = true;
         }
         else if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
             _selectedObjectId = null;
 
-        ImGui.SetNextWindowPos(new NumericsVector2(16f, 224f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(370f, 480f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("Character Studio", ImGuiWindowFlags.NoCollapse))
+        var inspectorWidth = Math.Min(280f, _logicalWidth * 0.24f);
+        ImGui.SetNextWindowPos(new NumericsVector2(Math.Max(0f, _logicalWidth - inspectorWidth), 48f));
+        ImGui.SetNextWindowSize(new NumericsVector2(inspectorWidth, Math.Max(160f, _logicalHeight - 48f)));
+        if (!ImGui.Begin("Inspector", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
         }
 
-        ImGui.Text("Scene tools");
         if (_isPlaying())
         {
             ImGui.TextColored(new NumericsVector4(1f, 0.72f, 0.2f, 1f), "PLAYING ON CLONE");
-            ImGui.SameLine();
-            if (ImGui.Button("Stop and restore"))
-            {
-                _stopPlay();
-                ImGui.End();
-                return;
-            }
-            ImGui.SameLine();
+            ImGui.TextWrapped("Changes made during Play are temporary. Stop to return to the scene you were editing.");
             if (ImGui.Button("Interact")) _interact();
             var volume = _getInteractionVolume();
             ImGui.SetNextItemWidth(-1f);
             if (ImGui.SliderFloat("Interaction volume", ref volume, 0f, 1f, "%.2f"))
                 _setInteractionVolume(volume);
         }
-        else if (ImGui.Button("Play on clone"))
-        {
-            _startPlay();
-            ImGui.End();
-            return;
-        }
-        ImGui.SetNextItemWidth(-1f);
-        ImGui.InputTextWithHint("##textEntry", "Click here and type", ref _textEntry, 128);
-        ImGui.TextDisabled("Orbit pauses while a tool window is active.");
-        if (!_history.CanUndo) ImGui.BeginDisabled();
-        if (ImGui.Button("Undo")) RunHistoryAction(scene, undo: true);
-        if (!_history.CanUndo) ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (!_history.CanRedo) ImGui.BeginDisabled();
-        if (ImGui.Button("Redo")) RunHistoryAction(scene, undo: false);
-        if (!_history.CanRedo) ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (ImGui.Button("Create Empty")) CreateEmpty(scene);
-        ImGui.Separator();
-        ImGui.Text("Hierarchy");
-        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, 145f), ImGuiChildFlags.Borders);
+        ImGui.Text("Objects");
+        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, Math.Min(132f, _logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
         foreach (var item in scene.Objects)
         {
             var label = $"{item.Name}##{item.Id:N}";
@@ -1004,29 +1440,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
         if (_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
             CommitActiveTransformEdit(scene);
-
-        var availableAssets = scene.Objects
-            .Where(item => item.GltfAsset is not null)
-            .Select(item => item.GltfAsset!)
-            .GroupBy(asset => asset.AssetId)
-            .Select(group => group.First())
-            .ToArray();
-        if (_selectedAssetId is null || availableAssets.All(asset => asset.AssetId != _selectedAssetId))
-            _selectedAssetId = availableAssets.FirstOrDefault()?.AssetId;
-        ImGui.Separator();
-        ImGui.Text("Assets");
-        ImGui.BeginChild("Scene assets", new NumericsVector2(0f, 80f), ImGuiChildFlags.Borders);
-        foreach (var asset in availableAssets)
-        {
-            var label = $"{Path.GetFileName(asset.SourcePath)}##asset-{asset.AssetId:N}";
-            if (ImGui.Selectable(label, _selectedAssetId == asset.AssetId))
-                _selectedAssetId = asset.AssetId;
-        }
-        ImGui.EndChild();
-        var selectedAsset = availableAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
-        if (selectedAsset is null) ImGui.BeginDisabled();
-        if (ImGui.Button("Place instance")) PlaceAsset(scene, selectedAsset!);
-        if (selectedAsset is null) ImGui.EndDisabled();
 
         if (_selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
         {
@@ -1040,45 +1453,157 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (ImGui.Button("Duplicate")) Duplicate(scene, selected);
         ImGui.SameLine();
         if (ImGui.Button("Delete")) Delete(scene, selected.Id);
-        var transform = selected.Transform;
-        var position = new NumericsVector3(transform.Position.X, transform.Position.Y, transform.Position.Z);
-        ImGui.Text("Position");
-        ImGui.SetNextItemWidth(-1f);
-        var positionChanged = ImGui.InputFloat3("##position", ref position);
-        TrackTransformInput(scene, selected.Id, transform, positionChanged, () =>
-        {
-            if (IsFinite(position))
-                transform.Position = new Microsoft.Xna.Framework.Vector3(position.X, position.Y, position.Z);
-        });
 
-        var euler = ToEulerDegrees(transform.Rotation);
-        ImGui.Text("Rotation XYZ (degrees)");
-        ImGui.SetNextItemWidth(-1f);
-        var rotationChanged = ImGui.InputFloat3("##rotation", ref euler);
-        TrackTransformInput(scene, selected.Id, transform, rotationChanged, () =>
+        ImGui.Separator();
+        ImGui.Text("Change this object");
+        if (ImGui.RadioButton("Move", _transformTool == TransformTool.Move))
+            _transformTool = TransformTool.Move;
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Turn", _transformTool == TransformTool.Turn))
+            _transformTool = TransformTool.Turn;
+        ImGui.SameLine();
+        if (ImGui.RadioButton("Size", _transformTool == TransformTool.Size))
+            _transformTool = TransformTool.Size;
+        DrawTransformToolActions(scene, selected);
+
+        if (ImGui.TreeNode("More details"))
         {
-            if (IsFinite(euler))
+            var transform = selected.Transform;
+            var position = new NumericsVector3(transform.Position.X, transform.Position.Y, transform.Position.Z);
+            ImGui.Text("Position");
+            ImGui.SetNextItemWidth(-1f);
+            var positionChanged = ImGui.InputFloat3("##position", ref position);
+            TrackTransformInput(scene, selected.Id, transform, positionChanged, () =>
             {
-                var radians = MathF.PI / 180f;
-                transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(
-                    Microsoft.Xna.Framework.Quaternion.CreateFromYawPitchRoll(
-                        euler.Y * radians, euler.X * radians, euler.Z * radians));
-            }
-        });
+                if (IsFinite(position))
+                    transform.Position = new Microsoft.Xna.Framework.Vector3(position.X, position.Y, position.Z);
+            });
 
-        var scale = new NumericsVector3(transform.Scale.X, transform.Scale.Y, transform.Scale.Z);
-        ImGui.Text("Scale");
-        ImGui.SetNextItemWidth(-1f);
-        var scaleChanged = ImGui.InputFloat3("##scale", ref scale);
-        TrackTransformInput(scene, selected.Id, transform, scaleChanged, () =>
-        {
-            if (IsFinite(scale))
-                transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
-        });
+            var euler = ToEulerDegrees(transform.Rotation);
+            ImGui.Text("Rotation XYZ (degrees)");
+            ImGui.SetNextItemWidth(-1f);
+            var rotationChanged = ImGui.InputFloat3("##rotation", ref euler);
+            TrackTransformInput(scene, selected.Id, transform, rotationChanged, () =>
+            {
+                if (IsFinite(euler))
+                {
+                    var radians = MathF.PI / 180f;
+                    transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(
+                        Microsoft.Xna.Framework.Quaternion.CreateFromYawPitchRoll(
+                            euler.Y * radians, euler.X * radians, euler.Z * radians));
+                }
+            });
+
+            var scale = new NumericsVector3(transform.Scale.X, transform.Scale.Y, transform.Scale.Z);
+            ImGui.Text("Scale");
+            ImGui.SetNextItemWidth(-1f);
+            var scaleChanged = ImGui.InputFloat3("##scale", ref scale);
+            TrackTransformInput(scene, selected.Id, transform, scaleChanged, () =>
+            {
+                if (IsFinite(scale))
+                    transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
+            });
+            ImGui.TreePop();
+        }
 
         DrawCharacterControls(selected);
         DrawLightingControls();
         ImGui.End();
+    }
+
+    private void DrawTransformToolActions(SceneGraph scene, SceneObject selected)
+    {
+        switch (_transformTool)
+        {
+            case TransformTool.Move:
+                ImGui.TextDisabled("Move by 25 scene units along the axes.");
+                DrawTransformActionPair("X -", "X +",
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(-25f, 0f, 0f), "X"),
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(25f, 0f, 0f), "X"));
+                DrawTransformActionPair("Y -", "Y +",
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, -25f, 0f), "Y"),
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, 25f, 0f), "Y"));
+                DrawTransformActionPair("Z -", "Z +",
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, 0f, -25f), "Z"),
+                    () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, 0f, 25f), "Z"));
+                break;
+            case TransformTool.Turn:
+                ImGui.TextDisabled("Turn 15 degrees around a local axis.");
+                DrawTransformActionPair("X -", "X +",
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, -15f, "X"),
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, 15f, "X"));
+                DrawTransformActionPair("Y -", "Y +",
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitY, -15f, "Y"),
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitY, 15f, "Y"));
+                DrawTransformActionPair("Z -", "Z +",
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitZ, -15f, "Z"),
+                    () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitZ, 15f, "Z"));
+                break;
+            case TransformTool.Size:
+                ImGui.TextDisabled("Change the size by 10% each time.");
+                DrawTransformActionPair("Smaller", "Larger",
+                    () => Resize(scene, selected, 0.9f),
+                    () => Resize(scene, selected, 1.1f));
+                break;
+        }
+    }
+
+    private static void DrawTransformActionPair(string firstLabel, string secondLabel,
+        Action firstAction, Action secondAction)
+    {
+        if (ImGui.Button(firstLabel, new NumericsVector2(92f, 30f))) firstAction();
+        ImGui.SameLine();
+        if (ImGui.Button(secondLabel, new NumericsVector2(92f, 30f))) secondAction();
+    }
+
+    private void NudgePosition(SceneGraph scene, SceneObject selected,
+        Microsoft.Xna.Framework.Vector3 offset, string axis)
+    {
+        ApplyTransformEdit(scene, selected, transform => transform.Position += offset,
+            $"Moved {selected.Name} along {axis}.");
+    }
+
+    private void Turn(SceneGraph scene, SceneObject selected,
+        Microsoft.Xna.Framework.Vector3 axis, float degrees, string axisName)
+    {
+        var radians = degrees * (MathF.PI / 180f);
+        ApplyTransformEdit(scene, selected, transform =>
+        {
+            var delta = Microsoft.Xna.Framework.Quaternion.CreateFromAxisAngle(axis, radians);
+            transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(transform.Rotation * delta);
+        }, $"Turned {selected.Name} {degrees:+#;-#;0} degrees around {axisName}.");
+    }
+
+    private void Resize(SceneGraph scene, SceneObject selected, float factor)
+    {
+        ApplyTransformEdit(scene, selected, transform =>
+        {
+            transform.Scale = new Microsoft.Xna.Framework.Vector3(
+                ResizeAxis(transform.Scale.X, factor),
+                ResizeAxis(transform.Scale.Y, factor),
+                ResizeAxis(transform.Scale.Z, factor));
+        }, factor < 1f ? $"Made {selected.Name} 10% smaller." : $"Made {selected.Name} 10% larger.");
+    }
+
+    private static float ResizeAxis(float value, float factor)
+    {
+        if (!float.IsFinite(value)) return value;
+        var magnitude = Math.Clamp(MathF.Abs(value) * factor, 0.05f, 1_000f);
+        return MathF.CopySign(magnitude, value == 0f ? 1f : value);
+    }
+
+    private void ApplyTransformEdit(SceneGraph scene, SceneObject selected,
+        Action<Transform> applyChange, string status)
+    {
+        CommitActiveTransformEdit(scene);
+        var before = SceneTransformCopy(selected.Transform);
+        applyChange(selected.Transform);
+        var after = SceneTransformCopy(selected.Transform);
+        if (TransformsEqual(before, after)) return;
+
+        selected.Transform = SceneTransformCopy(before);
+        _history.Execute(scene, new TransformEditCommand(selected.Id, before, after));
+        _projectWorkspaceStatus = status;
     }
 
     private void DrawSequencePanel()
@@ -1086,9 +1611,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         var sequence = _getSequenceInfo();
         if (sequence is null) return;
 
-        ImGui.SetNextWindowPos(new NumericsVector2(800f, 16f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(450f, 150f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("Sequence preview", ImGuiWindowFlags.NoCollapse))
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 60f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _logicalWidth * 0.5f), 150f));
+        if (!ImGui.Begin("Animate and Finish", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
@@ -1123,9 +1648,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _sequenceExportEndTimeInitialized = true;
         }
 
-        ImGui.SetNextWindowPos(new NumericsVector2(800f, 182f), ImGuiCond.FirstUseEver);
-        ImGui.SetNextWindowSize(new NumericsVector2(450f, 330f), ImGuiCond.FirstUseEver);
-        if (!ImGui.Begin("Sequence frame export", ImGuiWindowFlags.NoCollapse))
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 218f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _logicalWidth * 0.5f), 330f));
+        if (!ImGui.Begin("Finish film", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
@@ -1265,6 +1790,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (undo) _history.Undo(scene);
         else _history.Redo(scene);
         _afterStructureChange();
+        _projectWorkspaceStatus = undo ? "Undid the last change." : "Redid the last change.";
         if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
             _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
     }
@@ -1275,6 +1801,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         var item = new SceneObject(Guid.NewGuid(), UniqueName("New Object", scene.Objects.Select(value => value.Name)));
         RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
         _selectedObjectId = item.Id;
+        _projectWorkspaceStatus = $"Added {item.Name}. Select it to change its position, rotation or size in the Inspector.";
     }
 
     private void Duplicate(SceneGraph scene, SceneObject selected)
@@ -1303,6 +1830,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             new Microsoft.Xna.Framework.Vector3(positionX, 0f, 0f));
         RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
         _selectedObjectId = item.Id;
+        _projectWorkspaceStatus = $"Added another {Path.GetFileName(asset.SourcePath)} to the scene.";
     }
 
     private void RunStructureChange(SceneGraph scene, Action action)

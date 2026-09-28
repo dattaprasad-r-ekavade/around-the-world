@@ -95,11 +95,13 @@ editor starting point, not yet evidence of a complete editor-authored game or fi
    the actual soak resource counts, confuses transition latency with frame time, and
    approves 16×16 expansion and density limits without a corresponding acceptance run.
    Replaced with a limited-baseline decision; historical text is retained for traceability.
-3. **High — baseline test failure observed.** The full run returned 254 passed and one
-   failure in `CellActivationQueueTests.NineCellsRespectPerFrameCostAndCellLimitsIncludingSlowPreparation`:
-   expected three activation steps, observed four (`CellActivationQueueTests.cs:68`).
-   Investigate timing assumptions and queue behavior; do not silently inherit the old
-   255/255 claim. This documentation task does not change runtime/test implementation.
+3. **Resolved after review — activation-step assertion was too exact.** The original full
+   run returned 254 passed and one failure in
+   `CellActivationQueueTests.NineCellsRespectPerFrameCostAndCellLimitsIncludingSlowPreparation`:
+   expected three activation steps, observed four (`CellActivationQueueTests.cs:68`). On
+   28 September, the test was corrected to accept additional partial-budget steps while still
+   requiring at least three, and to yield while async preparation is incomplete. The engine
+   queue was unchanged; see the follow-up verification below.
 4. **Medium — editor and runtime claims need a shared acceptance scene.** The old roadmap
    still lists Release B/C, editor authorship, and broad world-system gates as pending.
    Prove selection/edit/undo/save/reopen, play/stop, collision/interaction, and output
@@ -131,7 +133,9 @@ are retained. New RPG mechanics and regional scaling are deferred. The roadmap d
 small end-to-end acceptance projects and explicit dependencies without promising dates
 or treating the old checklist count as engine readiness.
 
-Targeted follow-up: the failing activation-queue test passed when rerun alone with
-`--filter FullyQualifiedName~NineCellsRespectPerFrameCostAndCellLimitsIncludingSlowPreparation`.
-This suggests an intermittent failure; it does not erase the full-suite failure or
-establish its root cause. Keep the baseline issue open until investigated.
+Resolution verification, 28 September: Release build passed with 0 warnings/errors; the full
+suite passed 283/283; and the focused activation-queue test passed five consecutive runs. Its
+exact-step expectation was not a queue invariant because the last partial frame budget can be
+shared with another cell. A separate earlier run also reported async preparation timeouts while
+the full suite and RPG check ran concurrently; the full suite passed when run alone, so that
+contention hypothesis remains unproven and should be revisited if the timeouts recur.
