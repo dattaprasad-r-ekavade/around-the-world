@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ember.World;
 using Microsoft.Xna.Framework;
 
@@ -101,7 +102,52 @@ public sealed class SceneObject
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }
     public WorldEntityPlacementComponent? WorldEntity { get; set; }
+    public SceneTemplateInstanceComponent? TemplateInstance { get; set; }
     public WorldInstanceResetPolicy ResetPolicy { get; set; } = WorldInstanceResetPolicy.Preserve;
+}
+
+/// <summary>Maps a stable template source object ID to its placed scene-object ID.</summary>
+public readonly record struct SceneTemplateObjectMapping(Guid SourceObjectId, Guid InstanceObjectId);
+
+/// <summary>Persistent source identity for an expanded scene-template instance hierarchy.</summary>
+public sealed class SceneTemplateInstanceComponent
+{
+    public SceneTemplateInstanceComponent(Guid templateId, int appliedRevision,
+        Guid sourceRootObjectId, Guid instanceRootObjectId,
+        IEnumerable<SceneTemplateObjectMapping> objectMappings)
+    {
+        if (templateId == Guid.Empty) throw new ArgumentException("Template ID cannot be empty.", nameof(templateId));
+        if (appliedRevision < 1) throw new ArgumentOutOfRangeException(nameof(appliedRevision));
+        if (sourceRootObjectId == Guid.Empty)
+            throw new ArgumentException("Template root source ID cannot be empty.", nameof(sourceRootObjectId));
+        if (instanceRootObjectId == Guid.Empty)
+            throw new ArgumentException("Template root instance ID cannot be empty.", nameof(instanceRootObjectId));
+        ArgumentNullException.ThrowIfNull(objectMappings);
+
+        var mappings = objectMappings.ToArray();
+        if (mappings.Length == 0)
+            throw new ArgumentException("A template instance must retain its source-object mapping.", nameof(objectMappings));
+        if (mappings.Any(mapping => mapping.SourceObjectId == Guid.Empty || mapping.InstanceObjectId == Guid.Empty))
+            throw new ArgumentException("Template object mappings cannot contain empty IDs.", nameof(objectMappings));
+        if (mappings.Select(mapping => mapping.SourceObjectId).Distinct().Count() != mappings.Length)
+            throw new ArgumentException("Template source object IDs must be unique.", nameof(objectMappings));
+        if (mappings.Select(mapping => mapping.InstanceObjectId).Distinct().Count() != mappings.Length)
+            throw new ArgumentException("Template instance object IDs must be unique.", nameof(objectMappings));
+        if (!mappings.Contains(new SceneTemplateObjectMapping(sourceRootObjectId, instanceRootObjectId)))
+            throw new ArgumentException("Template root mapping is missing.", nameof(objectMappings));
+
+        TemplateId = templateId;
+        AppliedRevision = appliedRevision;
+        SourceRootObjectId = sourceRootObjectId;
+        InstanceRootObjectId = instanceRootObjectId;
+        ObjectMappings = Array.AsReadOnly(mappings);
+    }
+
+    public Guid TemplateId { get; }
+    public int AppliedRevision { get; }
+    public Guid SourceRootObjectId { get; }
+    public Guid InstanceRootObjectId { get; }
+    public IReadOnlyList<SceneTemplateObjectMapping> ObjectMappings { get; }
 }
 
 /// <summary>Per-instance skeletal clip, playback, and attachment settings saved with a scene object.</summary>

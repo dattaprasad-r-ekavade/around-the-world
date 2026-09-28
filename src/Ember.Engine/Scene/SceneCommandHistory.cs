@@ -249,6 +249,8 @@ public static class SceneObjectDuplicator
         ArgumentNullException.ThrowIfNull(scene);
         var source = scene.Find(sourceId)
             ?? throw new InvalidOperationException($"Cannot duplicate missing scene object {sourceId}.");
+        if (source.TemplateInstance is not null)
+            throw new InvalidOperationException("Duplicate a scene template instance as a hierarchy, not as one object.");
         var duplicateId = Guid.NewGuid();
         while (scene.Find(duplicateId) is not null) duplicateId = Guid.NewGuid();
 
@@ -439,6 +441,7 @@ internal static class SceneObjectCopy
                     : new WorldEntityPlacementComponent(source.WorldEntity.Kind,
                         source.WorldEntity.DefinitionId, Guid.NewGuid(), source.WorldEntity.TemplateId,
                         source.WorldEntity.TemplateOverrides),
+            TemplateInstance = source.TemplateInstance,
             SpawnPoint = source.SpawnPoint is null
                 ? null
                 : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())

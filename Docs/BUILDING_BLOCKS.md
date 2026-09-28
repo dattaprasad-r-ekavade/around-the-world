@@ -404,9 +404,24 @@ duplicate, and delete commands share that history; undoing deletion restores the
 and character references plus its parent/child links. Duplicates get new object and attachment
 IDs while retaining the imported GLB reference. The asset list shows GLBs already referenced by
 the open scene, and **Place instance** adds another scene object pointing to the same source path.
-It does not scan arbitrary project folders. A selected skinned instance exposes its imported clip
-list, absolute-time scrubber, and playback toggle; changing those controls updates only that
-instance and the version-2 scene settings saved by **S**.
+The Add library also catalogs every GLB under the project's `Assets` folder, including models not
+yet used in the scene; preview and placement keep the project's stable asset ID. A selected skinned
+instance exposes its imported clip list, absolute-time scrubber, and playback toggle; changing those
+controls updates only that instance and the version-2 scene settings saved by **S**.
+
+The scene viewport has three transform tools. **Move** uses world-aligned axis arrows and can snap
+the object's world position to a configurable grid. **Turn** uses rings aligned to the selected
+object's local axes; **Size** uses arrows along those local axes. Optional angle and scale increments
+are available in their respective tools. Dragging previews a local transform and release commits one
+`TransformEditCommand`; Move converts the target world position through the parent transform, while
+Turn and Size edit the local rotation or scale. Snap settings are editor-session preferences and
+are not stored in the scene file.
+
+The authoring library can save a selected object hierarchy as a validated, versioned JSON scene
+template and place independent expanded instances with remapped object, spawn, attachment and RPG
+entity IDs. Scene saves retain each instance's template revision and source-object map. The visible
+template-placement workflow, per-instance overrides, update and relinking controls are still in
+progress; the roadmap records their update and broken-source behavior.
 
 `SceneLighting` applies one ambient color and normalized directional light to CharacterStudio's
 static and skinned shader paths. The sample exposes the ambient RGB, direction, and directional RGB

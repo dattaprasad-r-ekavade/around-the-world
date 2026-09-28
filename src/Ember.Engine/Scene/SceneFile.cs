@@ -14,7 +14,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 7;
+    public const int CurrentVersion = 8;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -47,6 +47,9 @@ public static class SceneFile
     }
 
     public static string ToJson(SceneGraph scene) => SerializeToJson(scene);
+
+    /// <summary>Load and validate a scene from JSON text.</summary>
+    public static SceneGraph FromJson(string json) => LoadFromJson(json);
 
     internal static string SerializeToJson(SceneGraph scene)
     {
@@ -95,6 +98,7 @@ public static class SceneFile
                 Door = ToDoorComponent(data.Door),
                 SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id),
                 WorldEntity = ToWorldEntityComponent(data.WorldEntity),
+                TemplateInstance = ToTemplateInstanceComponent(data.TemplateInstance),
                 ResetPolicy = data.ResetPolicy
             };
             scene.Add(item);
@@ -114,6 +118,8 @@ public static class SceneFile
                 throw new InvalidDataException($"Invalid hierarchy at object {id}: {exception.Message}", exception);
             }
         }
+
+        ValidateTemplateInstances(scene);
 
         return scene;
     }
@@ -139,6 +145,7 @@ public static class SceneFile
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
                     WorldEntity = ToWorldEntityData(value.WorldEntity),
+                    TemplateInstance = ToTemplateInstanceData(value.TemplateInstance),
                     ResetPolicy = value.ResetPolicy,
                     Position = [transform.Position.X, transform.Position.Y, transform.Position.Z],
                     Rotation = [rotation.X, rotation.Y, rotation.Z, rotation.W],
@@ -156,6 +163,7 @@ public static class SceneFile
         ValidateAttachmentIds(objects);
         ValidateWorldEntityInstanceIds(objects);
         ValidateAcyclic(objects);
+        ValidateTemplateInstances(scene);
         return new SceneDocument { Version = CurrentVersion, Objects = objects };
     }
 
@@ -222,6 +230,52 @@ public static class SceneFile
                 TemplateId = component.TemplateId,
                 TemplateOverrides = component.TemplateOverrides
             };
+
+    private static SceneTemplateInstanceComponent? ToTemplateInstanceComponent(SceneTemplateInstanceData? data)
+    {
+        if (data is null) return null;
+        if (data.ObjectMappings is null)
+            throw new InvalidDataException("Scene template instance object mapping is missing.");
+        try
+        {
+            return new SceneTemplateInstanceComponent(data.TemplateId, data.AppliedRevision,
+                data.SourceRootObjectId, data.InstanceRootObjectId,
+                data.ObjectMappings.Select(mapping => new SceneTemplateObjectMapping(
+                    mapping.SourceObjectId, mapping.InstanceObjectId)));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException($"Scene template instance metadata is invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static SceneTemplateInstanceData? ToTemplateInstanceData(SceneTemplateInstanceComponent? component) =>
+        component is null
+            ? null
+            : new SceneTemplateInstanceData
+            {
+                TemplateId = component.TemplateId,
+                AppliedRevision = component.AppliedRevision,
+                SourceRootObjectId = component.SourceRootObjectId,
+                InstanceRootObjectId = component.InstanceRootObjectId,
+                ObjectMappings = component.ObjectMappings.Select(mapping => new SceneTemplateMappingData
+                {
+                    SourceObjectId = mapping.SourceObjectId,
+                    InstanceObjectId = mapping.InstanceObjectId
+                }).ToList()
+            };
+
+    private static void ValidateTemplateInstances(SceneGraph scene)
+    {
+        foreach (var instanceOwner in scene.Objects)
+        {
+            if (instanceOwner.TemplateInstance is not { } instance) continue;
+            if (instanceOwner.Id == instance.InstanceRootObjectId)
+                throw new InvalidDataException("A scene template instance wrapper cannot also be its expanded root object.");
+            if (instance.ObjectMappings.Any(mapping => mapping.InstanceObjectId == instanceOwner.Id))
+                throw new InvalidDataException("A scene template instance cannot map source content onto its wrapper object.");
+        }
+    }
 
     private static SceneDoorData? ToDoorData(WorldDoorComponent? door) =>
         door is null
@@ -340,6 +394,8 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} world travel components require scene version 3.");
         if (documentVersion < 6 && data.WorldEntity is not null)
             throw new InvalidDataException($"Object {data.Id} world entity placement requires scene version 6.");
+        if (documentVersion < 8 && data.TemplateInstance is not null)
+            throw new InvalidDataException($"Object {data.Id} scene template instance data requires scene version 8.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -485,6 +541,7 @@ public static class SceneFile
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
         public SceneWorldEntityData? WorldEntity { get; set; }
+        public SceneTemplateInstanceData? TemplateInstance { get; set; }
         public WorldInstanceResetPolicy ResetPolicy { get; set; }
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
@@ -539,5 +596,20 @@ public static class SceneFile
         public Guid InstanceId { get; set; }
         public Guid? TemplateId { get; set; }
         public PlacementTemplateOverrideFlags TemplateOverrides { get; set; }
+    }
+
+    private sealed class SceneTemplateInstanceData
+    {
+        public Guid TemplateId { get; set; }
+        public int AppliedRevision { get; set; }
+        public Guid SourceRootObjectId { get; set; }
+        public Guid InstanceRootObjectId { get; set; }
+        public List<SceneTemplateMappingData>? ObjectMappings { get; set; }
+    }
+
+    private sealed class SceneTemplateMappingData
+    {
+        public Guid SourceObjectId { get; set; }
+        public Guid InstanceObjectId { get; set; }
     }
 }

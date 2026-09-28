@@ -2158,7 +2158,7 @@ viewport editing promise still needs transform gizmos, snapping and visible inte
 Next: extend the viewport gizmo to Turn and Size and add snapping. Keep selection, hierarchy,
 undo/redo and save/reopen checks open until exercised in the editor.
 
-## Viewport Move gizmo — 28 September 2026
+## Viewport transform gizmos and snapping — 28 September 2026
 
 ### M1.2 implementation slice
 
@@ -2170,24 +2170,110 @@ undo/redo and save/reopen checks open until exercised in the editor.
   the completed move participates in the existing undo/redo history. Camera orbit and ImGui mouse
   actions are suppressed during the drag. Invalid or singular parent transforms do not apply a
   non-finite position.
-- Optional world-grid snapping is available for Move, with a configurable grid step. Turn/Size
-  viewport handles and rotation/scale snapping are still unimplemented. The gizmo is hidden in
-  Home, Play, sequence preview and sequence export states.
+- Optional world-grid snapping is available for Move, with a configurable grid step. Turn draws
+  local-axis rings and Size draws local-axis arrows; each tool has optional angle or scale
+  increments. The gizmo is hidden in Home, Play, sequence preview and sequence export states.
+- Turn accumulates signed pointer sweeps around the selected ring, and Size adjusts only the
+  corresponding local scale component. Each drag previews from its starting transform and commits
+  at most one undoable edit on release. Global save, reimport, play and exit shortcuts are ignored
+  while a transform drag is active.
 
 ### Verification evidence
 
 | Check | Result |
 | --- | --- |
-| `ViewportMoveGizmoMathTests` | PASS — 8 tests cover screen-axis picking, pointer-to-world movement, parent-space conversion through rotation/scale, singular-parent rejection, world-grid rounding and invalid grid steps |
+| `ViewportTransformGizmoMathTests` | PASS — 14 tests cover Move axis projection/picking, parent-space conversion, rotation-ring construction/picking and signed sweeps, scale factors, snapping, and invalid input |
 | Release solution build | PASS — 0 warnings, 0 errors |
-| Full `Ember.Engine.Tests` run | INCOMPLETE — 296 passed and 4 existing world-cell preparation/time-budget tests failed under the full run; each of those 4 passed when rerun alone |
+| Full `Ember.Engine.Tests` run | PASS — 310 passed, 0 failed |
 | CharacterStudio Release capture | PASS — `ReleaseAShowcase.json`, 1280×720; selected Fox, all three handles and the Move grid-snap control visible; exit 0, stderr empty; `%TEMP%/Ember/M12MoveSnap-0e5933e18c314698b92b09f9c5a81ff4/move-snap.png` |
-| Live axis drag, undo/redo and save/reopen | NOT RUN — capture verifies rendering only; desktop input was not exercised |
+| Turn/Size ring and handle capture | NOT RUN — the screenshot path starts with Move selected; no input-driven capture was available |
+| Live Move/Turn/Size drag, undo/redo and save/reopen | NOT RUN — Windows Computer Use initialization failed twice with `failed to write kernel assets: The system cannot find the path specified (os error 3)` |
 
-M1.2 remains **In progress**. The scene-view Move gizmo is rendered and its projection and local-space
-math are covered, but the live interaction and persistence workflow are not yet proven. The full CPU
-suite also needs a stable green run; isolated reruns do not turn its four full-run timeouts into a pass.
+M1.2 remains **In progress**. Move is rendered in CharacterStudio and the math for all three modes
+is covered. The Turn/Size UI state, actual drag interactions, undo/redo and save/reopen workflow still
+need live verification. The full CPU suite now passes in one run.
 
-Next: add Turn/Size handles and rotation/scale snapping, then exercise Move, Turn, Size, parent
-selection and reparenting through visible controls, undo/redo, and save/reopen. Rerun the full CPU
-suite and Windows CI after those changes.
+Next: exercise Move, Turn, Size, parent selection and reparenting through visible controls; verify
+drag feedback, snapping, undo/redo and save/reopen. Then complete M0.4 and UX.1–UX.5 gates and rerun
+Windows CI.
+
+## M1.1 selected-model reload code review — 28 September 2026
+
+- Reviewed the existing **Reload selected model** action and its failure path. CharacterStudio loads
+  and validates a candidate preview before swapping it into `ReloadableAsset`; a load or validation
+  failure reports that the previous preview remains active. The Inspector offers a repair-and-reload
+  next step for the error.
+- `ReloadableAssetTests.ValidGlbReplacementBecomesCurrentAndCorruptReplacementKeepsItActive` edits
+  and reloads a real GLB fixture, then replaces its bytes with invalid data and verifies that the
+  successfully loaded asset remains current and undisposed. This validates resource ownership, not
+  the complete CharacterStudio graphics interaction.
+- Visible project-picker, Reload, corrupt-file recovery and save/reopen interactions remain
+  unverified. The Windows Computer Use helper failed to initialize in this session with
+  `failed to write kernel assets: The system cannot find the path specified (os error 3)`.
+
+M1.1 remains **In progress**. Its selected-model reload and invalid-replacement recovery are
+implemented and have a focused asset-ownership test; the visible workflow gate is still open.
+
+Next: verify project create/open and asset browse/preview/Add/Cancel, then reload a valid model and
+exercise a corrupt replacement through the visible controls. Continue the M0.4, UX.1–UX.4 and M1.2
+interaction gates when desktop input is available.
+
+## M1.3 versioned hierarchy template snapshots — 28 September 2026
+
+- Added `SceneTemplateFile` to capture one scene object and its descendants as a versioned JSON
+  asset. It preserves stable source object IDs and local hierarchy/transforms, removes the captured
+  root's external parent, and excludes unrelated scene objects.
+- Saving a new file assigns a template ID at revision one. Saving over a valid template preserves
+  its ID and increments the revision. The destination is replaced atomically only after the complete
+  scene snapshot has serialized and passed scene validation.
+- Added `SceneFile.FromJson` so validated scene snapshots can be embedded and loaded without a
+  temporary file. Unsupported template versions, missing roots, malformed hierarchies and invalid
+  scene data are rejected.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `SceneTemplateFileTests` | PASS — 4 tests cover subtree capture, stable IDs and hierarchy, revision increments, preservation after a failed save, unsupported versions and missing roots |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 314 passed, 0 failed |
+| Template save/place/update controls and broken-source recovery | NOT RUN — no editor panel or instance workflow is implemented in this slice; visible UI acceptance remains open |
+
+M1.3 is **In progress**. Durable template snapshots are implemented, but template placement,
+independent instance IDs, per-instance overrides, explicit updates, orphan handling and source
+relinking remain open.
+
+Next: implement command-based template placement with collision-free instance IDs and preserve the
+source-to-instance object mapping in scene persistence. Then add transform overrides and explicit
+revision updates without changing existing instances on project open.
+
+## M1.3 expanded template instances and persisted source mapping — 28 September 2026
+
+- Added `SceneTemplateInstanceSystem` to place the saved hierarchy under an instance wrapper.
+  Every scene object gets a new ID; each wrapper stores the template ID, applied revision, source
+  root and source-to-instance object map. Saving and reopening scene version 8 preserves that map.
+- Asset references stay shared. Character attachment IDs, spawn IDs and RPG entity instance IDs
+  are regenerated per placement. Door links targeting spawn markers inside the template are
+  remapped to their copied marker when the caller supplies a world-cell ID. Such a placement fails
+  before scene mutation if the required cell context is missing.
+- Nested template instances are rejected with a clear error. The existing single-object Duplicate
+  command also rejects a template wrapper rather than silently dropping its hierarchy metadata.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Template and scene persistence focused tests | PASS — 25 tests, 0 failures |
+| Full `Ember.Engine.Tests` run | PASS — 318 passed, 0 failed in two consecutive runs |
+| Test scheduling | PASS — test-body parallelization is disabled so lifecycle tests can pump worker-prepared results on their creating thread |
+| Template controls, instance overrides, explicit update and broken-source relinking | NOT RUN — authoring API is implemented, but CharacterStudio controls and live interaction are not |
+
+M1.3 remains **In progress**. Snapshot storage, independent hierarchy placement and source mapping
+persistence are implemented. Per-instance transform overrides, revision update/merge behavior,
+orphan handling and relinking still need implementation; all visible controls and save/reopen
+acceptance remain open.
+
+Next: persist a baseline for each template source object, infer transform/name overrides against
+that baseline, and add an explicit update command that preserves overridden fields and existing
+instance IDs while applying a newer template revision.

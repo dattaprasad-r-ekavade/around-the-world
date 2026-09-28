@@ -52,15 +52,15 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1–M1.2 and UX.1–UX.4 are **In progress**; UX.5 and later tasks
-remain **Not started** against their new acceptance criteria. Existing components are
+M0.1 through M0.3 have passed; M0.4, M1.1–M1.3 and UX.1–UX.4 are **In progress**; M1.4, UX.5–UX.6
+and M2 onward remain **Not started** against their new acceptance criteria. Existing components are
 reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
 passes on the pulled baseline; interactive resize/save/reopen/play-stop evidence remains
 incomplete. The reviewed activation-queue test now allows valid partial-budget steps and the
 full local CPU suite passes. M1.1 services and native project/model pickers exist but the
-visible button-driven workflow is unproven. UX.1 has a first local Home and scene-first
+visible button-driven workflow is unproven. Selected-model reload builds a replacement preview before swapping it in, and the asset-ownership test confirms a corrupt GLB leaves the prior asset active. Verify that recovery through visible editor controls before closing the gate. UX.1 has a first local Home and scene-first
 workspace implementation; resize and DPI checks remain. UX.2 has starter thumbnails, atomic
 Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view
 selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
@@ -77,11 +77,10 @@ UX.4 now has an optional action-driven first-creation lesson, replayable from th
 per-step Why? explanations, two levels of offline hints, action-based completion checks, and a
 project-local completion record. Its button-driven walkthrough and UX.5 novice observations remain
 unverified.
-M1.2 now has a nested selectable object hierarchy, a command-based parent action that preserves
-world placement when the new local transform can be represented without shear, a viewport Move gizmo
-with parent-aware axis dragging and one undoable edit on release, and optional world-grid snapping for
-Move. Turn/Size gizmos, rotation/scale snapping, live drag verification, and save/reopen evidence
-remain open.
+M1.2 now has a nested selectable object hierarchy, command-based world-preserving reparenting, and
+viewport Move/Turn/Size gizmos. Move is world-aligned with parent-aware placement; Turn and Size use
+the selected object's local axes. Optional position-grid, angle and scale snapping are implemented.
+Live drag verification, undo/redo interaction, and save/reopen evidence remain open.
 Preserve completed reliability work.
 
 Execution order: complete M0.4's interactive verification and continue UX.1–UX.4 alongside
@@ -151,8 +150,32 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 | --- | --- | --- | --- |
 | M1.1 | Project create/open, recent projects, asset browser and import/reimport. | Create a project outside the checkout, import static and animated GLBs, relocate and reopen it. Invalid reimport preserves the prior valid asset and explains the error. Complete these actions through Browse/visual controls; typed-path service tests alone do not pass the gate. | **In progress** |
 | M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. Selection and Move/Turn/Size work in the viewport; numeric transforms are optional details. | **In progress** |
-| M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | Not started |
+| M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | **In progress** |
 | M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | Not started |
+
+### M1.3 template update and broken-reference policy
+
+- A template is a project-relative, versioned snapshot of one selected root and its descendants.
+  Saving to a new path assigns a stable template ID; saving over a valid file keeps that ID and
+  advances its revision. Object IDs inside the snapshot remain stable source keys.
+- Placing a template creates an expanded scene hierarchy with new scene-object IDs for that
+  instance. GLB asset IDs and project-relative paths remain shared. Instances record the source
+  template ID and applied revision; authored scene data does not depend on the template file at
+  runtime.
+- Template updates are explicit. Opening a project never changes instances. An update matches
+  objects by their stable source keys, retains instance object IDs and placement, refreshes fields
+  that still match the previous template defaults, and preserves explicit per-instance overrides.
+  New source objects are added. Removed objects with local overrides or surviving children remain
+  as orphaned instance content with a warning; unmodified removed objects can be deleted.
+- If a template file is missing or invalid, existing expanded instances remain editable and
+  playable from their saved scene data. The editor reports the missing source and offers relinking;
+  it never clears the instance, discards overrides, or silently falls back to a different template.
+  Updating stays unavailable until the source is repaired or relinked. A missing GLB used by an
+  instance follows the normal project asset recovery flow.
+
+The M1.3 foundation now saves atomic, versioned hierarchy snapshots and places expanded instances
+with remapped IDs and persisted source mappings. The editor placement workflow, per-instance
+overrides, explicit updates, orphan handling and source relinking remain to be implemented.
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.
@@ -218,7 +241,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice now catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls, then add selected-asset reimport with invalid-replacement recovery. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 now has nested selection, undoable world-preserving reparenting, a viewport Move gizmo, and optional world-grid snapping for Move; implement Turn/Size gizmos and rotation/scale snapping, then verify hierarchy and transforms through visible selection, drag, undo/redo, and save/reopen. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls. Selected-model reload and invalid-replacement preservation are already implemented and have an asset-ownership test; exercise a valid reload and a corrupt replacement through visible editor controls, confirming the prior scene preview stays active and the recovery message explains the next action. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 has Move/Turn/Size viewport gizmos and optional position, angle and scale snapping. Exercise all three tools, parent selection and reparenting through visible controls; verify hover/drag, one-step undo/redo, and save/reopen preserve transforms, IDs, hierarchy and appearance. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.

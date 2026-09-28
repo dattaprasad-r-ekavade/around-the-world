@@ -134,6 +134,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _showHome;
     private bool _snapMoveToGrid;
     private float _moveGridStep = 10f;
+    private bool _snapTurnToStep;
+    private float _turnSnapDegrees = 15f;
+    private bool _snapSizeToStep;
+    private float _sizeSnapStep = 0.1f;
     private bool _showAddLibrary = true;
     private bool _showToolMenu;
     private bool _showSequenceTools;
@@ -274,9 +278,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public bool WantsKeyboard => _wantsKeyboard;
     public Guid? SelectedObjectId => _selectedObjectId;
     public bool IsMoveToolSelected => _transformTool == TransformTool.Move;
+    public bool IsTurnToolSelected => _transformTool == TransformTool.Turn;
+    public bool IsSizeToolSelected => _transformTool == TransformTool.Size;
     public bool IsHomeVisible => _showHome;
     public bool SnapMoveToGrid => _snapMoveToGrid;
     public float MoveGridStep => _moveGridStep;
+    public bool SnapTurnToStep => _snapTurnToStep;
+    public float TurnSnapDegrees => _turnSnapDegrees;
+    public bool SnapSizeToStep => _snapSizeToStep;
+    public float SizeSnapStep => _sizeSnapStep;
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
@@ -295,7 +305,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (TransformsEqual(beforeCopy, afterCopy)) return;
         item.Transform = SceneTransformCopy(beforeCopy);
         _history.Execute(scene, new TransformEditCommand(objectId, beforeCopy, afterCopy));
-        _projectWorkspaceStatus = $"Moved {item.Name} with the scene view. Undo is available.";
+        _projectWorkspaceStatus = $"Updated {item.Name} with the scene view. Undo is available.";
     }
 
     public void SelectObject(Guid objectId, Guid? assetId = null)
@@ -1987,7 +1997,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         switch (_transformTool)
         {
             case TransformTool.Move:
-                ImGui.TextDisabled("Move by 25 scene units along the axes.");
+                ImGui.TextDisabled("Drag a colored axis or move by 25 scene units.");
                 DrawTransformActionPair("X -", "X +",
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(-25f, 0f, 0f), "X"),
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(25f, 0f, 0f), "X"));
@@ -1997,9 +2007,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 DrawTransformActionPair("Z -", "Z +",
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, 0f, -25f), "Z"),
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(0f, 0f, 25f), "Z"));
+                DrawMoveSnapControls();
                 break;
             case TransformTool.Turn:
-                ImGui.TextDisabled("Turn 15 degrees around a local axis.");
+                ImGui.TextDisabled("Drag a ring or turn 15 degrees around a local axis.");
                 DrawTransformActionPair("X -", "X +",
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, -15f, "X"),
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, 15f, "X"));
@@ -2009,15 +2020,20 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 DrawTransformActionPair("Z -", "Z +",
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitZ, -15f, "Z"),
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitZ, 15f, "Z"));
+                DrawTurnSnapControls();
                 break;
             case TransformTool.Size:
-                ImGui.TextDisabled("Change the size by 10% each time.");
+                ImGui.TextDisabled("Drag a colored axis or change size by 10%.");
                 DrawTransformActionPair("Smaller", "Larger",
                     () => Resize(scene, selected, 0.9f),
                     () => Resize(scene, selected, 1.1f));
+                DrawSizeSnapControls();
                 break;
         }
+    }
 
+    private void DrawMoveSnapControls()
+    {
         ImGui.Separator();
         ImGui.Checkbox("Snap Move to grid", ref _snapMoveToGrid);
         if (_snapMoveToGrid)
@@ -2025,9 +2041,34 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             var gridStep = _moveGridStep;
             ImGui.SetNextItemWidth(110f);
             if (ImGui.InputFloat("Grid step", ref gridStep, 0.5f, 5f, "%.2f"))
-                _moveGridStep = Math.Clamp(gridStep, 0.1f, 1_000f);
+                _moveGridStep = Math.Clamp(float.IsFinite(gridStep) ? gridStep : _moveGridStep,
+                    0.1f, 1_000f);
             ImGui.TextDisabled("World units");
         }
+    }
+
+    private void DrawTurnSnapControls()
+    {
+        ImGui.Separator();
+        ImGui.Checkbox("Snap Turn", ref _snapTurnToStep);
+        if (!_snapTurnToStep) return;
+        var step = _turnSnapDegrees;
+        ImGui.SetNextItemWidth(110f);
+        if (ImGui.InputFloat("Angle step", ref step, 1f, 5f, "%.1f"))
+            _turnSnapDegrees = Math.Clamp(float.IsFinite(step) ? step : _turnSnapDegrees, 0.1f, 180f);
+        ImGui.TextDisabled("Degrees");
+    }
+
+    private void DrawSizeSnapControls()
+    {
+        ImGui.Separator();
+        ImGui.Checkbox("Snap Size", ref _snapSizeToStep);
+        if (!_snapSizeToStep) return;
+        var step = _sizeSnapStep;
+        ImGui.SetNextItemWidth(110f);
+        if (ImGui.InputFloat("Scale step", ref step, 0.05f, 0.25f, "%.2f"))
+            _sizeSnapStep = Math.Clamp(float.IsFinite(step) ? step : _sizeSnapStep, 0.01f, 10f);
+        ImGui.TextDisabled("Scale multiplier");
     }
 
     private static void DrawTransformActionPair(string firstLabel, string secondLabel,
