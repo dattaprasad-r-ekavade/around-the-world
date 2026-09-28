@@ -88,9 +88,11 @@ public sealed class EngineProjectFileTests
             var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(parent, "Game"));
             var source = Path.Combine(AppContext.BaseDirectory, "Assets", assetFile);
             string importedPath;
+            Guid importedId;
             using (var imported = EngineProjectWorkspace.ImportGlb(project, source))
             {
                 importedPath = project.ResolveContentPath(imported.Reference.SourcePath);
+                importedId = imported.Reference.AssetId;
                 var model = ModelRoot.Load(importedPath);
                 Assert.Equal(animated, model.LogicalNodes.Any(node => node.Skin is not null));
                 Assert.True(animated ? model.LogicalAnimations.Count > 0 : model.LogicalAnimations.Count == 0);
@@ -99,6 +101,8 @@ public sealed class EngineProjectFileTests
             }
 
             Assert.True(File.Exists(importedPath));
+            var cataloged = Assert.Single(EngineProjectAssetCatalog.ListAssets(project));
+            Assert.Equal(importedId, cataloged.AssetId);
         }
         finally
         {
@@ -115,11 +119,18 @@ public sealed class EngineProjectFileTests
             var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(parent, "Game"));
             var source = Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb");
             string importedPath;
+            Guid importedId;
             using (var imported = EngineProjectWorkspace.ImportGlb(project, source))
+            {
                 importedPath = project.ResolveContentPath(imported.Reference.SourcePath);
+                importedId = imported.Reference.AssetId;
+                imported.RegisterForPreview();
+                Assert.Equal(importedId, Assert.Single(EngineProjectAssetCatalog.ListAssets(project)).AssetId);
+            }
 
             Assert.False(File.Exists(importedPath));
             Assert.Empty(Directory.EnumerateDirectories(project.ResolveContentPath("Assets")));
+            Assert.Empty(EngineProjectAssetCatalog.ListAssets(project));
         }
         finally
         {

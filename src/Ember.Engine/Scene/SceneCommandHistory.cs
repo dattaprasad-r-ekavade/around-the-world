@@ -84,6 +84,141 @@ public sealed class TransformEditCommand : ISceneCommand
         scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
 }
 
+/// <summary>Changes an object's parent while preserving its world transform when it is representable as TRS.</summary>
+public sealed class ReparentSceneObjectCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly Guid? _newParentId;
+    private Guid? _previousParentId;
+    private Transform? _previousTransform;
+    private Transform? _replacementTransform;
+    private bool _captured;
+
+    public ReparentSceneObjectCommand(Guid objectId, Guid? newParentId)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        if (newParentId == Guid.Empty) throw new ArgumentException("Parent ID cannot be empty.", nameof(newParentId));
+        _objectId = objectId;
+        _newParentId = newParentId;
+    }
+
+    public void Apply(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        var item = scene.Find(_objectId)
+            ?? throw new InvalidOperationException($"Cannot reparent missing scene object {_objectId}.");
+
+        if (!_captured)
+        {
+            ValidateParentChange(scene);
+            var world = scene.GetWorldMatrix(_objectId);
+            var parentWorld = _newParentId is { } parentId
+                ? scene.GetWorldMatrix(parentId)
+                : Matrix.Identity;
+            var determinant = parentWorld.Determinant();
+            if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 1e-8f)
+                throw new InvalidOperationException("Cannot preserve world placement under a parent with a singular transform.");
+
+            var replacementMatrix = world * Matrix.Invert(parentWorld);
+            if (!IsFinite(replacementMatrix)
+                || !replacementMatrix.Decompose(out var scale, out var rotation, out var position)
+                || !IsFinite(scale) || !IsFinite(rotation) || !IsFinite(position))
+                throw new InvalidOperationException("Cannot preserve world placement with the requested parent transform.");
+
+            var replacementTransform = new Transform
+            {
+                Position = position,
+                Rotation = rotation,
+                Scale = scale
+            };
+            var recomposed = replacementTransform.LocalMatrix;
+            if (!NearlyEqual(replacementMatrix, recomposed))
+                throw new InvalidOperationException(
+                    "Cannot preserve world placement because this parent change would introduce shear.");
+
+            var previousParentId = item.ParentId;
+            var previousTransform = SceneObjectCopy.CopyTransform(item.Transform);
+            scene.SetParent(_objectId, _newParentId);
+            item.Transform = SceneObjectCopy.CopyTransform(replacementTransform);
+            _previousParentId = previousParentId;
+            _previousTransform = previousTransform;
+            _replacementTransform = replacementTransform;
+            _captured = true;
+            return;
+        }
+
+        scene.SetParent(_objectId, _newParentId);
+        item.Transform = SceneObjectCopy.CopyTransform(_replacementTransform!);
+    }
+
+    public void Revert(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!_captured || _previousTransform is null)
+            throw new InvalidOperationException("Cannot undo a reparent operation that was not applied.");
+        var item = scene.Find(_objectId)
+            ?? throw new InvalidOperationException($"Cannot undo reparenting; scene object {_objectId} is missing.");
+        scene.SetParent(_objectId, _previousParentId);
+        item.Transform = SceneObjectCopy.CopyTransform(_previousTransform);
+    }
+
+    private void ValidateParentChange(SceneGraph scene)
+    {
+        var cursor = _newParentId;
+        while (cursor is { } currentId)
+        {
+            if (currentId == _objectId)
+                throw new InvalidOperationException("Parenting would create a hierarchy cycle.");
+            var parent = scene.Find(currentId)
+                ?? throw new InvalidOperationException($"Cannot use missing parent scene object {currentId}.");
+            cursor = parent.ParentId;
+        }
+    }
+
+    private static bool NearlyEqual(Matrix first, Matrix second)
+    {
+        var magnitude = MathF.Max(1f, MathF.Max(MaxAbs(first), MaxAbs(second)));
+        var tolerance = magnitude * 1e-5f;
+        return Close(first.M11, second.M11, tolerance) && Close(first.M12, second.M12, tolerance)
+            && Close(first.M13, second.M13, tolerance) && Close(first.M14, second.M14, tolerance)
+            && Close(first.M21, second.M21, tolerance) && Close(first.M22, second.M22, tolerance)
+            && Close(first.M23, second.M23, tolerance) && Close(first.M24, second.M24, tolerance)
+            && Close(first.M31, second.M31, tolerance) && Close(first.M32, second.M32, tolerance)
+            && Close(first.M33, second.M33, tolerance) && Close(first.M34, second.M34, tolerance)
+            && Close(first.M41, second.M41, tolerance) && Close(first.M42, second.M42, tolerance)
+            && Close(first.M43, second.M43, tolerance) && Close(first.M44, second.M44, tolerance);
+    }
+
+    private static bool Close(float first, float second, float tolerance) =>
+        float.IsFinite(first) && float.IsFinite(second) && MathF.Abs(first - second) <= tolerance;
+
+    private static float MaxAbs(Matrix value)
+    {
+        var firstRow = MathF.Max(MathF.Max(MathF.Abs(value.M11), MathF.Abs(value.M12)),
+            MathF.Max(MathF.Abs(value.M13), MathF.Abs(value.M14)));
+        var secondRow = MathF.Max(MathF.Max(MathF.Abs(value.M21), MathF.Abs(value.M22)),
+            MathF.Max(MathF.Abs(value.M23), MathF.Abs(value.M24)));
+        var thirdRow = MathF.Max(MathF.Max(MathF.Abs(value.M31), MathF.Abs(value.M32)),
+            MathF.Max(MathF.Abs(value.M33), MathF.Abs(value.M34)));
+        var fourthRow = MathF.Max(MathF.Max(MathF.Abs(value.M41), MathF.Abs(value.M42)),
+            MathF.Max(MathF.Abs(value.M43), MathF.Abs(value.M44)));
+        return MathF.Max(MathF.Max(firstRow, secondRow), MathF.Max(thirdRow, fourthRow));
+    }
+
+    private static bool IsFinite(Matrix value) =>
+        float.IsFinite(value.M11) && float.IsFinite(value.M12) && float.IsFinite(value.M13) && float.IsFinite(value.M14)
+        && float.IsFinite(value.M21) && float.IsFinite(value.M22) && float.IsFinite(value.M23) && float.IsFinite(value.M24)
+        && float.IsFinite(value.M31) && float.IsFinite(value.M32) && float.IsFinite(value.M33) && float.IsFinite(value.M34)
+        && float.IsFinite(value.M41) && float.IsFinite(value.M42) && float.IsFinite(value.M43) && float.IsFinite(value.M44);
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static bool IsFinite(Quaternion value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y)
+        && float.IsFinite(value.Z) && float.IsFinite(value.W);
+}
+
 /// <summary>Adds an object, preserving its ID and authored references across redo.</summary>
 public sealed class CreateSceneObjectCommand : ISceneCommand
 {

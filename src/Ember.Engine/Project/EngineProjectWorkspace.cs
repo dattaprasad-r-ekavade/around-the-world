@@ -112,7 +112,7 @@ public static class EngineProjectWorkspace
 
             Directory.Move(stagingDirectory, destinationDirectory);
             var reference = new GltfAssetReference(assetId, relativeAssetPath);
-            return new EngineProjectAssetImport(reference, destinationDirectory);
+            return new EngineProjectAssetImport(project, reference, destinationDirectory);
         }
         finally
         {
@@ -184,22 +184,45 @@ public static class EngineProjectWorkspace
 /// <summary>Imported project files are removed unless the caller validates and commits the asset.</summary>
 public sealed class EngineProjectAssetImport : IDisposable
 {
+    private readonly EngineProjectFile _project;
     private readonly string _assetDirectory;
+    private bool _registered;
     private bool _committed;
 
-    internal EngineProjectAssetImport(GltfAssetReference reference, string assetDirectory)
+    internal EngineProjectAssetImport(EngineProjectFile project, GltfAssetReference reference, string assetDirectory)
     {
+        _project = project ?? throw new ArgumentNullException(nameof(project));
         Reference = reference ?? throw new ArgumentNullException(nameof(reference));
         _assetDirectory = assetDirectory ?? throw new ArgumentNullException(nameof(assetDirectory));
     }
 
     public GltfAssetReference Reference { get; }
+    public bool IsCommitted => _committed;
 
-    public void Commit() => _committed = true;
+    public void RegisterForPreview()
+    {
+        if (_registered || _committed) return;
+        EngineProjectAssetCatalog.Register(_project, Reference);
+        _registered = true;
+    }
+
+    public void Commit()
+    {
+        if (_committed) return;
+        RegisterForPreview();
+        _committed = true;
+    }
 
     public void Dispose()
     {
         if (_committed) return;
-        if (Directory.Exists(_assetDirectory)) Directory.Delete(_assetDirectory, recursive: true);
+        try
+        {
+            if (_registered) EngineProjectAssetCatalog.Unregister(_project, Reference);
+        }
+        finally
+        {
+            if (Directory.Exists(_assetDirectory)) Directory.Delete(_assetDirectory, recursive: true);
+        }
     }
 }

@@ -32,6 +32,10 @@ namespace CharacterStudio;
 /// </summary>
 public sealed class CharacterStudioGame : EngineHost
 {
+    private sealed record ViewportMoveDrag(Guid ObjectId, Transform Before,
+        Vector3 StartWorldPosition, TransformGizmoHandle Handle, Vector2 PointerStart,
+        Matrix ParentWorld, bool HasParent);
+
     private sealed record LifecycleCycleSample(int Cycle, bool PlayStarted, bool PlayStopped,
         bool SceneReloaded, int SceneObjectCount, int OwnedPreviewGraphicsResources,
         long WorkingSetBytes, long ManagedHeapBytes);
@@ -57,16 +61,18 @@ public sealed class CharacterStudioGame : EngineHost
 
     private sealed class PendingAssetPlacementPreview : IDisposable
     {
-        public PendingAssetPlacementPreview(EngineProjectAssetImport import, PreviewResources resources,
-            SceneGraph scene, SceneObject item)
+        public PendingAssetPlacementPreview(GltfAssetReference reference, EngineProjectAssetImport? import,
+            PreviewResources resources, SceneGraph scene, SceneObject item)
         {
+            Reference = reference ?? throw new ArgumentNullException(nameof(reference));
             Import = import;
             Resources = resources;
             Scene = scene;
             Item = item;
         }
 
-        public EngineProjectAssetImport Import { get; }
+        public GltfAssetReference Reference { get; }
+        public EngineProjectAssetImport? Import { get; }
         public PreviewResources Resources { get; }
         public SceneGraph Scene { get; }
         public SceneObject Item { get; }
@@ -74,7 +80,7 @@ public sealed class CharacterStudioGame : EngineHost
         public void Dispose()
         {
             try { Resources.Dispose(); }
-            finally { Import.Dispose(); }
+            finally { Import?.Dispose(); }
         }
     }
 
@@ -90,6 +96,9 @@ public sealed class CharacterStudioGame : EngineHost
 
     private SceneGraph _sceneData;
     private EngineProjectFile? _project;
+    private IReadOnlyList<GltfAssetReference> _projectAssetCatalog = Array.Empty<GltfAssetReference>();
+    private string? _projectAssetCatalogPath;
+    private bool _projectAssetCatalogLoaded;
     private string _sceneAssetRoot = AppContext.BaseDirectory;
     private readonly OrbitCamera _camera = new() { MaxDistance = 500f };
     private SceneCommandHistory _editorHistory = new();
@@ -149,6 +158,8 @@ public sealed class CharacterStudioGame : EngineHost
     private Quaternion _sequenceExportRestoreCameraRotation;
     private float _sequenceExportRestoreFieldOfView;
     private AttachmentBoxRenderer? _attachmentRenderer;
+    private BasicEffect? _moveGizmoEffect;
+    private ViewportMoveDrag? _viewportMoveDrag;
     private readonly Dictionary<Guid, bool> _farLodByObjectId = new();
     private readonly Dictionary<Guid, PathPreviewAgent> _pathPreviewAgents = new();
     private PhysicsWorld? _pathPreviewWorld;
@@ -311,7 +322,14 @@ public sealed class CharacterStudioGame : EngineHost
                 CreateProjectForEditor, path => OpenProjectForEditor(path), ImportGlbForEditor,
                 GetPendingAssetPreviewName, AcceptPendingAssetPreview, CancelPendingAssetPreview,
                 () => _project?.FilePath,
+                GetProjectAssetReferencesForEditor, InvalidateProjectAssetCatalog,
+                PreviewProjectAssetForEditor, ReloadProjectAssetForEditor,
                 LoadRecentProjectPaths, visible => _showDiagnostics = visible);
+            _moveGizmoEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
+            {
+                LightingEnabled = false,
+                VertexColorEnabled = true
+            });
             _shadowEffect = Content.Load<Effect>("Effects/SceneShadow");
             _sceneLighting.Apply(_shadowEffect);
             _shadowMap = _sceneResources.Own(new DirectionalShadowMap(GraphicsDevice,
@@ -406,7 +424,8 @@ public sealed class CharacterStudioGame : EngineHost
         _input.Sample();
         var mouse = _input.CurrentMouse;
         _editorUi?.Update((float)gameTime.ElapsedGameTime.TotalSeconds,
-            _input.CurrentKeyboard, mouse, LogicalMouse(mouse), CurrentScene);
+            _input.CurrentKeyboard, mouse, LogicalMouse(mouse), CurrentScene,
+            suppressMouseInput: _viewportMoveDrag is not null);
         if (_referenceSession is not null)
         {
             AdvanceReferenceSession();
@@ -447,12 +466,13 @@ public sealed class CharacterStudioGame : EngineHost
             _hasMouse = true;
         }
 
-        if (!sequenceExportRunning && !_sequencePreviewEnabled && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
+        if (!sequenceExportRunning && !_sequencePreviewEnabled && _viewportMoveDrag is null
+            && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
         {
             _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y));
         }
 
-        if (!sequenceExportRunning && !_sequencePreviewEnabled && !uiCapturesMouse)
+        if (!sequenceExportRunning && !_sequencePreviewEnabled && _viewportMoveDrag is null && !uiCapturesMouse)
             _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
@@ -480,21 +500,187 @@ public sealed class CharacterStudioGame : EngineHost
         if (pointerDown && !_viewportPointerWasDown)
         {
             _viewportClickOrigin = logicalMouse;
-            _viewportClickPending = _playSession is null && !_sequencePreviewEnabled
+            var beganMove = _playSession is null && !_sequencePreviewEnabled
+                && _sequenceExportJob?.IsRunning != true && !uiCapturesMouse
+                && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false)
+                && BeginViewportMoveDrag(logicalMouse);
+            _viewportClickPending = !beganMove && _playSession is null && !_sequencePreviewEnabled
                 && !uiCapturesMouse && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false);
+        }
+        else if (pointerDown && _viewportMoveDrag is not null)
+        {
+            UpdateViewportMoveDrag(logicalMouse);
         }
         else if (!pointerDown && _viewportPointerWasDown)
         {
-            var isClick = _viewportClickPending
-                && Vector2.DistanceSquared(_viewportClickOrigin, logicalMouse) <= 16f
-                && !uiCapturesMouse
-                && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false);
-            if (isClick) SelectSceneObjectAt(logicalMouse);
+            if (_viewportMoveDrag is not null)
+            {
+                UpdateViewportMoveDrag(logicalMouse);
+                FinishViewportMoveDrag();
+            }
+            else
+            {
+                var isClick = _viewportClickPending
+                    && Vector2.DistanceSquared(_viewportClickOrigin, logicalMouse) <= 16f
+                    && !uiCapturesMouse
+                    && (_editorUi?.IsSceneViewportPoint(logicalMouse) ?? false);
+                if (isClick) SelectSceneObjectAt(logicalMouse);
+            }
             _viewportClickPending = false;
         }
 
         _viewportPointerWasDown = pointerDown;
     }
+
+    private bool BeginViewportMoveDrag(Vector2 logicalMouse)
+    {
+        if (_editorUi is not { IsHomeVisible: false, IsMoveToolSelected: true } editorUi
+            || editorUi.SelectedObjectId is not { } objectId)
+            return false;
+
+        var scene = _sceneData;
+        var item = scene.Find(objectId);
+        if (item is null) return false;
+        var world = scene.GetWorldMatrix(objectId);
+        var origin = world.Translation;
+        var handles = GetMoveGizmoHandles(origin);
+        if (!ViewportMoveGizmoMath.TryPick(handles, logicalMouse, out var handle)) return false;
+
+        editorUi.CompletePendingEdit(scene);
+        var before = CopyTransform(item.Transform);
+        var parentWorld = item.ParentId is { } parentId
+            ? scene.GetWorldMatrix(parentId)
+            : Matrix.Identity;
+        if (item.ParentId is not null
+            && !ViewportMoveGizmoMath.TryConvertWorldPositionToParentSpace(origin,
+                parentWorld, out _))
+            return false;
+
+        _viewportMoveDrag = new ViewportMoveDrag(objectId, before, origin,
+            handle, logicalMouse, parentWorld, item.ParentId is not null);
+        _viewportClickPending = false;
+        return true;
+    }
+
+    private void UpdateViewportMoveDrag(Vector2 logicalMouse)
+    {
+        if (_viewportMoveDrag is not { } drag || _sceneData.Find(drag.ObjectId) is not { } item)
+        {
+            _viewportMoveDrag = null;
+            return;
+        }
+
+        var delta = ViewportMoveGizmoMath.CalculateMoveDelta(drag.Handle,
+            drag.PointerStart, logicalMouse);
+        var worldPosition = drag.StartWorldPosition + delta;
+        var localPosition = worldPosition;
+        if (drag.HasParent && !ViewportMoveGizmoMath.TryConvertWorldPositionToParentSpace(
+            worldPosition, drag.ParentWorld, out localPosition))
+            return;
+
+        var updated = CopyTransform(drag.Before);
+        updated.Position = localPosition;
+        item.Transform = updated;
+    }
+
+    private void FinishViewportMoveDrag()
+    {
+        if (_viewportMoveDrag is not { } drag) return;
+        _viewportMoveDrag = null;
+        if (_sceneData.Find(drag.ObjectId) is not { } item) return;
+        _editorUi?.CommitViewportTransform(_sceneData, drag.ObjectId,
+            drag.Before, item.Transform);
+    }
+
+    private IReadOnlyList<TransformGizmoHandle> GetMoveGizmoHandles(Vector3 origin) =>
+        ViewportMoveGizmoMath.CreateHandles(origin, _camera.Position, _camera.View,
+            _camera.Projection, LogicalWidth, LogicalHeight);
+
+    private void DrawMoveGizmo()
+    {
+        if (_playSession is not null || _sequencePreviewEnabled
+            || _sequenceExportJob?.IsRunning == true
+            || _editorUi is not { IsHomeVisible: false, IsMoveToolSelected: true } editorUi
+            || editorUi.SelectedObjectId is not { } objectId
+            || _sceneData.Find(objectId) is null)
+            return;
+
+        var world = _sceneData.GetWorldMatrix(objectId);
+        var origin = world.Translation;
+        var handles = GetMoveGizmoHandles(origin);
+        if (handles.Count == 0) return;
+        var pointer = LogicalMouse(_input.CurrentMouse);
+        var hasHover = ViewportMoveGizmoMath.TryPick(handles, pointer, out var hovered);
+        var vertices = new List<VertexPositionColor>(handles.Count * 6);
+        foreach (var handle in handles)
+        {
+            var isActive = _viewportMoveDrag?.Handle.Axis == handle.Axis;
+            var isHovered = hasHover && hovered.Axis == handle.Axis;
+            var color = isActive || isHovered ? Color.Yellow : GetGizmoAxisColor(handle.Axis);
+            var end = origin + handle.WorldDirection * handle.WorldLength;
+            AddGizmoLine(vertices, origin, end, color);
+
+            var viewDirection = _camera.Position - origin;
+            if (viewDirection.LengthSquared() < 0.000001f) continue;
+            viewDirection.Normalize();
+            var side = Vector3.Cross(handle.WorldDirection, viewDirection);
+            if (side.LengthSquared() < 0.000001f) continue;
+            side.Normalize();
+            var arrowLength = handle.WorldLength * 0.14f;
+            AddGizmoLine(vertices, end, end - handle.WorldDirection * arrowLength + side * arrowLength * 0.55f, color);
+            AddGizmoLine(vertices, end, end - handle.WorldDirection * arrowLength - side * arrowLength * 0.55f, color);
+        }
+
+        if (vertices.Count == 0) return;
+        var device = GraphicsDevice;
+        var previousDepth = device.DepthStencilState;
+        var previousBlend = device.BlendState;
+        var previousRasterizer = device.RasterizerState;
+        try
+        {
+            device.DepthStencilState = DepthStencilState.None;
+            device.BlendState = BlendState.Opaque;
+            device.RasterizerState = RasterizerState.CullNone;
+            var effect = _moveGizmoEffect;
+            if (effect is null) return;
+            effect.World = Matrix.Identity;
+            effect.View = _camera.View;
+            effect.Projection = _camera.Projection;
+            foreach (var pass in effect.CurrentTechnique.Passes)
+            {
+                pass.Apply();
+                device.DrawUserPrimitives(Microsoft.Xna.Framework.Graphics.PrimitiveType.LineList,
+                    vertices.ToArray(), 0, vertices.Count / 2);
+            }
+        }
+        finally
+        {
+            device.DepthStencilState = previousDepth;
+            device.BlendState = previousBlend;
+            device.RasterizerState = previousRasterizer;
+        }
+    }
+
+    private static void AddGizmoLine(List<VertexPositionColor> vertices,
+        Vector3 start, Vector3 end, Color color)
+    {
+        vertices.Add(new VertexPositionColor(start, color));
+        vertices.Add(new VertexPositionColor(end, color));
+    }
+
+    private static Color GetGizmoAxisColor(TransformGizmoAxis axis) => axis switch
+    {
+        TransformGizmoAxis.X => new Color(235, 78, 78),
+        TransformGizmoAxis.Y => new Color(98, 220, 116),
+        _ => new Color(92, 153, 242)
+    };
+
+    private static Transform CopyTransform(Transform source) => new()
+    {
+        Position = source.Position,
+        Rotation = source.Rotation,
+        Scale = source.Scale
+    };
 
     private void SelectSceneObjectAt(Vector2 logicalMouse)
     {
@@ -554,6 +740,7 @@ public sealed class CharacterStudioGame : EngineHost
         GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
         DrawShadowedScene(lightViewProjection);
         if (_playSession is null) DrawPendingAssetPlacementPreview();
+        DrawMoveGizmo();
 
         if (_showDiagnostics)
         {
@@ -2091,6 +2278,7 @@ public sealed class CharacterStudioGame : EngineHost
             _project = project;
             _sceneAssetRoot = project.RootDirectory;
             _sceneData = scene;
+            InvalidateProjectAssetCatalog();
             _sceneSavePath = scenePath;
             _blockedSaveReason = null;
             _editorHistory = new SceneCommandHistory();
@@ -2116,6 +2304,49 @@ public sealed class CharacterStudioGame : EngineHost
     private static IReadOnlyList<string> LoadRecentProjectPaths() =>
         EngineProjectWorkspace.LoadRecent(RecentProjectsStorePath);
 
+    private IReadOnlyList<GltfAssetReference> GetProjectAssetReferencesForEditor()
+    {
+        if (_project is null) return Array.Empty<GltfAssetReference>();
+        if (!_projectAssetCatalogLoaded
+            || !string.Equals(_projectAssetCatalogPath, _project.FilePath, StringComparison.OrdinalIgnoreCase))
+        {
+            _projectAssetCatalog = EngineProjectAssetCatalog.ListAssets(
+                _project, EnumerateProjectSceneAssetReferences(_sceneData));
+            _projectAssetCatalogPath = _project.FilePath;
+            _projectAssetCatalogLoaded = true;
+        }
+
+        if (_pendingAssetPlacementPreview is { Import.IsCommitted: false } pendingImport)
+            return _projectAssetCatalog
+                .Where(asset => asset.AssetId != pendingImport.Reference.AssetId)
+                .ToArray();
+
+        return _projectAssetCatalog;
+    }
+
+    private void InvalidateProjectAssetCatalog()
+    {
+        _projectAssetCatalogLoaded = false;
+        _projectAssetCatalogPath = null;
+    }
+
+    private static IEnumerable<GltfAssetReference> EnumerateProjectSceneAssetReferences(SceneGraph scene)
+    {
+        var references = scene.Objects.SelectMany(item =>
+        {
+            var values = new List<GltfAssetReference>();
+            if (item.GltfAsset is { } asset) values.Add(asset);
+            if (item.StaticMeshLod is { } lod)
+            {
+                values.Add(lod.NearAsset);
+                values.Add(lod.FarAsset);
+            }
+            return values;
+        });
+        foreach (var group in references.GroupBy(asset => asset.SourcePath, StringComparer.OrdinalIgnoreCase))
+            yield return group.First();
+    }
+
     private void RecordRecentProject(string projectPath)
     {
         try
@@ -2126,6 +2357,111 @@ public sealed class CharacterStudioGame : EngineHost
         {
             _faults.Add($"Could not update recent projects: {exception.Message}");
         }
+    }
+
+    private string PreviewProjectAssetForEditor(GltfAssetReference reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        if (_project is null)
+            throw new InvalidOperationException("Create or open a project before previewing a project model.");
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before previewing a model.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before previewing a model.");
+
+        var previewScene = new SceneGraph();
+        var item = SceneObjectFactory.CreateAssetInstance(previewScene, reference, Vector3.Zero);
+        previewScene.Add(item);
+        PreviewResources? candidatePreview = null;
+        try
+        {
+            candidatePreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(previewScene, _project.RootDirectory, _project), previewScene);
+            if (candidatePreview.HasSkinnedCharacters)
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    candidatePreview.MaximumJointCount);
+
+            if (GetSceneBounds(includePendingAssetPreview: false) is { } sceneBounds
+                && GetSceneObjectBounds(previewScene, item, candidatePreview) is { } modelBounds)
+            {
+                var gap = Math.Clamp(modelBounds.Size.X * 0.15f, 2f, 20f);
+                item.Transform.Position += new Vector3(sceneBounds.Max.X + gap - modelBounds.Min.X, 0f, 0f);
+            }
+
+            var pending = new PendingAssetPlacementPreview(reference, null,
+                candidatePreview, previewScene, item);
+            candidatePreview = null;
+            var previousPending = _pendingAssetPlacementPreview;
+            _pendingAssetPlacementPreview = pending;
+            InvalidateProjectAssetCatalog();
+            try { previousPending?.Dispose(); }
+            catch (Exception exception) { _faults.Add($"Previous model preview cleanup: {exception.Message}"); }
+
+            if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            var message = $"Previewing {Path.GetFileName(reference.SourcePath)} from the project. Choose Add to scene or Cancel preview.";
+            _reimportStatus = message;
+            return message;
+        }
+        finally
+        {
+            candidatePreview?.Dispose();
+        }
+    }
+
+    private string ReloadProjectAssetForEditor(GltfAssetReference reference)
+    {
+        ArgumentNullException.ThrowIfNull(reference);
+        if (_project is null)
+            throw new InvalidOperationException("Create or open a project before reloading a model.");
+        if (_playSession is not null)
+            throw new InvalidOperationException("Stop play mode before reloading a model.");
+        if (_sequenceExportJob?.IsRunning == true)
+            throw new InvalidOperationException("Wait for sequence export to finish before reloading a model.");
+        if (_pendingAssetPlacementPreview is not null)
+            throw new InvalidOperationException("Add or cancel the current model preview before reloading a project model.");
+        if (_preview is null)
+            throw new InvalidOperationException("The editor preview is not ready to reload a model.");
+
+        _editorUi?.CompletePendingEdit(_sceneData);
+        CaptureCharacterSettings();
+        var candidateScene = SceneGraphCloner.Clone(_sceneData);
+        if (!EnumerateProjectSceneAssetReferences(_sceneData)
+            .Any(asset => asset.AssetId == reference.AssetId))
+        {
+            candidateScene.Add(SceneObjectFactory.CreateAssetInstance(candidateScene, reference, Vector3.Zero));
+        }
+
+        PreviewResources? candidatePreview = null;
+        Exception? cleanupError;
+        try
+        {
+            candidatePreview = PreviewResources.Load(GraphicsDevice,
+                ResolveSceneAssets(candidateScene, _project.RootDirectory, _project), candidateScene);
+            if (candidatePreview.HasSkinnedCharacters)
+                SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
+                    candidatePreview.MaximumJointCount);
+            candidatePreview.RebuildCharacterInstances(_sceneData);
+
+            var loadedPreview = candidatePreview;
+            cleanupError = _preview.Reload(() => loadedPreview);
+            candidatePreview = null;
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Model reload failed; the previous preview remains active: {exception.Message}";
+            throw;
+        }
+        finally
+        {
+            candidatePreview?.Dispose();
+        }
+
+        BuildSequencePreview();
+        if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+        var message = $"Reloaded {Path.GetFileName(reference.SourcePath)} from project files.";
+        if (cleanupError is not null) message += $" Previous preview cleanup reported: {cleanupError.Message}";
+        _reimportStatus = message;
+        return message;
     }
 
     private string ImportGlbForEditor(string sourcePath)
@@ -2152,6 +2488,7 @@ public sealed class CharacterStudioGame : EngineHost
             if (candidatePreview.HasSkinnedCharacters)
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
                     candidatePreview.MaximumJointCount);
+            imported.RegisterForPreview();
 
             if (GetSceneBounds(includePendingAssetPreview: false) is { } sceneBounds
                 && GetSceneObjectBounds(previewScene, item, candidatePreview) is { } modelBounds)
@@ -2160,11 +2497,13 @@ public sealed class CharacterStudioGame : EngineHost
                 item.Transform.Position += new Vector3(sceneBounds.Max.X + gap - modelBounds.Min.X, 0f, 0f);
             }
 
-            var pending = new PendingAssetPlacementPreview(imported, candidatePreview, previewScene, item);
+            var pending = new PendingAssetPlacementPreview(imported.Reference, imported,
+                candidatePreview, previewScene, item);
             imported = null;
             candidatePreview = null;
             var previousPending = _pendingAssetPlacementPreview;
             _pendingAssetPlacementPreview = pending;
+            InvalidateProjectAssetCatalog();
             try { previousPending?.Dispose(); }
             catch (Exception exception) { _faults.Add($"Previous model preview cleanup: {exception.Message}"); }
 
@@ -2182,7 +2521,7 @@ public sealed class CharacterStudioGame : EngineHost
     }
 
     private string? GetPendingAssetPreviewName() => _pendingAssetPlacementPreview is { } pending
-        ? Path.GetFileName(pending.Import.Reference.SourcePath)
+        ? Path.GetFileName(pending.Reference.SourcePath)
         : null;
 
     private string AcceptPendingAssetPreview()
@@ -2199,7 +2538,7 @@ public sealed class CharacterStudioGame : EngineHost
         _editorUi?.CompletePendingEdit(_sceneData);
         CaptureCharacterSettings();
         var candidateScene = SceneGraphCloner.Clone(_sceneData);
-        var item = SceneObjectFactory.CreateAssetInstance(candidateScene, pending.Import.Reference,
+        var item = SceneObjectFactory.CreateAssetInstance(candidateScene, pending.Reference,
             pending.Item.Transform.Position);
         item.Transform.Rotation = pending.Item.Transform.Rotation;
         item.Transform.Scale = pending.Item.Transform.Scale;
@@ -2215,13 +2554,14 @@ public sealed class CharacterStudioGame : EngineHost
                 SkinnedEffectCompatibility.Validate(GraphicsDevice.GraphicsProfile,
                     candidatePreview.MaximumJointCount);
 
+            pending.Import?.Commit();
+            _projectAssetCatalogLoaded = false;
             BeforeSceneStructureChange();
             _editorHistory.Execute(_sceneData, new CreateSceneObjectCommand(item));
             var cleanupError = _preview.Reload(() => loadedPreview);
             candidatePreview = null;
-            pending.Import.Commit();
             _pendingAssetPlacementPreview = null;
-            _editorUi?.SelectObject(item.Id, pending.Import.Reference.AssetId);
+            _editorUi?.SelectObject(item.Id, pending.Reference.AssetId);
             BuildSequencePreview();
             if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
 
@@ -2248,6 +2588,7 @@ public sealed class CharacterStudioGame : EngineHost
         try { pending.Dispose(); }
         finally
         {
+            InvalidateProjectAssetCatalog();
             if (updateStatus) _reimportStatus = "Model preview canceled; the asset was not added to the scene.";
             if (frameScene && GetSceneBounds() is { } bounds) _camera.Frame(bounds);
         }

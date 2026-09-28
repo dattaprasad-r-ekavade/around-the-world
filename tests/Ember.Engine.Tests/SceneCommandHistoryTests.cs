@@ -217,4 +217,125 @@ public sealed class SceneCommandHistoryTests
         Assert.Equal("Idle", restored.CharacterSettings!.ClipName);
         Assert.Equal(0.6f, restored.CharacterSettings.Time);
     }
+
+    [Fact]
+    public void ReparentCommandPreservesWorldTransformAcrossUndoAndRedo()
+    {
+        var scene = new SceneGraph();
+        var oldParent = new SceneObject(Guid.NewGuid(), "Old parent")
+        {
+            Transform = new Transform
+            {
+                Position = new Vector3(-8f, 3f, 6f),
+                Rotation = Quaternion.CreateFromYawPitchRoll(0.25f, 0f, 0f),
+                Scale = new Vector3(2f)
+            }
+        };
+        var newParent = new SceneObject(Guid.NewGuid(), "New parent")
+        {
+            Transform = new Transform
+            {
+                Position = new Vector3(20f, -4f, 11f),
+                Rotation = Quaternion.CreateFromYawPitchRoll(-0.4f, 0.1f, 0f),
+                Scale = new Vector3(0.75f)
+            }
+        };
+        var child = new SceneObject(Guid.NewGuid(), "Child")
+        {
+            Transform = new Transform
+            {
+                Position = new Vector3(3f, 5f, -2f),
+                Rotation = Quaternion.CreateFromYawPitchRoll(0.1f, 0.3f, -0.2f),
+                Scale = new Vector3(1.2f)
+            }
+        };
+        scene.Add(oldParent);
+        scene.Add(newParent);
+        scene.Add(child);
+        scene.SetParent(child.Id, oldParent.Id);
+        var originalWorld = scene.GetWorldMatrix(child.Id);
+        var history = new SceneCommandHistory();
+
+        history.Execute(scene, new ReparentSceneObjectCommand(child.Id, newParent.Id));
+        Assert.Equal(newParent.Id, scene.Find(child.Id)!.ParentId);
+        AssertMatrixClose(originalWorld, scene.GetWorldMatrix(child.Id));
+
+        Assert.True(history.Undo(scene));
+        Assert.Equal(oldParent.Id, scene.Find(child.Id)!.ParentId);
+        AssertMatrixClose(originalWorld, scene.GetWorldMatrix(child.Id));
+
+        Assert.True(history.Redo(scene));
+        Assert.Equal(newParent.Id, scene.Find(child.Id)!.ParentId);
+        AssertMatrixClose(originalWorld, scene.GetWorldMatrix(child.Id));
+    }
+
+    [Fact]
+    public void ReparentCommandRejectsCyclesAndUnrepresentableShearWithoutMutation()
+    {
+        var scene = new SceneGraph();
+        var ancestor = new SceneObject(Guid.NewGuid(), "Ancestor");
+        var descendant = new SceneObject(Guid.NewGuid(), "Descendant");
+        var shearingParent = new SceneObject(Guid.NewGuid(), "Nonuniform parent")
+        {
+            Transform = new Transform
+            {
+                Scale = new Vector3(2f, 1f, 0.5f),
+                Rotation = Quaternion.CreateFromYawPitchRoll(0.4f, 0f, 0f)
+            }
+        };
+        var rotatedChild = new SceneObject(Guid.NewGuid(), "Rotated child")
+        {
+            Transform = new Transform
+            {
+                Position = new Vector3(2f, 3f, 4f),
+                Rotation = Quaternion.CreateFromYawPitchRoll(0f, 0.5f, 0f)
+            }
+        };
+        scene.Add(ancestor);
+        scene.Add(descendant);
+        scene.SetParent(descendant.Id, ancestor.Id);
+        scene.Add(shearingParent);
+        scene.Add(rotatedChild);
+        var history = new SceneCommandHistory();
+
+        Assert.Throws<InvalidOperationException>(() => history.Execute(scene,
+            new ReparentSceneObjectCommand(ancestor.Id, descendant.Id)));
+        Assert.Null(scene.Find(ancestor.Id)!.ParentId);
+        Assert.Equal(ancestor.Id, scene.Find(descendant.Id)!.ParentId);
+
+        var originalLocal = scene.Find(rotatedChild.Id)!.Transform;
+        var originalLocalPosition = originalLocal.Position;
+        var originalLocalRotation = originalLocal.Rotation;
+        var originalLocalScale = originalLocal.Scale;
+        var originalWorld = scene.GetWorldMatrix(rotatedChild.Id);
+        var error = Assert.Throws<InvalidOperationException>(() => history.Execute(scene,
+            new ReparentSceneObjectCommand(rotatedChild.Id, shearingParent.Id)));
+        Assert.Contains("introduce shear", error.Message, StringComparison.Ordinal);
+        Assert.Null(scene.Find(rotatedChild.Id)!.ParentId);
+        AssertMatrixClose(originalWorld, scene.GetWorldMatrix(rotatedChild.Id));
+        Assert.Equal(originalLocalPosition, scene.Find(rotatedChild.Id)!.Transform.Position);
+        Assert.Equal(originalLocalRotation, scene.Find(rotatedChild.Id)!.Transform.Rotation);
+        Assert.Equal(originalLocalScale, scene.Find(rotatedChild.Id)!.Transform.Scale);
+        Assert.False(history.CanUndo);
+    }
+
+    private static void AssertMatrixClose(Matrix expected, Matrix actual)
+    {
+        var expectedValues = new[]
+        {
+            expected.M11, expected.M12, expected.M13, expected.M14,
+            expected.M21, expected.M22, expected.M23, expected.M24,
+            expected.M31, expected.M32, expected.M33, expected.M34,
+            expected.M41, expected.M42, expected.M43, expected.M44
+        };
+        var actualValues = new[]
+        {
+            actual.M11, actual.M12, actual.M13, actual.M14,
+            actual.M21, actual.M22, actual.M23, actual.M24,
+            actual.M31, actual.M32, actual.M33, actual.M34,
+            actual.M41, actual.M42, actual.M43, actual.M44
+        };
+        for (var index = 0; index < expectedValues.Length; index++)
+            Assert.InRange(MathF.Abs(expectedValues[index] - actualValues[index]), 0f, 0.001f);
+    }
 }

@@ -13,7 +13,8 @@ A first-time creator should make a small change, see what it does, and build con
 Embedded teaching and beginner usability are first-release requirements. Contextual explanations, experiments and feedback must teach transferable concepts, not just button sequences. The longer-term
 product is a game in which the player is a game designer, using these same creation tools.
 See [CREATOR_EXPERIENCE.md](CREATOR_EXPERIENCE.md) for the layout, language, learning loop,
-measurement targets, and designer-game direction. These are planned changes, not shipped UI.
+measurement targets, and designer-game direction. It defines acceptance; implementation and
+verification status are recorded below.
 
 Build a compact Windows 3D creation tool in which one person can create or generate a
 scene, refine it visually, and use that same scene in a playable game or a cutscene.
@@ -51,7 +52,7 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1 and UX.1–UX.3 are **In progress**; later tasks
+M0.1 through M0.3 have passed; M0.4, M1.1–M1.2 and UX.1–UX.4 are **In progress**; UX.5 and later tasks
 remain **Not started** against their new acceptance criteria. Existing components are
 reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
@@ -66,13 +67,25 @@ selection code, plus a temporary model preview with explicit Add and Cancel acti
 verification of these controls remains open. Windows CI for `ababa01` exposed a time-budget-sensitive
 cell-queue test; commit `361078f` separates wall-clock scheduling from the cost/cell fairness check,
 with elapsed-budget behavior covered by a controllable clock. Hosted run #6 passed on `145c892`.
-UX.3 also has an optional Inspector explanation for transforms and shared model assets. The native
-graphics interaction gate remains open.
+UX.3 also has an optional Inspector explanation for transforms and shared model assets, plus direct
+next actions for an empty scene and an empty model list. The Inspector now identifies a model being
+previewed instead of describing the scene as empty, and editor failures remain visible in the
+Inspector with a recovery hint. The native graphics interaction gate remains open.
+UX.1's optional tools menu and its tool panels now have exclusive draw states to prevent their
+shared-position windows from overlapping during a selection change.
+UX.4 now has an optional action-driven first-creation lesson, replayable from the workspace, with
+per-step Why? explanations, two levels of offline hints, action-based completion checks, and a
+project-local completion record. Its button-driven walkthrough and UX.5 novice observations remain
+unverified.
+M1.2 now has a nested selectable object hierarchy, a command-based parent action that preserves
+world placement when the new local transform can be represented without shear, and a viewport Move
+gizmo with parent-aware axis dragging and one undoable edit on release. Turn/Size gizmos, snapping,
+live drag verification, and save/reopen evidence remain open.
 Preserve completed reliability work.
 
-Execution order: complete M0.4's interactive verification and continue UX.1–UX.3 alongside
-completion of M1.1. Do not add more default panels while this work is pending. UX.4 and UX.5
-are required for the M1 gate; UX.6 follows the first M2 interaction. Work may proceed while
+Execution order: complete M0.4's interactive verification and continue UX.1–UX.4 alongside
+completion of M1.1. Do not add more default panels while this work is pending. UX.5 novice
+observation is required for the M1 gate; UX.6 follows the first M2 interaction. Work may proceed while
 manual evidence is pending, but do not call dependent release gates Passed.
 
 Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
@@ -122,7 +135,7 @@ contract in CREATOR_EXPERIENCE.md. These tasks precede additional advanced edito
 | UX.1 | Replace all-panels startup with Home and a scene-first workspace. | Home offers Game, Film and Open; the default editor has one toolbar, an Add library and contextual selection panel. World/RPG/debug/export panels are closed until requested. No overlapping windows; at least 60% scene area at 1280×720; reset layout, resize and DPI checks pass. | **In progress** |
 | UX.2 | Make common actions visual and understandable. | File/folder pickers, starter thumbnails, model preview, click selection and visible Move/Turn/Size/Play/Undo/Save actions complete the basic loop. No typed paths, JSON, manifests or required shortcuts. Advanced values remain discoverable in More details. | **In progress** |
 | UX.3 | Provide safe feedback and contextual help. | State-aware empty/disabled/error messages offer a next action; a missing model can be located through Browse. Save status, undo, recovery and Play/Stop are understandable. Keyboard focus, readable scaling and non-color-only states pass manual checks. | **In progress** |
-| UX.4 | Build a skippable first-creation lesson. | A starter enables add → move → play → undo → save/reopen without code; one concept per step, detected from real actions, with replayable help. Teach objects and transforms through explain → change → predict → play → reflect → vary. Contextual Why?/hints work offline; free creation is always available. The lesson uses normal commands and project data. | Not started |
+| UX.4 | Build a skippable first-creation lesson. | A starter enables add → move → play → undo → save/reopen without code; one concept per step, detected from real actions, with replayable help. Teach objects and transforms through explain → change → predict → play → reflect → vary. Contextual Why?/hints work offline; free creation is always available. The lesson uses normal commands and project data. | **In progress** |
 | UX.5 | Observe novice use and revise. | Three first-time users complete the starter loop within 10 minutes each without facilitator intervention; record errors/help/confusion and a later unaided repeat. All can undo, Play/Stop and reopen safely, explain their change, and repeat it on a different object without step-by-step hints. No participants means In progress with the usability gate pending, not a developer-inferred pass. | Not started |
 | UX.6 | Prototype one designer-game mission. | After M2.1, build/test/save a small challenge through an optional mission using the same authoring commands. Teach triggers, actions, goals and playtesting; after guidance, the creator makes a different interaction and explains its rule. Explain consequences and recognize completion; never lock editing behind progression. Free edit and mission mode reopen the same project unchanged. | Not started |
 
@@ -136,7 +149,7 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
 | M1.1 | Project create/open, recent projects, asset browser and import/reimport. | Create a project outside the checkout, import static and animated GLBs, relocate and reopen it. Invalid reimport preserves the prior valid asset and explains the error. Complete these actions through Browse/visual controls; typed-path service tests alone do not pass the gate. | **In progress** |
-| M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. Selection and Move/Turn/Size work in the viewport; numeric transforms are optional details. | Not started |
+| M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. Selection and Move/Turn/Size work in the viewport; numeric transforms are optional details. | **In progress** |
 | M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | Not started |
 | M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | Not started |
 
@@ -204,7 +217,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks and finish UX.1–UX.3 with the M1.1 workflow. Verify scene-view picking, layout reset, resize, DPI, project pickers and edit/save/play actions through visible controls before closing any gate. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice now catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls, then add selected-asset reimport with invalid-replacement recovery. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 now has nested selection, undoable world-preserving reparenting, and a first viewport Move gizmo; implement Turn/Size gizmos and snapping, then verify hierarchy and transforms through visible selection, drag, undo/redo, and save/reopen. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.

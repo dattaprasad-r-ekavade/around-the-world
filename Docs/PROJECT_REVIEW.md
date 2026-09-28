@@ -62,6 +62,22 @@ build passes. A 1280×720 Release scene capture rendered the courtyard and anima
 Windows 11, .NET 9.0.19 and Intel UHD Graphics; resize, save/reopen and Play/Stop remain unverified.
 The desktop-control helper failed to initialize in this session, so M0.4 remains In progress.
 
+The local UX.3 slice adds direct actions for an empty scene and a clear prompt when the scene has no
+imported models. The Release build passes and a 1280×720 empty-scene capture shows the guidance;
+button behavior, picker flow, focus, resize and DPI still require interactive verification. See
+[ENGINE_PROGRESS.md](ENGINE_PROGRESS.md) for the capture and current evidence boundary.
+The optional tools menu now closes competing panels during selection; its mouse transitions still
+need the same interactive verification.
+The Inspector also reports a pending model preview as a preview rather than an empty scene; this
+state still needs a live Browse/Add/Cancel walkthrough.
+Save and model-operation failures now receive Inspector recovery hints, but the rendered error and
+dismissal states still need live verification.
+
+The local M1.1 follow-up adds a stable project asset catalog, exposes unreferenced project GLBs in
+the Add library, and adds a selected-model reload action with replacement-resource validation.
+Targeted tests and the Release build pass; browse/preview/Add/Cancel and reload failure feedback
+remain unverified in the running editor.
+
 ---
 
 # Project and scope review — 27 September 2026

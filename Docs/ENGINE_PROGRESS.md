@@ -1956,3 +1956,237 @@ and M1.1 retain open interactive gates.
 
 Next: verify the **Why?** row and keyboard focus on a desktop, then exercise Browse → preview → Add,
 Cancel cleanup, transform undo, save/reopen, resize, DPI and Play/Stop through visible controls.
+
+## Empty-scene next actions — 28 September 2026
+
+### UX.3 implementation slice
+
+- The Inspector now distinguishes an empty scene from an unselected object. An empty scene offers
+  **Add an empty object**, **Browse for a model**, or **Make or open a project**, depending on whether
+  a project is available.
+- An empty model list now says that no models are present and points to Browse. Model browsing uses
+  one shared action from the Add library and the Inspector, with the same import result and error text.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Empty-scene capture | PASS — opened a version-7 empty scene, 1280×720 screenshot shows the empty-scene actions and empty model guidance; exit 0, stderr empty; `%TEMP%/Ember/UX3/empty-scene-next-action/empty-scene.png` |
+| Full CPU tests | NOT RERUN — this slice changes only CharacterStudio UI text and button routing |
+| Button, picker, focus, resize and DPI interaction | NOT RUN — the desktop interaction helper remains unavailable |
+
+UX.3 remains **In progress**. The capture confirms the guidance fits in the Inspector, but does not
+prove button behavior or keyboard and scaling acceptance. M0.4, UX.1, UX.2 and M1.1 remain open.
+
+Next: exercise the empty-scene buttons and Browse/preview/Add/cancel loop, then verify narrow-window
+layout, keyboard focus, save/reopen, and Play/Stop through the visible controls.
+
+## Optional tool-panel overlap guard — 28 September 2026
+
+### UX.1 implementation slice
+
+- Opening **More tools** now closes any active Animate/Finish, World Cells, or RPG authoring panel.
+- Selecting an optional panel closes the menu and delays that panel's draw until the next frame, so
+  the menu and panel do not occupy their shared starting position together.
+- The top-bar Animate and Finish actions close More tools before opening the sequence panel.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Source control-flow review | PASS — the menu is drawn exclusively from the optional tool panels; toolbar routes close the menu |
+| CharacterStudio default scene capture | PASS — `ReleaseAShowcase.json` rendered in a 1280×720 capture with the Add library and Inspector visible; exit 0, stderr empty; `%TEMP%/Ember/UX1/tool-panel-default/workspace.png` |
+| Full CPU tests | NOT RUN — this slice changes only editor panel visibility |
+| Menu/panel mouse interaction | NOT RUN — the desktop interaction helper still fails to initialize |
+
+UX.1 remains **In progress**. The code prevents the known More tools/menu overlap, but other window
+positions, transitions, viewport area, resize, DPI and keyboard focus still need the manual layout gate.
+
+Next: verify opening More tools, selecting each optional panel and using Animate/Finish through the
+visible controls; then continue the remaining M1.1 and UX.2 workflow checks.
+
+## Pending-model preview feedback — 28 September 2026
+
+### UX.3 implementation slice
+
+- When no scene object is selected, the Inspector now detects a pending GLB preview and says it is
+  not in the scene yet. It points to the Add panel's Add and Cancel actions and can reopen that panel
+  when the creator hid it.
+- The Add panel's model list distinguishes an empty scene from one with a model currently being
+  previewed, avoiding the impression that Browse has not loaded anything.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full CPU tests | NOT RUN — this slice changes only editor feedback and panel visibility |
+| Pending-preview visual state and Add/Cancel interaction | NOT RUN — the desktop interaction helper remains unavailable; the normal scene capture cannot enter this state |
+
+UX.3 remains **In progress**. The source routes the preview state and its recovery action, but its
+visual layout and Add/Cancel behavior are not yet proven in a running interactive session.
+
+Next: open a project, Browse a GLB, inspect the preview guidance, then Add and Cancel in turn and
+confirm that the scene and project assets reflect each choice.
+
+## Visible recovery hints for editor failures — 28 September 2026
+
+### UX.3 implementation slice
+
+- Save, model import, preview cancellation, and other editor errors now appear in the Inspector even
+  when the Add panel is closed. The Add panel avoids duplicating the same failure message.
+- Each error receives a next step based on the failed action: check the project folder before retrying
+  Save, choose another model, retry preview cancellation, or choose a valid project/folder. A visible
+  **Dismiss message** action clears the feedback.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Error classification and panel routing | PASS — source review confirms save, create/open, cancel, and model-import failures reach the Inspector; Home continues to show create/open errors in its own workspace |
+| Default scene capture | PASS — current Release binary opened `ReleaseAShowcase.json`; normal editing shows no failure banner in a 1280×720 capture; exit 0, stderr empty; `%TEMP%/Ember/UX3/recovery-feedback-default/workspace.png` |
+| Full CPU tests | NOT RUN — this slice changes CharacterStudio UI feedback only |
+| Rendered error-state and dismissal interaction | NOT RUN — no current capture can create this state without UI input; desktop interaction helper remains unavailable |
+
+UX.3 remains **In progress**. The code provides visible recovery paths, but their rendered state,
+message clarity and dismissal behavior still require interactive review.
+
+Next: force save, invalid-model, failed-open and failed-create states through the visible controls;
+confirm the hint is relevant, dismisses cleanly, and does not hide recoverable scene data.
+
+## Project asset browser, reload action, and stable catalog — 28 September 2026
+
+### M1.1 implementation slice
+
+- CharacterStudio now catalogs every GLB beneath a project's `Assets` folder, including assets
+  with no current scene instance. A versioned project-relative catalog keeps each asset ID stable
+  across refreshes and project relocation; older scene references seed IDs before their last
+  instance is removed.
+- The Add library lists project models and scene models, labels whether each is already in the
+  scene, and lets the creator preview a selected project model before adding it. Imported GLBs
+  keep their assigned ID while pending; accepting registers the durable asset, while canceling
+  removes both the pending catalog entry and copied files.
+- A selected model can be reloaded from its project file through the library. CharacterStudio
+  builds and validates a replacement resource set before swapping it into the editor; a failed
+  load reports the error and leaves the previous preview active.
+- Catalog parse and identity conflicts report errors without replacing malformed catalog data.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Project, catalog, import, and reload tests | PASS — 23 targeted tests, including stable IDs across relocation, legacy scene-reference seeding, import commit identity, pending-import cleanup, ID/path conflicts, malformed-catalog preservation, and invalid-reload fallback |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| `git diff --check` | PASS |
+| Project browser and animated-scene capture | PASS — a relocated temporary project opened `ReleaseAShowcase.json`; the 1280×720 capture shows the two animated Fox characters, project model list, preview and reload controls; exit 0, stderr empty; `%TEMP%/Ember/M11ShowcaseBrowser-eb403cea61be44b1878240c94dcdc188/project-asset-browser-showcase.png` |
+| Browse, refresh, preview, Add, and Cancel interaction | NOT RUN — desktop interaction helper failed to initialize (`failed to write kernel assets: The system cannot find the path specified (os error 3)`) |
+| Full CPU suite and visual review | NOT RUN — the targeted tests and build validate code; M1.1's visible-control and visual gates remain open |
+
+M1.1 remains **In progress**. Code now supports browsing and reloading persisted project assets,
+but the visible workflow has not been exercised in the running editor. The reload control and its
+invalid-model recovery message still need confirmation through visible interaction.
+
+Next: verify the project picker and Browse → preview → Add/Cancel workflow through visible controls;
+then exercise selected-model reload with a valid and invalid GLB and confirm that the previous scene
+preview stays usable after failure. Keep M0.4 and UX.1–UX.4 graphics checks open until recorded.
+
+## Optional first-creation lesson — 28 September 2026
+
+### UX.4 implementation slice
+
+- Home offers an optional guide for new Game/Film starters; the guide can also be started,
+  hidden, skipped, or replayed from the workspace. Normal scene editing remains available.
+- The lesson follows real scene and editor state through adding an object, changing its transform,
+  predicting Play behavior, starting and stopping Play, reflecting on the result, undoing the tracked
+  move, changing another object, saving, and reopening the same project scene.
+- Every step provides a short concept explanation. **Why?** gives the purpose, and offline hints
+  reveal in two levels; help resets as the lesson advances so the creator can try unaided first.
+- Lesson completion is stored atomically in the project's `.ember/learning-progress.json`. Reopening
+  a project surfaces prior completion and replay guidance. Malformed progress is reported without
+  blocking the project workspace or overwriting the original file.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors after the latest lesson-help UI change |
+| Lesson and progress-store tests | PASS — full `Ember.Engine.Tests` suite: 296 passed, including lesson position tracking/removal recovery and persisted completion coverage |
+| `git diff --check` | PASS |
+| Home and workspace captures | PASS — 1280×720; Home shows the optional guide choice and the editor shows its entry point; `%TEMP%/Ember/UX4LessonCapture-f0497e4f3af8482d8c5bfdc15b9af020/home.png` and `workspace.png` |
+| Full lesson interaction, replay, hint ladder, and completion record | NOT RUN — the desktop interaction helper failed to initialize (`failed to write kernel assets: The system cannot find the path specified (os error 3)`) |
+| UX.5 first-time user observation | NOT RUN — three novice sessions have not been conducted |
+
+UX.4 remains **In progress**. The lesson logic, visible controls and project-local progress are
+implemented and compile, but the live click-through and beginner usability evidence are still open.
+The current build is not evidence that the controls fit or read clearly at every window size or DPI.
+
+Next: complete the M0.4 and M1.1 button-driven checks alongside UX.1–UX.4; then run the full lesson
+from a fresh starter through reopen, replay and persisted completion. Conduct UX.5 with three
+first-time creators before accepting the M1 gate.
+
+## Nested scene hierarchy and world-preserving reparent — 28 September 2026
+
+### M1.2 implementation slice
+
+- The Inspector now renders scene objects as an alphabetized nested tree, expands root objects with
+  children on first display, and still selects objects by clicking their row. A parent selector lets
+  the creator reparent or unparent an object; it omits choices that would create a cycle.
+- Reparenting is a normal scene-history command. It captures the old relationship and transform,
+  computes a replacement local transform from the current world transform, and restores both sides
+  during undo/redo. It rejects missing parents, cycles, singular parent transforms and transforms
+  that would introduce shear instead of silently distorting the object.
+- Existing scene-view picking, Duplicate/Delete and Move/Turn/Size actions remain available. This
+  slice does not yet add viewport transform gizmos or snapping.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Scene command-history tests | PASS — full `Ember.Engine.Tests` suite: 296 passed, including world placement across reparent/undo/redo, cycle rejection and no-mutation shear rejection |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| `git diff --check` | PASS |
+| CharacterStudio nested-hierarchy capture | PASS — a temporary scene placed Fox Run under Release A Courtyard; the indented child row and parent selector render at 1280×720; process exited 0 without ImGui errors; `%TEMP%/Ember/M12NestedFixture-b383271eb1dc45739ec37672047c7aaa/hierarchy.png` |
+| Nested hierarchy and parent selector interaction | NOT RUN — editor UI input was not exercised; a build does not verify tree selection, reparent feedback or layout |
+| Parent/child appearance after project save and reopen | NOT RUN — live editor acceptance remains open |
+
+M1.2 is **In progress**. It now has a real hierarchy and undoable parent changes, but its primary
+viewport editing promise still needs transform gizmos, snapping and visible interaction verification.
+
+Next: extend the viewport gizmo to Turn and Size and add snapping. Keep selection, hierarchy,
+undo/redo and save/reopen checks open until exercised in the editor.
+
+## Viewport Move gizmo — 28 September 2026
+
+### M1.2 implementation slice
+
+- CharacterStudio now draws red, green and blue world-axis Move handles at the selected object's
+  world pivot while the Move tool is active. Axis hit-testing starts a drag; the projected screen
+  motion becomes a world-axis offset, then converts through the parent's inverse world matrix so
+  nested objects move along world axes without changing their other local transform values.
+- Dragging previews the transform in the scene. Releasing records one `TransformEditCommand`, so
+  the completed move participates in the existing undo/redo history. Camera orbit and ImGui mouse
+  actions are suppressed during the drag. Invalid or singular parent transforms do not apply a
+  non-finite position.
+- Turn/Size viewport handles and snapping are still unimplemented. The gizmo is hidden in Home,
+  Play, sequence preview and sequence export states.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `ViewportMoveGizmoMathTests` | PASS — 4 tests cover screen-axis picking, pointer-to-world movement, parent-space conversion through rotation/scale, and singular-parent rejection |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | INCOMPLETE — 296 passed and 4 existing world-cell preparation/time-budget tests failed under the full run; each of those 4 passed when rerun alone |
+| CharacterStudio Release capture | PASS — `ReleaseAShowcase.json`, 1280×720; selected Fox and all three handles visible; exit 0, stderr empty; `%TEMP%/Ember/M12MoveGizmo-90cf373fccc540a89a58806c1fbc775d/move-gizmo.png` |
+| Live axis drag, undo/redo and save/reopen | NOT RUN — capture verifies rendering only; desktop input was not exercised |
+
+M1.2 remains **In progress**. The scene-view Move gizmo is rendered and its projection and local-space
+math are covered, but the live interaction and persistence workflow are not yet proven. The full CPU
+suite also needs a stable green run; isolated reruns do not turn its four full-run timeouts into a pass.
+
+Next: add Turn/Size handles and snapping, then exercise Move, Turn, Size, parent selection and
+reparenting through visible controls, undo/redo, and save/reopen. Rerun the full CPU suite and Windows
+CI after those changes.

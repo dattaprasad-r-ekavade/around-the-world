@@ -2,6 +2,7 @@ using Ember.Scene;
 using Ember.Render;
 using Ember.Rpg;
 using Ember.Authoring;
+using Ember.Project;
 using Ember.World;
 using ImGuiNET;
 using Microsoft.Xna.Framework;
@@ -81,8 +82,14 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Func<string> _acceptPendingAssetPreview;
     private readonly Action _cancelPendingAssetPreview;
     private readonly Func<string?> _getCurrentProjectPath;
+    private readonly Func<IReadOnlyList<GltfAssetReference>> _getProjectAssetReferences;
+    private readonly Action _refreshProjectAssetReferences;
+    private readonly Func<GltfAssetReference, string> _previewProjectAsset;
+    private readonly Func<GltfAssetReference, string> _reloadProjectAsset;
     private readonly Func<IReadOnlyList<string>> _getRecentProjectPaths;
     private readonly Action<bool> _setDiagnosticsVisible;
+    private FirstCreationLesson? _firstCreationLesson;
+    private string? _lessonProjectOpenCheck;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _sequenceExportDirectory = Path.Combine(Environment.CurrentDirectory, "SequenceFrames");
@@ -131,6 +138,12 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _showWorldTools;
     private bool _showRpgTools;
     private bool _showDiagnostics;
+    private bool _showFirstCreationLesson;
+    private bool _showLessonWhy;
+    private int _lessonHintLevel;
+    private FirstCreationLessonStep? _lastObservedLessonStep;
+    private bool _guideNewProject;
+    private bool _startLessonAfterProjectCreate;
     private bool _wantsMouse;
     private bool _wantsKeyboard;
     private int _lastWheel;
@@ -176,6 +189,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Func<string, string> importGlb, Func<string?> getPendingAssetPreviewName,
         Func<string> acceptPendingAssetPreview, Action cancelPendingAssetPreview,
         Func<string?> getCurrentProjectPath,
+        Func<IReadOnlyList<GltfAssetReference>> getProjectAssetReferences,
+        Action refreshProjectAssetReferences,
+        Func<GltfAssetReference, string> previewProjectAsset,
+        Func<GltfAssetReference, string> reloadProjectAsset,
         Func<IReadOnlyList<string>> getRecentProjectPaths, Action<bool> setDiagnosticsVisible)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
@@ -221,6 +238,14 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _cancelPendingAssetPreview = cancelPendingAssetPreview
             ?? throw new ArgumentNullException(nameof(cancelPendingAssetPreview));
         _getCurrentProjectPath = getCurrentProjectPath ?? throw new ArgumentNullException(nameof(getCurrentProjectPath));
+        _getProjectAssetReferences = getProjectAssetReferences
+            ?? throw new ArgumentNullException(nameof(getProjectAssetReferences));
+        _refreshProjectAssetReferences = refreshProjectAssetReferences
+            ?? throw new ArgumentNullException(nameof(refreshProjectAssetReferences));
+        _previewProjectAsset = previewProjectAsset
+            ?? throw new ArgumentNullException(nameof(previewProjectAsset));
+        _reloadProjectAsset = reloadProjectAsset
+            ?? throw new ArgumentNullException(nameof(reloadProjectAsset));
         _getRecentProjectPaths = getRecentProjectPaths ?? throw new ArgumentNullException(nameof(getRecentProjectPaths));
         _setDiagnosticsVisible = setDiagnosticsVisible ?? throw new ArgumentNullException(nameof(setDiagnosticsVisible));
         _showHome = _getCurrentProjectPath() is null && _getCurrentScenePath() is null;
@@ -246,11 +271,28 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public bool WantsMouse => _wantsMouse;
     public bool WantsKeyboard => _wantsKeyboard;
     public Guid? SelectedObjectId => _selectedObjectId;
+    public bool IsMoveToolSelected => _transformTool == TransformTool.Move;
+    public bool IsHomeVisible => _showHome;
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
 
     public void CompletePendingEdit(SceneGraph scene) => CommitActiveTransformEdit(scene);
+
+    public void CommitViewportTransform(SceneGraph scene, Guid objectId,
+        Transform before, Transform after)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        if (scene.Find(objectId) is not { } item) return;
+        var beforeCopy = SceneTransformCopy(before);
+        var afterCopy = SceneTransformCopy(after);
+        if (TransformsEqual(beforeCopy, afterCopy)) return;
+        item.Transform = SceneTransformCopy(beforeCopy);
+        _history.Execute(scene, new TransformEditCommand(objectId, beforeCopy, afterCopy));
+        _projectWorkspaceStatus = $"Moved {item.Name} with the scene view. Undo is available.";
+    }
 
     public void SelectObject(Guid objectId, Guid? assetId = null)
     {
@@ -318,7 +360,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     }
 
     public void Update(float elapsedSeconds, KeyboardState keyboard, MouseState mouse,
-        Vector2 logicalMouse, SceneGraph scene)
+        Vector2 logicalMouse, SceneGraph scene, bool suppressMouseInput = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(CharacterStudioEditorUi));
         var viewport = _renderer.Viewport;
@@ -330,15 +372,57 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _letterboxOffsetY = (int)MathF.Floor((viewport.Height - _logicalHeight * framebufferScale) * 0.5f);
         _io.DisplayFramebufferScale = new NumericsVector2(framebufferScale, framebufferScale);
         _io.DeltaTime = Math.Max(1f / 1000f, elapsedSeconds);
-        _io.AddMousePosEvent(logicalMouse.X, logicalMouse.Y);
-        _io.AddMouseButtonEvent(0, mouse.LeftButton == ButtonState.Pressed);
-        _io.AddMouseButtonEvent(1, mouse.RightButton == ButtonState.Pressed);
-        _io.AddMouseButtonEvent(2, mouse.MiddleButton == ButtonState.Pressed);
+        _io.AddMousePosEvent(suppressMouseInput ? -float.MaxValue : logicalMouse.X,
+            suppressMouseInput ? -float.MaxValue : logicalMouse.Y);
+        _io.AddMouseButtonEvent(0, !suppressMouseInput && mouse.LeftButton == ButtonState.Pressed);
+        _io.AddMouseButtonEvent(1, !suppressMouseInput && mouse.RightButton == ButtonState.Pressed);
+        _io.AddMouseButtonEvent(2, !suppressMouseInput && mouse.MiddleButton == ButtonState.Pressed);
         var wheel = (mouse.ScrollWheelValue - _lastWheel) / 120f;
-        if (wheel != 0f) _io.AddMouseWheelEvent(0f, wheel);
+        if (!suppressMouseInput && wheel != 0f) _io.AddMouseWheelEvent(0f, wheel);
         _lastWheel = mouse.ScrollWheelValue;
         UpdateKeyboard(keyboard);
         MaybeAutosaveAuthoredProject(scene, elapsedSeconds);
+
+        if (_startLessonAfterProjectCreate && !_showHome
+            && _getCurrentProjectPath() is { } createdProjectPath)
+        {
+            BeginFirstCreationLesson(scene, createdProjectPath);
+            _startLessonAfterProjectCreate = false;
+        }
+
+        if (_lessonProjectOpenCheck is { } reopenedProjectPath)
+        {
+            _lessonProjectOpenCheck = null;
+            if (_firstCreationLesson is { } lesson)
+            {
+                var projectPath = _getCurrentProjectPath();
+                var scenePath = _getCurrentScenePath();
+                if (lesson.ObserveReopened(projectPath ?? string.Empty,
+                    scenePath ?? string.Empty, scene))
+                {
+                    _showFirstCreationLesson = true;
+                    try
+                    {
+                        var project = EngineProjectFile.Load(projectPath!);
+                        ProjectLearningProgressStore.RecordCompletion(
+                            project, "first-creation", scenePath!);
+                        _projectWorkspaceStatus = "First creation completed. This project now remembers the lesson.";
+                    }
+                    catch (Exception exception)
+                    {
+                        _projectWorkspaceStatus = $"Guide completed, but lesson progress could not be saved: {exception.Message}";
+                    }
+                }
+            }
+        }
+
+        if (_firstCreationLesson is { } activeLesson
+            && IsSamePath(activeLesson.ProjectFilePath, _getCurrentProjectPath()))
+        {
+            activeLesson.ObserveScene(scene);
+            activeLesson.ObservePlayback(_isPlaying());
+        }
+        RefreshLessonHelpForCurrentStep();
 
         ImGui.NewFrame();
         if (_showHome)
@@ -352,10 +436,13 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             {
                 DrawAddLibrary(scene);
                 DrawPanel(scene);
-                DrawMoreToolsMenu();
-                if (_showSequenceTools) DrawSequencePanel();
-                if (_showWorldTools) DrawWorldCellPanel(scene);
-                if (_showRpgTools) DrawRpgAuthoringPanel(scene);
+                var toolMenuVisible = DrawMoreToolsMenu();
+                if (!toolMenuVisible)
+                {
+                    if (_showSequenceTools) DrawSequencePanel();
+                    if (_showWorldTools) DrawWorldCellPanel(scene);
+                    if (_showRpgTools) DrawRpgAuthoringPanel(scene);
+                }
             }
         }
         ImGui.Render();
@@ -400,6 +487,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 if (selectedFolder is not null) _projectParentDirectory = selectedFolder;
             }
             ImGui.Dummy(new NumericsVector2(0f, 6f));
+            ImGui.Checkbox("Guide me through my first creation", ref _guideNewProject);
+            ImGui.TextDisabled("Optional: free creation always stays available.");
+            ImGui.Dummy(new NumericsVector2(0f, 4f));
 
             var twoStarterColumns = panelWidth >= 620f;
             var cardWidth = twoStarterColumns
@@ -515,6 +605,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _projectWorkspaceStatus = _createProject(projectDirectory, isFilm);
             _projectName = projectName;
             _showSequenceTools = false;
+            _startLessonAfterProjectCreate = _guideNewProject;
             _showHome = false;
         }
         catch (Exception exception)
@@ -528,6 +619,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         try
         {
             _projectWorkspaceStatus = _openProject(path);
+            _lessonProjectOpenCheck = path;
             _showHome = false;
         }
         catch (Exception exception)
@@ -540,10 +632,57 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         var projectPath = _getCurrentProjectPath();
         if (projectPath is not null)
-            return $"Ready to edit {Path.GetFileName(Path.GetDirectoryName(projectPath))}. Select an object to change it, or use Add to place something new.";
+        {
+            var readyMessage = $"Ready to edit {Path.GetFileName(Path.GetDirectoryName(projectPath))}. Select an object to change it, or use Add to place something new.";
+            try
+            {
+                var completion = ProjectLearningProgressStore.Load(EngineProjectFile.Load(projectPath))
+                    .FirstOrDefault(item => string.Equals(item.LessonId, "first-creation", StringComparison.Ordinal));
+                if (completion is not null)
+                    return $"{readyMessage} First creation completed {completion.CompletionCount} time(s); choose First creation to replay it.";
+            }
+            catch (Exception exception)
+            {
+                return $"{readyMessage} Saved lesson progress could not be read: {exception.Message}";
+            }
+            return readyMessage;
+        }
         if (_getCurrentScenePath() is not null)
             return "This scene is open on its own. Create or open a project to add models and keep your work together.";
         return "Choose Make a game or Make a film to create a project.";
+    }
+
+    private void BeginFirstCreationLesson(SceneGraph scene, string projectFilePath)
+    {
+        _firstCreationLesson = new FirstCreationLesson(scene, projectFilePath);
+        _showFirstCreationLesson = true;
+        _showLessonWhy = false;
+        _lessonHintLevel = 0;
+        _lastObservedLessonStep = null;
+        _showAddLibrary = true;
+        _showHome = false;
+    }
+
+    private void RefreshLessonHelpForCurrentStep()
+    {
+        if (_firstCreationLesson is not { } lesson || _lastObservedLessonStep == lesson.Step) return;
+        _lastObservedLessonStep = lesson.Step;
+        _showLessonWhy = false;
+        _lessonHintLevel = 0;
+    }
+
+    private static bool IsSamePath(string? first, string? second)
+    {
+        if (string.IsNullOrWhiteSpace(first) || string.IsNullOrWhiteSpace(second)) return false;
+        try
+        {
+            return string.Equals(Path.GetFullPath(first), Path.GetFullPath(second),
+                StringComparison.OrdinalIgnoreCase);
+        }
+        catch (Exception exception) when (exception is ArgumentException or IOException or NotSupportedException)
+        {
+            return string.Equals(first, second, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private void DrawMainToolbar(SceneGraph scene)
@@ -577,6 +716,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             try
             {
                 _saveSceneAs(scenePath);
+                if (_firstCreationLesson is { } lesson
+                    && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
+                    lesson.ObserveSaved(_getCurrentProjectPath()!, scenePath, scene);
                 _projectWorkspaceStatus = $"Saved {Path.GetFileName(scenePath)}.";
             }
             catch (Exception exception)
@@ -600,8 +742,34 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             else _startPlay();
         }
         ImGui.SameLine();
+        var guideProjectPath = _getCurrentProjectPath();
+        var currentLesson = _firstCreationLesson;
+        var lessonMatchesProject = currentLesson is not null
+            && IsSamePath(currentLesson.ProjectFilePath, guideProjectPath);
+        var guideLabel = lessonMatchesProject && currentLesson is not null
+            ? currentLesson.Step == FirstCreationLessonStep.Complete
+                ? "Replay guide"
+                : _showFirstCreationLesson ? "Hide guide" : "Show guide"
+            : "First creation";
+        if (guideProjectPath is null) ImGui.BeginDisabled();
+        if (ImGui.Button(guideLabel) && guideProjectPath is not null)
+        {
+            if (lessonMatchesProject && currentLesson is not null
+                && currentLesson.Step != FirstCreationLessonStep.Complete)
+            {
+                _showFirstCreationLesson = !_showFirstCreationLesson;
+                if (_showFirstCreationLesson) _showAddLibrary = true;
+            }
+            else
+            {
+                BeginFirstCreationLesson(scene, guideProjectPath);
+            }
+        }
+        if (guideProjectPath is null) ImGui.EndDisabled();
+        ImGui.SameLine();
         if (ImGui.Button("Animate"))
         {
+            _showToolMenu = false;
             _showSequenceTools = true;
             _showWorldTools = false;
             _showRpgTools = false;
@@ -611,6 +779,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         ImGui.SameLine();
         if (ImGui.Button("Finish"))
         {
+            _showToolMenu = false;
             _showSequenceTools = true;
             _showWorldTools = false;
             _showRpgTools = false;
@@ -620,7 +789,12 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         ImGui.SameLine();
         if (ImGui.Button(_showAddLibrary ? "Hide Add" : "Add")) _showAddLibrary = !_showAddLibrary;
         ImGui.SameLine();
-        if (ImGui.Button(_showToolMenu ? "Close tools" : "More tools")) _showToolMenu = !_showToolMenu;
+        if (ImGui.Button(_showToolMenu ? "Close tools" : "More tools"))
+        {
+            _showToolMenu = !_showToolMenu;
+            if (_showToolMenu)
+                _showSequenceTools = _showWorldTools = _showRpgTools = false;
+        }
 
         var currentProject = _getCurrentProjectPath();
         if (currentProject is not null)
@@ -631,15 +805,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         ImGui.End();
     }
 
-    private void DrawMoreToolsMenu()
+    private bool DrawMoreToolsMenu()
     {
-        if (!_showToolMenu) return;
+        if (!_showToolMenu) return false;
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 48f));
         ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(220f, _logicalWidth), 196f));
         if (!ImGui.Begin("More tools", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
-            return;
+            return true;
         }
 
         var showSequenceTools = _showSequenceTools;
@@ -647,18 +821,21 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         {
             _showSequenceTools = showSequenceTools;
             if (showSequenceTools) _showWorldTools = _showRpgTools = false;
+            _showToolMenu = false;
         }
         var showWorldTools = _showWorldTools;
         if (ImGui.Checkbox("World Cells", ref showWorldTools))
         {
             _showWorldTools = showWorldTools;
             if (showWorldTools) _showSequenceTools = _showRpgTools = false;
+            _showToolMenu = false;
         }
         var showRpgTools = _showRpgTools;
         if (ImGui.Checkbox("RPG authoring", ref showRpgTools))
         {
             _showRpgTools = showRpgTools;
             if (showRpgTools) _showSequenceTools = _showWorldTools = false;
+            _showToolMenu = false;
         }
         if (ImGui.Checkbox("Performance details", ref _showDiagnostics))
             _setDiagnosticsVisible(_showDiagnostics);
@@ -674,6 +851,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _setDiagnosticsVisible(false);
         }
         ImGui.End();
+        return true;
     }
 
     private void DrawAddLibrary(SceneGraph scene)
@@ -712,55 +890,204 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 catch (Exception exception) { _projectWorkspaceStatus = $"Could not cancel the preview: {exception.Message}"; }
             }
         }
-        if (ImGui.Button("Browse for a model…", new NumericsVector2(-1f, 34f)))
-        {
-            var projectPath = _getCurrentProjectPath();
-            var modelPath = CharacterStudioFilePickers.PickGltfFile(
-                projectPath is null ? null : Path.GetDirectoryName(projectPath), _windowHandle);
-            if (modelPath is not null)
-            {
-                try
-                {
-                    _projectWorkspaceStatus = _importGlb(modelPath);
-                }
-                catch (Exception exception)
-                {
-                    _projectWorkspaceStatus = $"Could not add the model: {exception.Message}";
-                }
-            }
-        }
+        if (ImGui.Button("Browse for a model…", new NumericsVector2(-1f, 34f))) BrowseForModel();
         if (!canImport) ImGui.EndDisabled();
         if (!canImport) ImGui.TextWrapped("Create or open a project before adding a model.");
 
-        var availableAssets = GetSceneAssets(scene);
+        ImGui.Separator();
+        ImGui.Text("Models in this project");
+        if (ImGui.SmallButton("Refresh models")) _refreshProjectAssetReferences();
+
+        var availableAssets = GetAvailableAssets(scene);
         if (_selectedAssetId is null || availableAssets.All(asset => asset.AssetId != _selectedAssetId))
             _selectedAssetId = availableAssets.FirstOrDefault()?.AssetId;
-        ImGui.Separator();
-        ImGui.Text("Models in this scene");
-        ImGui.BeginChild("Scene assets", new NumericsVector2(0f, Math.Max(64f, _logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
+        var lessonVisibleForProject = _showFirstCreationLesson
+            && _firstCreationLesson is { } activeLesson
+            && IsSamePath(activeLesson.ProjectFilePath, _getCurrentProjectPath());
+        var modelListHeight = Math.Max(64f, _logicalHeight * (lessonVisibleForProject ? 0.15f : 0.2f));
+        ImGui.BeginChild("Scene assets", new NumericsVector2(0f, modelListHeight), ImGuiChildFlags.Borders);
+        if (availableAssets.Length == 0)
+        {
+            if (pendingPreviewName is not null)
+                ImGui.TextWrapped($"Previewing {pendingPreviewName}. Add it above to place it in the scene.");
+            else
+                ImGui.TextWrapped("No models are in this project yet. Browse above to import one.");
+        }
+        var sceneAssetPaths = GetSceneAssets(scene)
+            .Select(asset => asset.SourcePath)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
         foreach (var asset in availableAssets)
         {
-            var label = $"{Path.GetFileName(asset.SourcePath)}##asset-{asset.AssetId:N}";
+            var usage = sceneAssetPaths.Contains(asset.SourcePath) ? " · In scene" : " · In project";
+            var label = $"{Path.GetFileName(asset.SourcePath)}{usage}##asset-{asset.AssetId:N}";
             if (ImGui.Selectable(label, _selectedAssetId == asset.AssetId))
                 _selectedAssetId = asset.AssetId;
         }
         ImGui.EndChild();
         var selectedAsset = availableAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
-        if (selectedAsset is null) ImGui.BeginDisabled();
-        if (ImGui.Button("Add another instance", new NumericsVector2(-1f, 34f)) && selectedAsset is not null)
-            PlaceAsset(scene, selectedAsset);
-        if (selectedAsset is null) ImGui.EndDisabled();
-        if (!string.IsNullOrWhiteSpace(_projectWorkspaceStatus))
+        var canPreviewSelectedAsset = selectedAsset is not null && _getCurrentProjectPath() is not null;
+        if (!canPreviewSelectedAsset) ImGui.BeginDisabled();
+        if (ImGui.Button("Preview selected model", new NumericsVector2(-1f, 34f))
+            && canPreviewSelectedAsset && selectedAsset is not null)
+        {
+            try { _projectWorkspaceStatus = _previewProjectAsset(selectedAsset); }
+            catch (Exception exception) { _projectWorkspaceStatus = $"Could not preview the model: {exception.Message}"; }
+        }
+        if (!canPreviewSelectedAsset) ImGui.EndDisabled();
+        if (selectedAsset is not null && !canPreviewSelectedAsset)
+            ImGui.TextWrapped("Create or open a project to preview and place a model.");
+        var canReloadSelectedAsset = selectedAsset is not null && _getCurrentProjectPath() is not null
+            && pendingPreviewName is null;
+        if (!canReloadSelectedAsset) ImGui.BeginDisabled();
+        if (ImGui.Button("Reload selected model", new NumericsVector2(-1f, 30f))
+            && canReloadSelectedAsset && selectedAsset is not null)
+        {
+            try { _projectWorkspaceStatus = _reloadProjectAsset(selectedAsset); }
+            catch (Exception exception) { _projectWorkspaceStatus = $"Could not reload the model: {exception.Message}"; }
+        }
+        if (!canReloadSelectedAsset) ImGui.EndDisabled();
+        if (pendingPreviewName is not null)
+            ImGui.TextWrapped("Add or cancel the current preview before reloading a project model.");
+        else if (canReloadSelectedAsset)
+            ImGui.TextWrapped("Reloads from project files. A failed reload keeps the current scene preview.");
+        if (!string.IsNullOrWhiteSpace(_projectWorkspaceStatus)
+            && !_projectWorkspaceStatus.StartsWith("Could not", StringComparison.OrdinalIgnoreCase))
             ImGui.TextWrapped(_projectWorkspaceStatus);
+        DrawFirstCreationLesson(scene);
         ImGui.End();
     }
 
+    private void DrawFirstCreationLesson(SceneGraph scene)
+    {
+        if (!_showFirstCreationLesson || _firstCreationLesson is not { } lesson
+            || !IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath())) return;
+
+        ImGui.Separator();
+        ImGui.TextDisabled($"FIRST CREATION · {lesson.StepNumber}/{FirstCreationLesson.TotalSteps}");
+        ImGui.Text(lesson.Title);
+        ImGui.TextWrapped(lesson.Explanation);
+        if (!string.IsNullOrWhiteSpace(lesson.Feedback))
+            ImGui.TextWrapped(lesson.Feedback);
+
+        switch (lesson.Step)
+        {
+            case FirstCreationLessonStep.PredictPlay:
+                if (ImGui.Button("The saved scene changes", new NumericsVector2(-1f, 28f)))
+                    lesson.AnswerPlayPrediction(savedSceneChanges: true);
+                if (ImGui.Button("Play uses a temporary copy", new NumericsVector2(-1f, 28f)))
+                    lesson.AnswerPlayPrediction(savedSceneChanges: false);
+                break;
+            case FirstCreationLessonStep.Reflect:
+                if (ImGui.Button("My authored scene stayed the same", new NumericsVector2(-1f, 28f)))
+                    lesson.AnswerPlayReflection(authoredSceneStayedUnchanged: true);
+                if (ImGui.Button("Play edits were saved", new NumericsVector2(-1f, 28f)))
+                    lesson.AnswerPlayReflection(authoredSceneStayedUnchanged: false);
+                break;
+            case FirstCreationLessonStep.Reopen:
+                if (ImGui.Button("Reopen this project", new NumericsVector2(-1f, 30f)))
+                    ReopenFirstCreationProject(lesson);
+                break;
+            case FirstCreationLessonStep.Complete:
+                if (ImGui.Button("Replay guide", new NumericsVector2(-1f, 28f)))
+                    BeginFirstCreationLesson(scene, lesson.ProjectFilePath);
+                break;
+        }
+
+        if (lesson.Step != FirstCreationLessonStep.Complete)
+        {
+            if (ImGui.SmallButton(_showLessonWhy ? "Hide Why?" : "Why?"))
+                _showLessonWhy = !_showLessonWhy;
+            ImGui.SameLine();
+            var hintButton = _lessonHintLevel switch
+            {
+                0 => "Show a hint",
+                1 => "More help",
+                _ => "Hide hints"
+            };
+            if (ImGui.SmallButton(hintButton))
+                _lessonHintLevel = _lessonHintLevel switch { 0 => 1, 1 => 2, _ => 0 };
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Skip guide")) _showFirstCreationLesson = false;
+            if (_showLessonWhy) ImGui.TextWrapped(lesson.Why);
+            if (_lessonHintLevel > 0) ImGui.TextWrapped(lesson.Hint);
+            if (_lessonHintLevel > 1) ImGui.TextWrapped(lesson.MoreSpecificHint);
+        }
+        else if (ImGui.SmallButton("Hide guide"))
+        {
+            _showFirstCreationLesson = false;
+        }
+    }
+
+    private void ReopenFirstCreationProject(FirstCreationLesson lesson)
+    {
+        try
+        {
+            _projectWorkspaceStatus = _openProject(lesson.ProjectFilePath);
+            _lessonProjectOpenCheck = lesson.ProjectFilePath;
+            _showHome = false;
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not reopen the project: {exception.Message}";
+        }
+    }
+
+    private GltfAssetReference[] GetAvailableAssets(SceneGraph scene)
+    {
+        var byPath = new Dictionary<string, GltfAssetReference>(StringComparer.OrdinalIgnoreCase);
+        try
+        {
+            foreach (var asset in _getProjectAssetReferences())
+                byPath[asset.SourcePath] = asset;
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not list project models: {exception.Message}";
+        }
+
+        foreach (var asset in GetSceneAssets(scene))
+            byPath[asset.SourcePath] = asset;
+        return byPath.Values.OrderBy(asset => asset.SourcePath, StringComparer.OrdinalIgnoreCase).ToArray();
+    }
+
     private static GltfAssetReference[] GetSceneAssets(SceneGraph scene) => scene.Objects
-        .Where(item => item.GltfAsset is not null)
-        .Select(item => item.GltfAsset!)
-        .GroupBy(asset => asset.AssetId)
+        .SelectMany(GetAssetReferences)
+        .GroupBy(asset => asset.SourcePath, StringComparer.OrdinalIgnoreCase)
         .Select(group => group.First())
         .ToArray();
+
+    private static IEnumerable<GltfAssetReference> GetAssetReferences(SceneObject item)
+    {
+        if (item.GltfAsset is { } asset) yield return asset;
+        if (item.StaticMeshLod is { } lod)
+        {
+            yield return lod.NearAsset;
+            yield return lod.FarAsset;
+        }
+    }
+
+    private void BrowseForModel()
+    {
+        var projectPath = _getCurrentProjectPath();
+        if (projectPath is null)
+        {
+            _projectWorkspaceStatus = "Create or open a project before adding a model.";
+            return;
+        }
+
+        var modelPath = CharacterStudioFilePickers.PickGltfFile(
+            Path.GetDirectoryName(projectPath), _windowHandle);
+        if (modelPath is null) return;
+
+        try
+        {
+            _projectWorkspaceStatus = _importGlb(modelPath);
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not add the model: {exception.Message}";
+        }
+    }
 
     private void DrawRpgAuthoringPanel(SceneGraph scene)
     {
@@ -1418,6 +1745,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             return;
         }
 
+        DrawWorkspaceFailure();
+
         if (_isPlaying())
         {
             ImGui.TextColored(new NumericsVector4(1f, 0.72f, 0.2f, 1f), "PLAYING ON CLONE");
@@ -1430,12 +1759,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         }
         ImGui.Text("Objects");
         ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, Math.Min(132f, _logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
-        foreach (var item in scene.Objects)
-        {
-            var label = $"{item.Name}##{item.Id:N}";
-            if (ImGui.Selectable(label, _selectedObjectId == item.Id))
-                _selectedObjectId = item.Id;
-        }
+        DrawSceneHierarchy(scene);
         ImGui.EndChild();
 
         if (_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
@@ -1443,11 +1767,39 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
         if (_selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
         {
-            ImGui.TextDisabled("Select an object to edit its local transform.");
+            var pendingPreviewName = _getPendingAssetPreviewName();
+            if (pendingPreviewName is not null)
+            {
+                ImGui.TextWrapped($"Previewing {pendingPreviewName}. It is not in the scene yet; use the Add panel to place it or cancel the preview.");
+                if (!_showAddLibrary && ImGui.Button("Show model actions", new NumericsVector2(-1f, 34f)))
+                    _showAddLibrary = true;
+            }
+            else if (scene.Objects.Count == 0)
+            {
+                ImGui.TextWrapped("This scene is empty. Add a simple object or a model to give yourself something to build with.");
+                if (ImGui.Button("Add an empty object", new NumericsVector2(-1f, 34f)))
+                    CreateEmpty(scene);
+
+                if (_getCurrentProjectPath() is null)
+                {
+                    if (ImGui.Button("Make or open a project…", new NumericsVector2(-1f, 34f)))
+                        _showHome = true;
+                    ImGui.TextWrapped("Create or open a project to add a model.");
+                }
+                else if (ImGui.Button("Browse for a model…", new NumericsVector2(-1f, 34f)))
+                {
+                    BrowseForModel();
+                }
+            }
+            else
+            {
+                ImGui.TextWrapped("Nothing is selected. Choose an object in the list above to edit it.");
+            }
             ImGui.End();
             return;
         }
 
+        DrawParentControl(scene, selected);
         ImGui.Separator();
         ImGui.Text($"Selected: {selected.Name}");
         if (ImGui.Button("Duplicate")) Duplicate(scene, selected);
@@ -1514,6 +1866,116 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         DrawCharacterControls(selected);
         DrawLightingControls();
         ImGui.End();
+    }
+
+    private void DrawSceneHierarchy(SceneGraph scene)
+    {
+        var childrenByParent = scene.Objects
+            .Where(item => item.ParentId is not null)
+            .GroupBy(item => item.ParentId!.Value)
+            .ToDictionary(group => group.Key,
+                group => group.OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                    .ThenBy(item => item.Id).ToArray());
+        foreach (var root in scene.Objects.Where(item => item.ParentId is null)
+                     .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                     .ThenBy(item => item.Id))
+            DrawSceneHierarchyNode(root, childrenByParent, isRoot: true);
+    }
+
+    private void DrawSceneHierarchyNode(SceneObject item,
+        IReadOnlyDictionary<Guid, SceneObject[]> childrenByParent, bool isRoot)
+    {
+        var hasChildren = childrenByParent.TryGetValue(item.Id, out var children) && children.Length > 0;
+        var flags = ImGuiTreeNodeFlags.SpanAvailWidth | ImGuiTreeNodeFlags.OpenOnArrow;
+        if (_selectedObjectId == item.Id) flags |= ImGuiTreeNodeFlags.Selected;
+        if (hasChildren && isRoot) flags |= ImGuiTreeNodeFlags.DefaultOpen;
+        if (!hasChildren) flags |= ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.NoTreePushOnOpen;
+        var isOpen = ImGui.TreeNodeEx($"{item.Name}##{item.Id:N}", flags);
+        if (ImGui.IsItemClicked()) _selectedObjectId = item.Id;
+        if (!hasChildren || !isOpen) return;
+        foreach (var child in children!) DrawSceneHierarchyNode(child, childrenByParent, isRoot: false);
+        ImGui.TreePop();
+    }
+
+    private void DrawParentControl(SceneGraph scene, SceneObject selected)
+    {
+        var currentParentName = selected.ParentId is { } parentId
+            ? scene.Find(parentId)?.Name ?? "Missing parent"
+            : "No parent";
+        ImGui.Text("Parent");
+        if (ImGui.BeginCombo("##scene-parent", currentParentName))
+        {
+            if (ImGui.Selectable("No parent", selected.ParentId is null)
+                && selected.ParentId is not null)
+                ReparentObject(scene, selected, null);
+
+            foreach (var candidate in scene.Objects
+                         .Where(item => item.Id != selected.Id
+                             && !IsHierarchyDescendant(scene, item.Id, selected.Id))
+                         .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase)
+                         .ThenBy(item => item.Id))
+            {
+                var label = $"{candidate.Name}##parent-{candidate.Id:N}";
+                if (ImGui.Selectable(label, selected.ParentId == candidate.Id)
+                    && selected.ParentId != candidate.Id)
+                    ReparentObject(scene, selected, candidate.Id);
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.TextWrapped("Changing parent keeps this object's world placement when it can be represented without changing its shape.");
+    }
+
+    private void ReparentObject(SceneGraph scene, SceneObject selected, Guid? parentId)
+    {
+        try
+        {
+            _beforeStructureChange();
+            _history.Execute(scene, new ReparentSceneObjectCommand(selected.Id, parentId));
+            _afterStructureChange();
+            _projectWorkspaceStatus = "Parent changed. Undo restores the previous relationship and placement.";
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not change parent: {exception.Message}";
+        }
+    }
+
+    private static bool IsHierarchyDescendant(SceneGraph scene, Guid possibleDescendantId, Guid ancestorId)
+    {
+        var cursor = scene.Find(possibleDescendantId);
+        while (cursor?.ParentId is { } parentId)
+        {
+            if (parentId == ancestorId) return true;
+            cursor = scene.Find(parentId);
+        }
+        return false;
+    }
+
+    private void DrawWorkspaceFailure()
+    {
+        var status = _projectWorkspaceStatus;
+        if (!status.StartsWith("Could not", StringComparison.OrdinalIgnoreCase)) return;
+
+        ImGui.Separator();
+        ImGui.Text("Action needs attention");
+        ImGui.TextWrapped(status);
+
+        var nextStep = status.Contains("save", StringComparison.OrdinalIgnoreCase)
+            ? "Check that the project folder is writable, then try Save again."
+            : status.Contains("reload", StringComparison.OrdinalIgnoreCase)
+                ? "Repair or replace the selected GLB in the project, then reload the model again."
+            : status.Contains("cancel", StringComparison.OrdinalIgnoreCase)
+                ? "Try canceling the preview again, or add the previewed model from the Add panel."
+                : status.Contains("open", StringComparison.OrdinalIgnoreCase)
+                    ? "Choose another project file, or return Home and try Open again."
+                    : status.Contains("create", StringComparison.OrdinalIgnoreCase)
+                        ? "Choose a valid project name and a folder you can write to."
+                        : "Choose another model from Browse, or review the supported model features.";
+
+        ImGui.TextWrapped(nextStep);
+        if (ImGui.Button("Dismiss message"))
+            _projectWorkspaceStatus = string.Empty;
+        ImGui.Separator();
     }
 
     private void DrawTransformToolActions(SceneGraph scene, SceneObject selected)
@@ -1792,8 +2254,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         CommitActiveTransformEdit(scene);
         _beforeStructureChange();
-        if (undo) _history.Undo(scene);
-        else _history.Redo(scene);
+        var changed = undo ? _history.Undo(scene) : _history.Redo(scene);
+        if (undo && changed && _firstCreationLesson is { } lesson
+            && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
+            lesson.ObserveUndo(scene, undoSucceeded: true);
         _afterStructureChange();
         _projectWorkspaceStatus = undo ? "Undid the last change." : "Redid the last change.";
         if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
@@ -1824,18 +2288,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         CommitActiveTransformEdit(scene);
         RunStructureChange(scene, () => _history.Execute(scene, new DeleteSceneObjectCommand(objectId)));
         _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
-    }
-
-    private void PlaceAsset(SceneGraph scene, GltfAssetReference asset)
-    {
-        CommitActiveTransformEdit(scene);
-        var existing = scene.Objects.Where(item => item.GltfAsset?.AssetId == asset.AssetId).ToArray();
-        var positionX = existing.Length == 0 ? 0f : existing.Max(item => item.Transform.Position.X) + 100f;
-        var item = SceneObjectFactory.CreateAssetInstance(scene, asset,
-            new Microsoft.Xna.Framework.Vector3(positionX, 0f, 0f));
-        RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
-        _selectedObjectId = item.Id;
-        _projectWorkspaceStatus = $"Added another {Path.GetFileName(asset.SourcePath)} to the scene.";
     }
 
     private void RunStructureChange(SceneGraph scene, Action action)
