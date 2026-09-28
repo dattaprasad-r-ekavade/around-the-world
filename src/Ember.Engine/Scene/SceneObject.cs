@@ -109,12 +109,57 @@ public sealed class SceneObject
 /// <summary>Maps a stable template source object ID to its placed scene-object ID.</summary>
 public readonly record struct SceneTemplateObjectMapping(Guid SourceObjectId, Guid InstanceObjectId);
 
+/// <summary>Source defaults used to detect name and local-transform overrides on an instance.</summary>
+public sealed class SceneTemplateObjectBaseline
+{
+    public SceneTemplateObjectBaseline(Guid sourceObjectId, string name, Transform transform)
+    {
+        if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
+        if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
+        ArgumentNullException.ThrowIfNull(transform);
+        if (!IsFinite(transform.Position) || !IsFinite(transform.Rotation) || !IsFinite(transform.Scale))
+            throw new ArgumentException("Template source object transform must be finite.", nameof(transform));
+        if (transform.Rotation.LengthSquared() < 1e-12f)
+            throw new ArgumentException("Template source object rotation must be nonzero.", nameof(transform));
+
+        SourceObjectId = sourceObjectId;
+        Name = name;
+        Position = transform.Position;
+        Rotation = transform.Rotation;
+        Scale = transform.Scale;
+    }
+
+    public Guid SourceObjectId { get; }
+    public string Name { get; }
+    public Vector3 Position { get; }
+    public Quaternion Rotation { get; }
+    public Vector3 Scale { get; }
+
+    public Transform ToTransform() => new()
+    {
+        Position = Position,
+        Rotation = Rotation,
+        Scale = Scale
+    };
+
+    public bool MatchesTransform(Transform value) =>
+        Position == value.Position && Rotation == value.Rotation && Scale == value.Scale;
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static bool IsFinite(Quaternion value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y)
+        && float.IsFinite(value.Z) && float.IsFinite(value.W);
+}
+
 /// <summary>Persistent source identity for an expanded scene-template instance hierarchy.</summary>
 public sealed class SceneTemplateInstanceComponent
 {
     public SceneTemplateInstanceComponent(Guid templateId, int appliedRevision,
         Guid sourceRootObjectId, Guid instanceRootObjectId,
-        IEnumerable<SceneTemplateObjectMapping> objectMappings)
+        IEnumerable<SceneTemplateObjectMapping> objectMappings,
+        IEnumerable<SceneTemplateObjectBaseline>? objectBaselines = null)
     {
         if (templateId == Guid.Empty) throw new ArgumentException("Template ID cannot be empty.", nameof(templateId));
         if (appliedRevision < 1) throw new ArgumentOutOfRangeException(nameof(appliedRevision));
@@ -136,11 +181,21 @@ public sealed class SceneTemplateInstanceComponent
         if (!mappings.Contains(new SceneTemplateObjectMapping(sourceRootObjectId, instanceRootObjectId)))
             throw new ArgumentException("Template root mapping is missing.", nameof(objectMappings));
 
+        var baselines = (objectBaselines ?? Array.Empty<SceneTemplateObjectBaseline>()).ToArray();
+        if (baselines.Any(baseline => baseline is null))
+            throw new ArgumentException("Template object baselines cannot contain null entries.", nameof(objectBaselines));
+        if (baselines.Select(baseline => baseline.SourceObjectId).Distinct().Count() != baselines.Length)
+            throw new ArgumentException("Template object baseline source IDs must be unique.", nameof(objectBaselines));
+        if (baselines.Length > 0
+            && !baselines.Select(baseline => baseline.SourceObjectId).ToHashSet()
+                .SetEquals(mappings.Select(mapping => mapping.SourceObjectId)))
+            throw new ArgumentException("Template object baselines must match the source-object mapping.", nameof(objectBaselines));
         TemplateId = templateId;
         AppliedRevision = appliedRevision;
         SourceRootObjectId = sourceRootObjectId;
         InstanceRootObjectId = instanceRootObjectId;
         ObjectMappings = Array.AsReadOnly(mappings);
+        ObjectBaselines = Array.AsReadOnly(baselines);
     }
 
     public Guid TemplateId { get; }
@@ -148,6 +203,7 @@ public sealed class SceneTemplateInstanceComponent
     public Guid SourceRootObjectId { get; }
     public Guid InstanceRootObjectId { get; }
     public IReadOnlyList<SceneTemplateObjectMapping> ObjectMappings { get; }
+    public IReadOnlyList<SceneTemplateObjectBaseline> ObjectBaselines { get; }
 }
 
 /// <summary>Per-instance skeletal clip, playback, and attachment settings saved with a scene object.</summary>

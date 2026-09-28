@@ -2277,3 +2277,33 @@ acceptance remain open.
 Next: persist a baseline for each template source object, infer transform/name overrides against
 that baseline, and add an explicit update command that preserves overridden fields and existing
 instance IDs while applying a newer template revision.
+
+## M1.3 template baselines and explicit revision updates — 28 September 2026
+
+- Scene version 9 stores a source baseline for every mapped template object: stable source ID,
+  default name and local transform. Version 8 scenes still load with an empty baseline; updating
+  those older instances is rejected because their local edits cannot be distinguished safely.
+- `UpdateSceneTemplateCommand` explicitly applies a newer revision while keeping instance object
+  IDs and wrapper placement. A name or local transform that still matches its previous source
+  baseline receives the new template value; a changed value is retained as a local override.
+  Baselines advance to the new source defaults, so overrides remain detectable in later revisions.
+- Updates reparent mapped objects to match the new source hierarchy and participate in undo/redo.
+  The command fails before changing the scene if IDs, template identity, root identity, baseline,
+  or source-object membership do not match. Added/removed source objects are deferred to a later
+  slice; components other than name and transform are not merged by this update yet.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Template update, migration and scene persistence focused tests | PASS — 28 tests, 0 failures |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 321 passed, 0 failed in two consecutive runs |
+| Visible template placement/update and reload workflow | NOT RUN — CharacterStudio does not yet expose these controls |
+
+M1.3 remains **In progress**. The authoring API now supports same-shape revision updates with
+name/transform override detection. Structural additions/removals, wider component overrides,
+orphan handling, relinking and the visible workflow remain open.
+
+Next: add template object additions/removals with preserved mappings and explicit orphan warnings,
+then broaden field-level overrides before exposing the workflow in CharacterStudio.

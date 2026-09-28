@@ -14,7 +14,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 8;
+    public const int CurrentVersion = 9;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -241,7 +241,8 @@ public static class SceneFile
             return new SceneTemplateInstanceComponent(data.TemplateId, data.AppliedRevision,
                 data.SourceRootObjectId, data.InstanceRootObjectId,
                 data.ObjectMappings.Select(mapping => new SceneTemplateObjectMapping(
-                    mapping.SourceObjectId, mapping.InstanceObjectId)));
+                    mapping.SourceObjectId, mapping.InstanceObjectId)),
+                data.ObjectBaselines?.Select(ToTemplateObjectBaseline));
         }
         catch (ArgumentException exception)
         {
@@ -262,8 +263,38 @@ public static class SceneFile
                 {
                     SourceObjectId = mapping.SourceObjectId,
                     InstanceObjectId = mapping.InstanceObjectId
+                }).ToList(),
+                ObjectBaselines = component.ObjectBaselines.Select(baseline => new SceneTemplateObjectBaselineData
+                {
+                    SourceObjectId = baseline.SourceObjectId,
+                    Name = baseline.Name,
+                    Position = ToArray(baseline.Position),
+                    Rotation = ToArray(baseline.Rotation),
+                    Scale = ToArray(baseline.Scale)
                 }).ToList()
             };
+
+    private static SceneTemplateObjectBaseline ToTemplateObjectBaseline(SceneTemplateObjectBaselineData data)
+    {
+        if (data is null) throw new InvalidDataException("Scene template instance contains a null object baseline.");
+        if (data.Position is null || data.Position.Length != 3
+            || data.Rotation is null || data.Rotation.Length != 4
+            || data.Scale is null || data.Scale.Length != 3)
+            throw new InvalidDataException("Scene template instance object baseline has an invalid transform.");
+        try
+        {
+            return new SceneTemplateObjectBaseline(data.SourceObjectId, data.Name!, new Transform
+            {
+                Position = new Vector3(data.Position[0], data.Position[1], data.Position[2]),
+                Rotation = new Quaternion(data.Rotation[0], data.Rotation[1], data.Rotation[2], data.Rotation[3]),
+                Scale = new Vector3(data.Scale[0], data.Scale[1], data.Scale[2])
+            });
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException($"Scene template instance object baseline is invalid: {exception.Message}", exception);
+        }
+    }
 
     private static void ValidateTemplateInstances(SceneGraph scene)
     {
@@ -396,6 +427,8 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} world entity placement requires scene version 6.");
         if (documentVersion < 8 && data.TemplateInstance is not null)
             throw new InvalidDataException($"Object {data.Id} scene template instance data requires scene version 8.");
+        if (documentVersion < 9 && data.TemplateInstance?.ObjectBaselines is { Count: > 0 })
+            throw new InvalidDataException($"Object {data.Id} scene template object baselines require scene version 9.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -498,6 +531,10 @@ public static class SceneFile
         value.M31, value.M32, value.M33, value.M34,
         value.M41, value.M42, value.M43, value.M44
     ];
+
+    private static float[] ToArray(Vector3 value) => [value.X, value.Y, value.Z];
+
+    private static float[] ToArray(Quaternion value) => [value.X, value.Y, value.Z, value.W];
 
     private static Matrix ToMatrix(float[] values) => new(
         values[0], values[1], values[2], values[3],
@@ -605,11 +642,21 @@ public static class SceneFile
         public Guid SourceRootObjectId { get; set; }
         public Guid InstanceRootObjectId { get; set; }
         public List<SceneTemplateMappingData>? ObjectMappings { get; set; }
+        public List<SceneTemplateObjectBaselineData>? ObjectBaselines { get; set; }
     }
 
     private sealed class SceneTemplateMappingData
     {
         public Guid SourceObjectId { get; set; }
         public Guid InstanceObjectId { get; set; }
+    }
+
+    private sealed class SceneTemplateObjectBaselineData
+    {
+        public Guid SourceObjectId { get; set; }
+        public string? Name { get; set; }
+        public float[]? Position { get; set; }
+        public float[]? Rotation { get; set; }
+        public float[]? Scale { get; set; }
     }
 }

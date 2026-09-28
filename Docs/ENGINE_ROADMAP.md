@@ -173,9 +173,11 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
   Updating stays unavailable until the source is repaired or relinked. A missing GLB used by an
   instance follows the normal project asset recovery flow.
 
-The M1.3 foundation now saves atomic, versioned hierarchy snapshots and places expanded instances
-with remapped IDs and persisted source mappings. The editor placement workflow, per-instance
-overrides, explicit updates, orphan handling and source relinking remain to be implemented.
+The M1.3 API now saves atomic, versioned hierarchy snapshots, places expanded instances with
+remapped IDs and persisted source mappings, and explicitly updates same-shape instances. Scene
+version 9 stores source name/transform baselines; update commands preserve inferred local name and
+transform edits and support undo/redo. Added/removed source objects, overrides for other fields,
+the editor placement/update workflow, orphan handling and source relinking remain open.
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.

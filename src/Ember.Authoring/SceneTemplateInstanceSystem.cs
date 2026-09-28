@@ -54,7 +54,9 @@ public static class SceneTemplateInstanceSystem
         {
             Transform = new Transform { Position = position },
             TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
-                template.RootObjectId, objectMap[template.RootObjectId], mappings)
+                template.RootObjectId, objectMap[template.RootObjectId], mappings,
+                source.Objects.Select(item => new SceneTemplateObjectBaseline(
+                    item.Id, item.Name, item.Transform)))
         };
 
         var addedIds = new List<Guid>(clones.Length + 1);
@@ -84,6 +86,134 @@ public static class SceneTemplateInstanceSystem
                 destination.Remove(addedIds[index]);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Updates an existing instance to a newer revision when its source-object set is unchanged.
+    /// Local name and transform edits are kept; unchanged fields take the new source defaults.
+    /// </summary>
+    public static void Update(SceneGraph destination, Guid instanceWrapperId, SceneTemplateSnapshot template)
+    {
+        ArgumentNullException.ThrowIfNull(destination);
+        if (instanceWrapperId == Guid.Empty)
+            throw new ArgumentException("Template instance wrapper ID cannot be empty.", nameof(instanceWrapperId));
+        ArgumentNullException.ThrowIfNull(template);
+
+        var wrapper = destination.Find(instanceWrapperId)
+            ?? throw new InvalidOperationException($"Template instance wrapper {instanceWrapperId} was not found.");
+        var instance = wrapper.TemplateInstance
+            ?? throw new InvalidOperationException($"Scene object {instanceWrapperId} is not a template instance wrapper.");
+        if (instance.TemplateId != template.Id)
+            throw new InvalidOperationException("The template source ID does not match this instance.");
+        if (template.Revision <= instance.AppliedRevision)
+            throw new InvalidOperationException("The template revision must be newer than the instance revision.");
+        if (template.RootObjectId != instance.SourceRootObjectId)
+            throw new InvalidOperationException("The template root source ID changed; this instance cannot be updated safely.");
+        if (instance.ObjectBaselines.Count == 0)
+            throw new InvalidOperationException(
+                "This instance has no saved source baseline. Place it again from the current template before updating it.");
+
+        var source = SceneFile.FromJson(SceneFile.ToJson(template.Scene));
+        var sourceRoot = source.Find(template.RootObjectId)
+            ?? throw new InvalidOperationException($"Template root object {template.RootObjectId} is missing.");
+        if (sourceRoot.ParentId is not null)
+            throw new InvalidOperationException("Template root cannot have a parent outside its hierarchy.");
+        if (GetSubtreeIds(source, sourceRoot.Id).Count != source.Objects.Count)
+            throw new InvalidOperationException("Template contains objects outside its root hierarchy.");
+        if (source.Objects.Any(item => item.TemplateInstance is not null))
+            throw new InvalidOperationException("Nested scene-template instances are not supported yet.");
+
+        var sourceById = source.Objects.ToDictionary(item => item.Id);
+        var mappings = instance.ObjectMappings.ToDictionary(mapping => mapping.SourceObjectId,
+            mapping => mapping.InstanceObjectId);
+        if (!sourceById.Keys.ToHashSet().SetEquals(mappings.Keys))
+            throw new InvalidOperationException(
+                "This update changes the template's source-object set. Adding and removing template objects are not supported yet.");
+        var baselines = instance.ObjectBaselines.ToDictionary(baseline => baseline.SourceObjectId);
+        var updates = new List<(SceneObject Target, string Name, Transform Transform, Guid? ParentId)>();
+        foreach (var (sourceId, sourceObject) in sourceById)
+        {
+            if (!baselines.TryGetValue(sourceId, out var baseline))
+                throw new InvalidOperationException($"The saved source baseline for object {sourceId} is missing.");
+            var instanceObjectId = mappings[sourceId];
+            var target = destination.Find(instanceObjectId)
+                ?? throw new InvalidOperationException($"Mapped instance object {instanceObjectId} is missing.");
+            if (!IsInInstanceHierarchy(destination, target, wrapper.Id))
+                throw new InvalidOperationException(
+                    $"Mapped instance object {instanceObjectId} has been moved outside its template wrapper.");
+
+            var name = string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
+                ? sourceObject.Name
+                : target.Name;
+            var transform = baseline.MatchesTransform(target.Transform)
+                ? CopyTransform(sourceObject.Transform)
+                : CopyTransform(target.Transform);
+            var parentId = sourceObject.ParentId is { } sourceParentId
+                ? mappings[sourceParentId]
+                : wrapper.Id;
+            updates.Add((target, name, transform, parentId));
+        }
+
+        var before = CaptureState(destination, wrapper.Id);
+        try
+        {
+            foreach (var update in updates) destination.SetParent(update.Target.Id, null);
+            foreach (var update in updates)
+            {
+                update.Target.Name = update.Name;
+                update.Target.Transform = update.Transform;
+            }
+            foreach (var update in updates) destination.SetParent(update.Target.Id, update.ParentId);
+
+            wrapper.TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
+                template.RootObjectId, instance.InstanceRootObjectId, instance.ObjectMappings,
+                source.Objects.Select(item => new SceneTemplateObjectBaseline(
+                    item.Id, item.Name, item.Transform)));
+        }
+        catch
+        {
+            RestoreState(destination, before);
+            throw;
+        }
+    }
+
+    internal static SceneTemplateInstanceState CaptureState(SceneGraph scene, Guid wrapperId)
+    {
+        var wrapper = scene.Find(wrapperId)
+            ?? throw new InvalidOperationException($"Template instance wrapper {wrapperId} was not found.");
+        var instance = wrapper.TemplateInstance
+            ?? throw new InvalidOperationException($"Scene object {wrapperId} is not a template instance wrapper.");
+        var ids = instance.ObjectMappings.Select(mapping => mapping.InstanceObjectId)
+            .Append(wrapperId).Distinct().ToArray();
+        var objects = ids.Select(id =>
+        {
+            var item = scene.Find(id)
+                ?? throw new InvalidOperationException($"Template instance object {id} is missing.");
+            return new SceneTemplateObjectState(item.Id, item.Name, CopyTransform(item.Transform),
+                item.ParentId, item.TemplateInstance);
+        }).ToArray();
+        return new SceneTemplateInstanceState(wrapperId, objects);
+    }
+
+    internal static void RestoreState(SceneGraph scene, SceneTemplateInstanceState state)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        ArgumentNullException.ThrowIfNull(state);
+        foreach (var item in state.Objects)
+            if (scene.Find(item.ObjectId) is null)
+                throw new InvalidOperationException($"Cannot restore template instance because object {item.ObjectId} is missing.");
+
+        foreach (var item in state.Objects.Where(item => item.ObjectId != state.WrapperId))
+            scene.SetParent(item.ObjectId, null);
+        foreach (var item in state.Objects)
+        {
+            var current = scene.Find(item.ObjectId)!;
+            current.Name = item.Name;
+            current.Transform = CopyTransform(item.Transform);
+            current.TemplateInstance = item.TemplateInstance;
+        }
+        foreach (var item in state.Objects.Where(item => item.ObjectId != state.WrapperId))
+            scene.SetParent(item.ObjectId, item.ParentId);
     }
 
     private static SceneObject CreateClone(SceneObject source, Guid id,
@@ -192,4 +322,29 @@ public static class SceneTemplateInstanceSystem
 
     private static bool IsFinite(Vector3 value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    private static Transform CopyTransform(Transform source) => new()
+    {
+        Position = source.Position,
+        Rotation = source.Rotation,
+        Scale = source.Scale
+    };
+
+    private static bool IsInInstanceHierarchy(SceneGraph scene, SceneObject item, Guid wrapperId)
+    {
+        var visited = new HashSet<Guid>();
+        var parentId = item.ParentId;
+        while (parentId is { } currentId)
+        {
+            if (currentId == wrapperId) return true;
+            if (!visited.Add(currentId)) return false;
+            parentId = scene.Find(currentId)?.ParentId;
+        }
+        return false;
+    }
 }
+
+internal sealed record SceneTemplateInstanceState(Guid WrapperId, IReadOnlyList<SceneTemplateObjectState> Objects);
+
+internal sealed record SceneTemplateObjectState(Guid ObjectId, string Name, Transform Transform,
+    Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text.Json.Nodes;
 using Ember.Authoring;
 using Ember.Scene;
 using Ember.World;
@@ -158,6 +159,153 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(3, destination.Objects.Count);
             Assert.Equal(firstMapping, restored.TemplateInstance!.ObjectMappings);
             Assert.Equal(template.Id, restored.TemplateInstance.TemplateId);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExplicitUpdatePreservesNameAndTransformOverridesAndCanBeUndone()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Workshop")
+            {
+                Transform = new Transform { Position = new Vector3(1f, 0f, 0f) }
+            };
+            var child = new SceneObject(Guid.NewGuid(), "Old lamp")
+            {
+                Transform = new Transform { Position = new Vector3(0f, 1f, 0f) }
+            };
+            source.Add(root);
+            source.Add(child);
+            source.SetParent(child.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Workshop", path);
+
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var mappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var instanceRoot = scene.Find(mappings[root.Id])!;
+            var instanceChild = scene.Find(mappings[child.Id])!;
+            Assert.Equal(2, wrapper.TemplateInstance.ObjectBaselines.Count);
+
+            instanceRoot.Name = "Local workshop name";
+            instanceChild.Transform = new Transform { Position = new Vector3(0f, 7f, 0f) };
+            root.Transform = new Transform { Position = new Vector3(3f, 0f, 0f) };
+            child.Name = "Updated lamp";
+            child.Transform = new Transform { Position = new Vector3(0f, 2f, 0f) };
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Workshop", path);
+            var history = new SceneCommandHistory();
+
+            history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, secondRevision));
+
+            Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.Equal(new Vector3(3f, 0f, 0f), instanceRoot.Transform.Position);
+            Assert.Equal("Updated lamp", instanceChild.Name);
+            Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
+            Assert.Equal(2, wrapper.TemplateInstance!.AppliedRevision);
+            Assert.Equal(new Vector3(3f, 0f, 0f), wrapper.TemplateInstance.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == root.Id).Position);
+            Assert.Equal(mappings[root.Id], wrapper.TemplateInstance.InstanceRootObjectId);
+
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            Assert.Equal(2, reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines.Count);
+            Assert.Equal(new Vector3(0f, 7f, 0f), reopened.Find(mappings[child.Id])!.Transform.Position);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal(1, wrapper.TemplateInstance!.AppliedRevision);
+            Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.Equal("Old lamp", instanceChild.Name);
+            Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
+            Assert.True(history.Redo(scene));
+            Assert.Equal(2, wrapper.TemplateInstance!.AppliedRevision);
+            Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
+
+            root.Name = "Final workshop name";
+            root.Transform = new Transform { Position = new Vector3(4f, 0f, 0f) };
+            child.Name = "Final lamp";
+            child.Transform = new Transform { Position = new Vector3(0f, 3f, 0f) };
+            var thirdRevision = SceneTemplateFile.Save(source, root.Id, "Workshop", path);
+            history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, thirdRevision));
+            Assert.Equal(3, wrapper.TemplateInstance.AppliedRevision);
+            Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.Equal(new Vector3(4f, 0f, 0f), instanceRoot.Transform.Position);
+            Assert.Equal("Final lamp", instanceChild.Name);
+            Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void UpdateRejectsChangedSourceObjectSetWithoutChangingInstance()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Room");
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var destination = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(destination, firstRevision, Vector3.Zero);
+            var instanceRootId = wrapper.TemplateInstance!.InstanceRootObjectId;
+            root.Name = "Updated room";
+            var added = new SceneObject(Guid.NewGuid(), "New prop");
+            source.Add(added);
+            source.SetParent(added.Id, root.Id);
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+
+            Assert.Throws<InvalidOperationException>(() =>
+                new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(destination));
+
+            Assert.Equal(1, wrapper.TemplateInstance.AppliedRevision);
+            Assert.Equal("Room", destination.Find(instanceRootId)!.Name);
+            Assert.Equal(2, destination.Objects.Count);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void VersionEightInstancesLoadWithoutBaselinesAndCannotBeUpdatedUnsafely()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Room");
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var legacyJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
+            legacyJson["Version"] = 8;
+            var wrapperData = legacyJson["Objects"]!.AsArray().Single(item =>
+                Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
+            wrapperData["TemplateInstance"]!.AsObject().Remove("ObjectBaselines");
+
+            var legacyScene = SceneFile.FromJson(legacyJson.ToJsonString());
+            var legacyWrapper = legacyScene.Find(wrapper.Id)!;
+            Assert.Empty(legacyWrapper.TemplateInstance!.ObjectBaselines);
+            Assert.Contains("\"Version\": 9", SceneFile.ToJson(legacyScene), StringComparison.Ordinal);
+
+            root.Name = "Updated room";
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            Assert.Throws<InvalidOperationException>(() =>
+                new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(legacyScene));
+            Assert.Equal(1, legacyWrapper.TemplateInstance.AppliedRevision);
+            Assert.Equal("Room", legacyScene.Find(legacyWrapper.TemplateInstance.InstanceRootObjectId)!.Name);
         }
         finally
         {
