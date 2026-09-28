@@ -1922,11 +1922,37 @@ closing UX.2 or dependent release gates.
 | Cell activation queue tests | PASS — 5 passed, 0 failed |
 | Full CPU test suite | PASS — 285 passed, 0 failed, 0 skipped, including the forced replacement-failure case |
 | Release solution build | PASS — 0 warnings, 0 errors |
-| Windows CI for `361078f` | PASS — [run #5](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36389941823); Windows build and 284 tests passed before the additional atomic replacement test was added locally |
+| Windows CI for `145c892` | PASS — [run #6](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36390512874); hosted build and CPU tests passed with the atomic replacement-failure case |
+| Release scene capture | PASS — commit `145c892`, Windows 11 Home 10.0.26200, .NET 9.0.19, Intel UHD Graphics driver 27.20.100.9664, 1920×1080 display; opened `ReleaseAShowcase.json`, rendered courtyard and two animated characters in a 1280×720 capture, exit 0, stderr empty; `%TEMP%\Ember\ManualGraphicsGate\8a605d9a3d444916b41d3e0381677b56` |
 
-M0.4 remains **In progress** pending the native Windows graphics gate. CI passed on `361078f`;
-the additional atomic replacement test is local and still needs the next hosted run. The test fix
-does not close resize, save/reopen, or Play/Stop interaction checks.
+M0.4 remains **In progress**. A scene-render capture passes, but resize, save/reopen, and Play/Stop
+interaction checks remain open. The desktop automation helper failed to initialize during this
+session (`failed to write kernel assets: The system cannot find the path specified`, OS error 3);
+no interactive action is claimed as passed.
 
-Next: push the atomic replacement coverage and verify Windows CI again, then continue the manual
-graphics gate without marking unobserved desktop actions as passed.
+Next: complete the interactive graphics checks when the desktop helper is available, then continue
+the remaining UX.2 and UX.3 workflow checks without marking unobserved actions as passed.
+
+## Optional transform explanation — 28 September 2026
+
+### UX.3 implementation slice
+
+- The Inspector now has a collapsed **Why?** explanation under Move/Turn/Size. It describes a
+  transform as position, rotation and scale, and explains that each scene object can reuse a source
+  model with an independent placement. The explanation is optional and does not add a default panel.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors after the Inspector explanation was added |
+| CharacterStudio scene capture | PASS — `ReleaseAShowcase.json` opened, 1280×720 screenshot shows scene and collapsed **Why?** row, exit 0, stderr empty; `%TEMP%\Ember\UX3\ccd2c36902ff416bb6df06a0ba3f3c05\transform-explanation.png` |
+| Full CPU tests | NOT RERUN after this UI-only text change; 285/285 passed immediately before it |
+| Expand explanation and keyboard/focus/scaling checks | NOT RUN — the desktop helper could not initialize |
+
+UX.3 remains **In progress**. The explanation content is implemented, but its expanded presentation,
+keyboard navigation, focus visibility and 100%/150% scaling remain unverified. M0.4, UX.1, UX.2
+and M1.1 retain open interactive gates.
+
+Next: verify the **Why?** row and keyboard focus on a desktop, then exercise Browse → preview → Add,
+Cancel cleanup, transform undo, save/reopen, resize, DPI and Play/Stop through visible controls.

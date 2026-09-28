@@ -1465,6 +1465,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (ImGui.RadioButton("Size", _transformTool == TransformTool.Size))
             _transformTool = TransformTool.Size;
         DrawTransformToolActions(scene, selected);
+        if (ImGui.TreeNode("Why?"))
+        {
+            ImGui.TextWrapped("A transform combines position, rotation and scale to place an object in the scene. It changes this scene object, not the source model, so several objects can reuse one model with different placements.");
+            ImGui.TreePop();
+        }
 
         if (ImGui.TreeNode("More details"))
         {

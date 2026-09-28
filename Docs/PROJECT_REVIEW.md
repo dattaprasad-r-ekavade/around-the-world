@@ -54,11 +54,13 @@ work is Not started; this update changes the plan and acceptance criteria only.
 ## Follow-up verification — 28 September 2026
 
 Windows CI run #4 failed on the nine-cell queue test's tight wall-clock budget. Commit `361078f`
-made elapsed-time checks controllable and separated them from broad scheduling assertions; hosted
-run [#5](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36389941823)
-passed its build and 284 tests. A replacement-failure case was then added for `AtomicFile`; the
-current local suite passes 285 tests. The native graphics gate remains unrun, so M0.4 is still
-In progress.
+made elapsed-time checks controllable and separated them from broad scheduling assertions. Commit
+`145c892` added forced atomic destination-replacement failure coverage; hosted run
+[#6](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36390512874)
+passed its Windows build and CPU suite. The current local suite passes 285 tests and the Release
+build passes. A 1280×720 Release scene capture rendered the courtyard and animated characters on
+Windows 11, .NET 9.0.19 and Intel UHD Graphics; resize, save/reopen and Play/Stop remain unverified.
+The desktop-control helper failed to initialize in this session, so M0.4 remains In progress.
 
 ---
 

@@ -65,8 +65,9 @@ Game/Film project starters, native pickers, visible undoable Move/Turn/Size acti
 selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
 verification of these controls remains open. Windows CI for `ababa01` exposed a time-budget-sensitive
 cell-queue test; commit `361078f` separates wall-clock scheduling from the cost/cell fairness check,
-with elapsed-budget behavior covered by a controllable clock. Hosted run #5 passed; the native
-graphics gate remains open.
+with elapsed-budget behavior covered by a controllable clock. Hosted run #6 passed on `145c892`.
+UX.3 also has an optional Inspector explanation for transforms and shared model assets. The native
+graphics interaction gate remains open.
 Preserve completed reliability work.
 
 Execution order: complete M0.4's interactive verification and continue UX.1–UX.3 alongside

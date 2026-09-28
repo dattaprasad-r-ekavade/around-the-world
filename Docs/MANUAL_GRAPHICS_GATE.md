@@ -12,21 +12,33 @@ or release evidence. Report failures as failures; do not count an unrun check as
 
 ## Checks
 
-1. Build and capture the startup editor window:
+1. Build and capture Home and a starter scene as separate windows:
 
    ```powershell
    dotnet build Ember.sln --configuration Release --no-restore --nologo
    $studio = Join-Path $PWD 'samples/CharacterStudio/bin/Release/net9.0-windows/win-x64/CharacterStudio.exe'
-   $capture = Join-Path $env:TEMP 'Ember/ManualGraphicsGate/character-studio-start.png'
-   $arguments = @('--screenshot', "`"$capture`"", '--warmup', '8')
-   $process = Start-Process -FilePath $studio -ArgumentList $arguments `
-     -WorkingDirectory $env:TEMP -WindowStyle Hidden -Wait -PassThru
-   if ($process.ExitCode -ne 0) { throw "CharacterStudio exited with $($process.ExitCode)" }
+   $captureDirectory = Join-Path $env:TEMP ("Ember/ManualGraphicsGate/" + [guid]::NewGuid().ToString('N'))
+   New-Item -ItemType Directory -Path $captureDirectory -Force | Out-Null
+   $homeCapture = Join-Path $captureDirectory 'home.png'
+   $sceneCapture = Join-Path $captureDirectory 'starter-scene.png'
+   $scene = Join-Path $PWD 'samples/CharacterStudio/bin/Release/net9.0-windows/win-x64/Scenes/ReleaseAShowcase.json'
+   $homeArguments = @('--screenshot', "`"$homeCapture`"", '--warmup', '8')
+   $homeProcess = Start-Process -FilePath $studio -ArgumentList $homeArguments `
+     -WorkingDirectory $env:TEMP -WindowStyle Hidden -Wait -PassThru `
+     -RedirectStandardOutput (Join-Path $captureDirectory 'home-stdout.txt') `
+     -RedirectStandardError (Join-Path $captureDirectory 'home-stderr.txt')
+   if ($homeProcess.ExitCode -ne 0) { throw "CharacterStudio Home capture exited with $($homeProcess.ExitCode)" }
+   $sceneArguments = @('--open', "`"$scene`"", '--screenshot', "`"$sceneCapture`"", '--warmup', '8')
+   $sceneProcess = Start-Process -FilePath $studio -ArgumentList $sceneArguments `
+     -WorkingDirectory $env:TEMP -WindowStyle Hidden -Wait -PassThru `
+     -RedirectStandardOutput (Join-Path $captureDirectory 'scene-stdout.txt') `
+     -RedirectStandardError (Join-Path $captureDirectory 'scene-stderr.txt')
+   if ($sceneProcess.ExitCode -ne 0) { throw "CharacterStudio scene capture exited with $($sceneProcess.ExitCode)" }
    ```
 
-   Confirm the capture exists and shows the CharacterStudio editor, an asset preview, and no
-   loading error or black render region. Check the console for missing-device, shader, and
-   asset-load faults.
+   Confirm Home shows the Game and Film choices. Confirm the scene capture shows the courtyard,
+   animated characters and editor controls without a black viewport. Check both stderr files and
+   console output for missing-device, shader, and asset-load faults; retain both captures and logs.
 
 2. Start CharacterStudio interactively with `Start-Process -FilePath $studio -ArgumentList
    '--windowed'`. Confirm the window opens at a usable size, the viewport renders, and the
