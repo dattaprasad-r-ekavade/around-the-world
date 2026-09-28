@@ -64,8 +64,9 @@ workspace implementation; resize and DPI checks remain. UX.2 has starter thumbna
 Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view
 selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
 verification of these controls remains open. Windows CI for `ababa01` exposed a time-budget-sensitive
-cell-queue test; the test now separates wall-clock scheduling from the cost/cell fairness check,
-with elapsed-budget behavior covered by a controllable clock.
+cell-queue test; commit `361078f` separates wall-clock scheduling from the cost/cell fairness check,
+with elapsed-budget behavior covered by a controllable clock. Hosted run #5 passed; the native
+graphics gate remains open.
 Preserve completed reliability work.
 
 Execution order: complete M0.4's interactive verification and continue UX.1–UX.3 alongside
@@ -202,7 +203,7 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks and finish UX.1–UX.3 with the M1.1 workflow. Rerun Windows CI after the cell-queue timing fix; verify scene-view picking, layout reset, resize, DPI, project pickers and edit/save/play actions through visible controls before closing any gate. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks and finish UX.1–UX.3 with the M1.1 workflow. Verify scene-view picking, layout reset, resize, DPI, project pickers and edit/save/play actions through visible controls before closing any gate. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.

@@ -1912,18 +1912,21 @@ closing UX.2 or dependent release gates.
   clock. The broad nine-cell test uses a generous time window to focus on cost and cell limits, and
   a fake-clock test deterministically confirms that elapsed-time exhaustion stops later work in the
   same frame.
+- Atomic-file coverage now also locks an existing destination to force the final replacement to
+  fail; the test confirms that the old save remains intact and the sibling temporary file is removed.
 
 ### Verification evidence
 
 | Check | Result |
 | --- | --- |
 | Cell activation queue tests | PASS — 5 passed, 0 failed |
-| Full CPU test suite | PASS — 284 passed, 0 failed, 0 skipped |
+| Full CPU test suite | PASS — 285 passed, 0 failed, 0 skipped, including the forced replacement-failure case |
 | Release solution build | PASS — 0 warnings, 0 errors |
-| Windows CI after the fix | Pending push and hosted rerun. |
+| Windows CI for `361078f` | PASS — [run #5](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36389941823); Windows build and 284 tests passed before the additional atomic replacement test was added locally |
 
-M0.4 remains **In progress** pending hosted CI confirmation and the native Windows graphics gate.
-The test fix does not close resize, save/reopen, or Play/Stop interaction checks.
+M0.4 remains **In progress** pending the native Windows graphics gate. CI passed on `361078f`;
+the additional atomic replacement test is local and still needs the next hosted run. The test fix
+does not close resize, save/reopen, or Play/Stop interaction checks.
 
-Next: push this reliability fix and verify the Windows workflow result, then continue the manual
+Next: push the atomic replacement coverage and verify Windows CI again, then continue the manual
 graphics gate without marking unobserved desktop actions as passed.

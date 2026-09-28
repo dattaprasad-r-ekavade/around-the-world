@@ -34,4 +34,32 @@ public sealed class AtomicFileTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public void ReplacementFailurePreservesPreviousFileAndRemovesTemporaryFile()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "ember-atomic-file-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var path = Path.Combine(directory, "save.json");
+        const string previous = "previous-valid-save";
+        File.WriteAllText(path, previous);
+
+        try
+        {
+            Exception? replacementError;
+            using (new FileStream(path, FileMode.Open, FileAccess.ReadWrite, FileShare.None))
+            {
+                replacementError = Record.Exception(() => AtomicFile.Write(path,
+                    stream => stream.Write(Encoding.UTF8.GetBytes("replacement"))));
+            }
+
+            Assert.IsAssignableFrom<IOException>(replacementError);
+            Assert.Equal(previous, File.ReadAllText(path));
+            Assert.Empty(Directory.GetFiles(directory, "*.tmp"));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }

@@ -51,6 +51,15 @@ The next verification priority remains M0.4. The next editor implementation prio
 is UX.1 with M1.1 integration, before adding further advanced default panels. New UX
 work is Not started; this update changes the plan and acceptance criteria only.
 
+## Follow-up verification — 28 September 2026
+
+Windows CI run #4 failed on the nine-cell queue test's tight wall-clock budget. Commit `361078f`
+made elapsed-time checks controllable and separated them from broad scheduling assertions; hosted
+run [#5](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36389941823)
+passed its build and 284 tests. A replacement-failure case was then added for `AtomicFile`; the
+current local suite passes 285 tests. The native graphics gate remains unrun, so M0.4 is still
+In progress.
+
 ---
 
 # Project and scope review — 27 September 2026
