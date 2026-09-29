@@ -159,7 +159,9 @@ public sealed class SceneTemplateInstanceComponent
     public SceneTemplateInstanceComponent(Guid templateId, int appliedRevision,
         Guid sourceRootObjectId, Guid instanceRootObjectId,
         IEnumerable<SceneTemplateObjectMapping> objectMappings,
-        IEnumerable<SceneTemplateObjectBaseline>? objectBaselines = null)
+        IEnumerable<SceneTemplateObjectBaseline>? objectBaselines = null,
+        IEnumerable<Guid>? orphanedObjectIds = null,
+        Guid? targetWorldCellId = null)
     {
         if (templateId == Guid.Empty) throw new ArgumentException("Template ID cannot be empty.", nameof(templateId));
         if (appliedRevision < 1) throw new ArgumentOutOfRangeException(nameof(appliedRevision));
@@ -167,6 +169,8 @@ public sealed class SceneTemplateInstanceComponent
             throw new ArgumentException("Template root source ID cannot be empty.", nameof(sourceRootObjectId));
         if (instanceRootObjectId == Guid.Empty)
             throw new ArgumentException("Template root instance ID cannot be empty.", nameof(instanceRootObjectId));
+        if (targetWorldCellId == Guid.Empty)
+            throw new ArgumentException("Target world-cell ID cannot be empty.", nameof(targetWorldCellId));
         ArgumentNullException.ThrowIfNull(objectMappings);
 
         var mappings = objectMappings.ToArray();
@@ -190,12 +194,22 @@ public sealed class SceneTemplateInstanceComponent
             && !baselines.Select(baseline => baseline.SourceObjectId).ToHashSet()
                 .SetEquals(mappings.Select(mapping => mapping.SourceObjectId)))
             throw new ArgumentException("Template object baselines must match the source-object mapping.", nameof(objectBaselines));
+        var orphans = (orphanedObjectIds ?? Array.Empty<Guid>()).ToArray();
+        if (orphans.Any(id => id == Guid.Empty))
+            throw new ArgumentException("Orphaned template instance object IDs cannot be empty.", nameof(orphanedObjectIds));
+        if (orphans.Distinct().Count() != orphans.Length)
+            throw new ArgumentException("Orphaned template instance object IDs must be unique.", nameof(orphanedObjectIds));
+        if (orphans.Contains(instanceRootObjectId)
+            || orphans.Intersect(mappings.Select(mapping => mapping.InstanceObjectId)).Any())
+            throw new ArgumentException("Orphaned template objects cannot overlap mapped objects.", nameof(orphanedObjectIds));
         TemplateId = templateId;
         AppliedRevision = appliedRevision;
         SourceRootObjectId = sourceRootObjectId;
         InstanceRootObjectId = instanceRootObjectId;
         ObjectMappings = Array.AsReadOnly(mappings);
         ObjectBaselines = Array.AsReadOnly(baselines);
+        OrphanedObjectIds = Array.AsReadOnly(orphans);
+        TargetWorldCellId = targetWorldCellId;
     }
 
     public Guid TemplateId { get; }
@@ -204,6 +218,8 @@ public sealed class SceneTemplateInstanceComponent
     public Guid InstanceRootObjectId { get; }
     public IReadOnlyList<SceneTemplateObjectMapping> ObjectMappings { get; }
     public IReadOnlyList<SceneTemplateObjectBaseline> ObjectBaselines { get; }
+    public IReadOnlyList<Guid> OrphanedObjectIds { get; }
+    public Guid? TargetWorldCellId { get; }
 }
 
 /// <summary>Per-instance skeletal clip, playback, and attachment settings saved with a scene object.</summary>

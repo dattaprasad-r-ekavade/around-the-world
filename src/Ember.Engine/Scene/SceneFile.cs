@@ -242,7 +242,8 @@ public static class SceneFile
                 data.SourceRootObjectId, data.InstanceRootObjectId,
                 data.ObjectMappings.Select(mapping => new SceneTemplateObjectMapping(
                     mapping.SourceObjectId, mapping.InstanceObjectId)),
-                data.ObjectBaselines?.Select(ToTemplateObjectBaseline));
+                data.ObjectBaselines?.Select(ToTemplateObjectBaseline),
+                data.OrphanedObjectIds, data.TargetWorldCellId);
         }
         catch (ArgumentException exception)
         {
@@ -271,7 +272,9 @@ public static class SceneFile
                     Position = ToArray(baseline.Position),
                     Rotation = ToArray(baseline.Rotation),
                     Scale = ToArray(baseline.Scale)
-                }).ToList()
+                }).ToList(),
+                OrphanedObjectIds = component.OrphanedObjectIds.ToList(),
+                TargetWorldCellId = component.TargetWorldCellId
             };
 
     private static SceneTemplateObjectBaseline ToTemplateObjectBaseline(SceneTemplateObjectBaselineData data)
@@ -305,7 +308,36 @@ public static class SceneFile
                 throw new InvalidDataException("A scene template instance wrapper cannot also be its expanded root object.");
             if (instance.ObjectMappings.Any(mapping => mapping.InstanceObjectId == instanceOwner.Id))
                 throw new InvalidDataException("A scene template instance cannot map source content onto its wrapper object.");
+            if (instance.OrphanedObjectIds.Contains(instanceOwner.Id))
+                throw new InvalidDataException("A scene template instance wrapper cannot be marked as orphaned content.");
+            foreach (var mapping in instance.ObjectMappings)
+            {
+                var mappedObject = scene.Find(mapping.InstanceObjectId)
+                    ?? throw new InvalidDataException($"Scene template mapping refers to missing object {mapping.InstanceObjectId}.");
+                if (!IsDescendantOf(scene, mappedObject, instanceOwner.Id))
+                    throw new InvalidDataException($"Mapped template object {mapping.InstanceObjectId} is outside its instance wrapper.");
+            }
+            foreach (var orphanId in instance.OrphanedObjectIds)
+            {
+                var orphan = scene.Find(orphanId)
+                    ?? throw new InvalidDataException($"Scene template orphan refers to missing object {orphanId}.");
+                if (!IsDescendantOf(scene, orphan, instanceOwner.Id))
+                    throw new InvalidDataException($"Orphaned template object {orphanId} is outside its instance wrapper.");
+            }
         }
+    }
+
+    private static bool IsDescendantOf(SceneGraph scene, SceneObject item, Guid ancestorId)
+    {
+        var visited = new HashSet<Guid>();
+        var parentId = item.ParentId;
+        while (parentId is { } currentId)
+        {
+            if (currentId == ancestorId) return true;
+            if (!visited.Add(currentId)) return false;
+            parentId = scene.Find(currentId)?.ParentId;
+        }
+        return false;
     }
 
     private static SceneDoorData? ToDoorData(WorldDoorComponent? door) =>
@@ -427,8 +459,11 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} world entity placement requires scene version 6.");
         if (documentVersion < 8 && data.TemplateInstance is not null)
             throw new InvalidDataException($"Object {data.Id} scene template instance data requires scene version 8.");
-        if (documentVersion < 9 && data.TemplateInstance?.ObjectBaselines is { Count: > 0 })
-            throw new InvalidDataException($"Object {data.Id} scene template object baselines require scene version 9.");
+        if (documentVersion < 9 && data.TemplateInstance is { } instanceData
+            && (instanceData.ObjectBaselines is { Count: > 0 }
+                || instanceData.OrphanedObjectIds is { Count: > 0 }
+                || instanceData.TargetWorldCellId is not null))
+            throw new InvalidDataException($"Object {data.Id} scene template update metadata requires scene version 9.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -643,6 +678,8 @@ public static class SceneFile
         public Guid InstanceRootObjectId { get; set; }
         public List<SceneTemplateMappingData>? ObjectMappings { get; set; }
         public List<SceneTemplateObjectBaselineData>? ObjectBaselines { get; set; }
+        public List<Guid>? OrphanedObjectIds { get; set; }
+        public Guid? TargetWorldCellId { get; set; }
     }
 
     private sealed class SceneTemplateMappingData

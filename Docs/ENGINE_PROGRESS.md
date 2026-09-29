@@ -2288,22 +2288,28 @@ instance IDs while applying a newer template revision.
   baseline receives the new template value; a changed value is retained as a local override.
   Baselines advance to the new source defaults, so overrides remain detectable in later revisions.
 - Updates reparent mapped objects to match the new source hierarchy and participate in undo/redo.
-  The command fails before changing the scene if IDs, template identity, root identity, baseline,
-  or source-object membership do not match. Added/removed source objects are deferred to a later
-  slice; components other than name and transform are not merged by this update yet.
+  Existing source IDs keep their instance IDs; added source objects receive remapped object,
+  spawn, entity and attachment IDs. Unmodified removed objects are deleted. Removed objects with
+  local name/transform edits, user-authored children, or spawn IDs still referenced by a door are
+  retained as tracked orphans, including removed ancestors needed to keep that content attached.
+  New internal doors retain their remapped destination spawn and the instance's saved target cell.
+- The command fails before changing the scene if IDs, template identity, root identity, baseline,
+  or mapped hierarchy do not match. Name and transform are the only source fields merged so far;
+  broader component overrides, visible orphan warnings and source relinking are still open.
 
 ### Verification evidence
 
 | Check | Result |
 | --- | --- |
-| Template update, migration and scene persistence focused tests | PASS — 28 tests, 0 failures |
+| Template update, migration and scene persistence focused tests | PASS — 25 tests, 0 failures |
 | Release solution build | PASS — 0 warnings, 0 errors |
-| Full `Ember.Engine.Tests` run | PASS — 321 passed, 0 failed in two consecutive runs |
+| Full `Ember.Engine.Tests` run | PASS — 322 passed, 0 failed in two consecutive runs |
 | Visible template placement/update and reload workflow | NOT RUN — CharacterStudio does not yet expose these controls |
 
-M1.3 remains **In progress**. The authoring API now supports same-shape revision updates with
-name/transform override detection. Structural additions/removals, wider component overrides,
-orphan handling, relinking and the visible workflow remain open.
+M1.3 remains **In progress**. The authoring API now updates changed hierarchies, preserves stable
+instance mappings, applies name/transform defaults while retaining local edits, and tracks removed
+content as orphans when needed. Wider component overrides, visible orphan warnings, relinking and
+the visible workflow remain open.
 
-Next: add template object additions/removals with preserved mappings and explicit orphan warnings,
-then broaden field-level overrides before exposing the workflow in CharacterStudio.
+Next: broaden field-level overrides and expose template placement, update, orphan warnings and
+source relinking in CharacterStudio.

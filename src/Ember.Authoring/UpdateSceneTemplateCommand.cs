@@ -1,4 +1,6 @@
 using System;
+using System.Collections.Generic;
+using System.Linq;
 using Ember.Scene;
 
 namespace Ember.Authoring;
@@ -18,6 +20,11 @@ public sealed class UpdateSceneTemplateCommand : ISceneCommand
         _instanceWrapperId = instanceWrapperId;
         _template = template ?? throw new ArgumentNullException(nameof(template));
     }
+
+    /// <summary>Retained object IDs that the active template revision no longer contains.</summary>
+    public IReadOnlyList<Guid> OrphanedObjectIds => _after?.Objects
+        .SingleOrDefault(item => item.Object.Id == _instanceWrapperId)?.TemplateInstance?.OrphanedObjectIds
+        ?? Array.Empty<Guid>();
 
     public void Apply(SceneGraph scene)
     {

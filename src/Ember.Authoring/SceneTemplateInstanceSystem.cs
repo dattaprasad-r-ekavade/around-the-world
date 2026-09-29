@@ -56,7 +56,7 @@ public static class SceneTemplateInstanceSystem
             TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
                 template.RootObjectId, objectMap[template.RootObjectId], mappings,
                 source.Objects.Select(item => new SceneTemplateObjectBaseline(
-                    item.Id, item.Name, item.Transform)))
+                    item.Id, item.Name, item.Transform)), targetWorldCellId: targetWorldCellId)
         };
 
         var addedIds = new List<Guid>(clones.Length + 1);
@@ -89,8 +89,8 @@ public static class SceneTemplateInstanceSystem
     }
 
     /// <summary>
-    /// Updates an existing instance to a newer revision when its source-object set is unchanged.
-    /// Local name and transform edits are kept; unchanged fields take the new source defaults.
+    /// Updates an existing instance to a newer revision while preserving stable IDs and local
+    /// name/transform edits. Removed source objects with local content are retained as orphans.
     /// </summary>
     public static void Update(SceneGraph destination, Guid instanceWrapperId, SceneTemplateSnapshot template)
     {
@@ -124,18 +124,96 @@ public static class SceneTemplateInstanceSystem
             throw new InvalidOperationException("Nested scene-template instances are not supported yet.");
 
         var sourceById = source.Objects.ToDictionary(item => item.Id);
-        var mappings = instance.ObjectMappings.ToDictionary(mapping => mapping.SourceObjectId,
+        var oldMappings = instance.ObjectMappings.ToDictionary(mapping => mapping.SourceObjectId,
             mapping => mapping.InstanceObjectId);
-        if (!sourceById.Keys.ToHashSet().SetEquals(mappings.Keys))
-            throw new InvalidOperationException(
-                "This update changes the template's source-object set. Adding and removing template objects are not supported yet.");
         var baselines = instance.ObjectBaselines.ToDictionary(baseline => baseline.SourceObjectId);
-        var updates = new List<(SceneObject Target, string Name, Transform Transform, Guid? ParentId)>();
-        foreach (var (sourceId, sourceObject) in sourceById)
+        var objectIds = destination.Objects.Select(item => item.Id).ToHashSet();
+        var mappings = new Dictionary<Guid, Guid>();
+        foreach (var sourceId in sourceById.Keys.OrderBy(id => id))
+            mappings[sourceId] = oldMappings.TryGetValue(sourceId, out var existingId)
+                ? existingId
+                : CreateUniqueId(objectIds);
+
+        var removedSourceIds = oldMappings.Keys.Where(sourceId => !sourceById.ContainsKey(sourceId)).ToHashSet();
+        var removedInstanceIds = removedSourceIds.Select(sourceId => oldMappings[sourceId]).ToHashSet();
+        var retainedRemovedIds = new HashSet<Guid>();
+        foreach (var sourceId in removedSourceIds)
         {
+            var target = destination.Find(oldMappings[sourceId])
+                ?? throw new InvalidOperationException($"Mapped instance object {oldMappings[sourceId]} is missing.");
             if (!baselines.TryGetValue(sourceId, out var baseline))
                 throw new InvalidOperationException($"The saved source baseline for object {sourceId} is missing.");
-            var instanceObjectId = mappings[sourceId];
+            if (!string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
+                || !baseline.MatchesTransform(target.Transform))
+                retainedRemovedIds.Add(target.Id);
+        }
+        var referencedSpawnIds = destination.Objects.Where(item => item.Door is not null)
+            .Select(item => item.Door!.DestinationSpawnId).ToHashSet();
+        foreach (var sourceId in removedSourceIds)
+        {
+            var target = destination.Find(oldMappings[sourceId])!;
+            if (target.SpawnPoint is { } spawn && referencedSpawnIds.Contains(spawn.Id))
+                retainedRemovedIds.Add(target.Id);
+        }
+
+        var oldMappedIds = oldMappings.Values.ToHashSet();
+        var userContent = destination.Objects.Where(item => item.Id != wrapper.Id
+                && !oldMappedIds.Contains(item.Id)
+                && IsInInstanceHierarchy(destination, item, wrapper.Id))
+            .ToArray();
+        foreach (var item in userContent)
+        {
+            var cursor = item.ParentId;
+            while (cursor is { } parentId && parentId != wrapper.Id)
+            {
+                if (removedInstanceIds.Contains(parentId)) retainedRemovedIds.Add(parentId);
+                cursor = destination.Find(parentId)?.ParentId;
+            }
+        }
+        var sourceByInstanceId = oldMappings.ToDictionary(pair => pair.Value, pair => pair.Key);
+        var pendingKeep = new Stack<Guid>(retainedRemovedIds);
+        while (pendingKeep.TryPop(out var retainedId))
+        {
+            var retainedObject = destination.Find(retainedId)!;
+            if (retainedObject.ParentId is { } parentId
+                && sourceByInstanceId.TryGetValue(parentId, out var parentSourceId)
+                && removedSourceIds.Contains(parentSourceId)
+                && retainedRemovedIds.Add(parentId))
+                pendingKeep.Push(parentId);
+        }
+
+        var spawnIds = destination.Objects.Where(item => item.SpawnPoint is not null)
+            .Select(item => item.SpawnPoint!.Id).ToHashSet();
+        var spawnMap = source.Objects.Where(item => item.SpawnPoint is not null)
+            .ToDictionary(item => item.SpawnPoint!.Id, item =>
+            {
+                if (oldMappings.TryGetValue(item.Id, out var oldId)
+                    && destination.Find(oldId)?.SpawnPoint is { } oldSpawn)
+                    return oldSpawn.Id;
+                return CreateUniqueId(spawnIds);
+            });
+        var entityIds = destination.Objects.Where(item => item.WorldEntity is not null)
+            .Select(item => item.WorldEntity!.InstanceId).ToHashSet();
+        var entityMap = source.Objects.Where(item => item.WorldEntity is not null)
+            .ToDictionary(item => item.WorldEntity!.InstanceId, item =>
+            {
+                if (oldMappings.TryGetValue(item.Id, out var oldId)
+                    && destination.Find(oldId)?.WorldEntity is { } oldEntity)
+                    return oldEntity.InstanceId;
+                return CreateUniqueId(entityIds);
+            });
+        var attachmentIds = destination.Objects.Where(item => item.CharacterSettings is not null)
+            .SelectMany(item => item.CharacterSettings!.Attachments).Select(item => item.Id).ToHashSet();
+        var newObjects = source.Objects.Where(item => !oldMappings.ContainsKey(item.Id))
+            .Select(item => CreateClone(item, mappings[item.Id], spawnMap, entityMap,
+                attachmentIds, instance.TargetWorldCellId)).ToArray();
+
+        var updates = new List<(SceneObject Target, string Name, Transform Transform)>();
+        foreach (var (sourceId, sourceObject) in sourceById)
+        {
+            if (!oldMappings.TryGetValue(sourceId, out var instanceObjectId)) continue;
+            if (!baselines.TryGetValue(sourceId, out var baseline))
+                throw new InvalidOperationException($"The saved source baseline for object {sourceId} is missing.");
             var target = destination.Find(instanceObjectId)
                 ?? throw new InvalidOperationException($"Mapped instance object {instanceObjectId} is missing.");
             if (!IsInInstanceHierarchy(destination, target, wrapper.Id))
@@ -148,30 +226,49 @@ public static class SceneTemplateInstanceSystem
             var transform = baseline.MatchesTransform(target.Transform)
                 ? CopyTransform(sourceObject.Transform)
                 : CopyTransform(target.Transform);
-            var parentId = sourceObject.ParentId is { } sourceParentId
-                ? mappings[sourceParentId]
-                : wrapper.Id;
-            updates.Add((target, name, transform, parentId));
+            updates.Add((target, name, transform));
         }
 
+        var nextOrphanIds = instance.OrphanedObjectIds
+            .Where(id => destination.Find(id) is not null)
+            .Concat(retainedRemovedIds)
+            .Concat(userContent.Where(item => IsUnderAny(destination, item, retainedRemovedIds)).Select(item => item.Id))
+            .Distinct().ToArray();
         var before = CaptureState(destination, wrapper.Id);
         try
         {
+            foreach (var item in newObjects) destination.AddUnparented(item);
             foreach (var update in updates) destination.SetParent(update.Target.Id, null);
+            foreach (var item in newObjects) destination.SetParent(item.Id, null);
             foreach (var update in updates)
             {
                 update.Target.Name = update.Name;
                 update.Target.Transform = update.Transform;
             }
-            foreach (var update in updates) destination.SetParent(update.Target.Id, update.ParentId);
+            foreach (var sourceObject in source.Objects)
+            {
+                var parentId = sourceObject.ParentId is { } sourceParentId
+                    ? mappings[sourceParentId]
+                    : wrapper.Id;
+                destination.SetParent(mappings[sourceObject.Id], parentId);
+            }
+            foreach (var removedId in OrderBySceneDepth(destination,
+                removedInstanceIds.Except(retainedRemovedIds), descending: true))
+                destination.Remove(removedId);
 
+            var objectMappings = mappings.OrderBy(pair => pair.Key)
+                .Select(pair => new SceneTemplateObjectMapping(pair.Key, pair.Value)).ToArray();
             wrapper.TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
-                template.RootObjectId, instance.InstanceRootObjectId, instance.ObjectMappings,
+                template.RootObjectId, mappings[template.RootObjectId], objectMappings,
                 source.Objects.Select(item => new SceneTemplateObjectBaseline(
-                    item.Id, item.Name, item.Transform)));
+                    item.Id, item.Name, item.Transform)),
+                nextOrphanIds, instance.TargetWorldCellId);
         }
         catch
         {
+            foreach (var item in OrderBySceneDepth(destination,
+                newObjects.Select(item => item.Id).Where(id => destination.Find(id) is not null), descending: true))
+                destination.Remove(item);
             RestoreState(destination, before);
             throw;
         }
@@ -184,12 +281,14 @@ public static class SceneTemplateInstanceSystem
         var instance = wrapper.TemplateInstance
             ?? throw new InvalidOperationException($"Scene object {wrapperId} is not a template instance wrapper.");
         var ids = instance.ObjectMappings.Select(mapping => mapping.InstanceObjectId)
+            .Concat(instance.OrphanedObjectIds)
+            .Concat(scene.Objects.Where(item => IsInInstanceHierarchy(scene, item, wrapperId)).Select(item => item.Id))
             .Append(wrapperId).Distinct().ToArray();
         var objects = ids.Select(id =>
         {
             var item = scene.Find(id)
                 ?? throw new InvalidOperationException($"Template instance object {id} is missing.");
-            return new SceneTemplateObjectState(item.Id, item.Name, CopyTransform(item.Transform),
+            return new SceneTemplateObjectState(item, item.Name, CopyTransform(item.Transform),
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
         return new SceneTemplateInstanceState(wrapperId, objects);
@@ -199,21 +298,32 @@ public static class SceneTemplateInstanceSystem
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(state);
+        var desiredIds = state.Objects.Select(item => item.Object.Id).ToHashSet();
+        var wrapper = scene.Find(state.WrapperId)
+            ?? throw new InvalidOperationException($"Cannot restore template instance because wrapper {state.WrapperId} is missing.");
+        var currentIds = wrapper.TemplateInstance is { } currentInstance
+            ? currentInstance.ObjectMappings.Select(mapping => mapping.InstanceObjectId)
+                .Concat(currentInstance.OrphanedObjectIds)
+                .Concat(scene.Objects.Where(item => IsInInstanceHierarchy(scene, item, state.WrapperId)).Select(item => item.Id))
+                .Append(state.WrapperId).Distinct().ToHashSet()
+            : scene.Objects.Where(item => IsInInstanceHierarchy(scene, item, state.WrapperId))
+                .Select(item => item.Id).Append(state.WrapperId).ToHashSet();
+        foreach (var extraId in OrderBySceneDepth(scene, currentIds.Except(desiredIds), descending: true))
+            scene.Remove(extraId);
+        foreach (var item in OrderStateByDepth(state.Objects))
+            if (scene.Find(item.Object.Id) is null)
+                scene.AddUnparented(item.Object);
         foreach (var item in state.Objects)
-            if (scene.Find(item.ObjectId) is null)
-                throw new InvalidOperationException($"Cannot restore template instance because object {item.ObjectId} is missing.");
-
-        foreach (var item in state.Objects.Where(item => item.ObjectId != state.WrapperId))
-            scene.SetParent(item.ObjectId, null);
+            scene.SetParent(item.Object.Id, null);
         foreach (var item in state.Objects)
         {
-            var current = scene.Find(item.ObjectId)!;
+            var current = scene.Find(item.Object.Id)!;
             current.Name = item.Name;
             current.Transform = CopyTransform(item.Transform);
             current.TemplateInstance = item.TemplateInstance;
         }
-        foreach (var item in state.Objects.Where(item => item.ObjectId != state.WrapperId))
-            scene.SetParent(item.ObjectId, item.ParentId);
+        foreach (var item in state.Objects)
+            scene.SetParent(item.Object.Id, item.ParentId);
     }
 
     private static SceneObject CreateClone(SceneObject source, Guid id,
@@ -342,9 +452,66 @@ public static class SceneTemplateInstanceSystem
         }
         return false;
     }
+
+    private static bool IsUnderAny(SceneGraph scene, SceneObject item, IEnumerable<Guid> ancestorIds)
+    {
+        var ancestors = ancestorIds.ToHashSet();
+        var visited = new HashSet<Guid>();
+        var parentId = item.ParentId;
+        while (parentId is { } currentId)
+        {
+            if (ancestors.Contains(currentId)) return true;
+            if (!visited.Add(currentId)) return false;
+            parentId = scene.Find(currentId)?.ParentId;
+        }
+        return false;
+    }
+
+    private static IReadOnlyList<Guid> OrderBySceneDepth(SceneGraph scene, IEnumerable<Guid> ids, bool descending)
+    {
+        var snapshot = ids.Distinct().ToArray();
+        int Depth(Guid id)
+        {
+            var depth = 0;
+            var visited = new HashSet<Guid>();
+            var parentId = scene.Find(id)?.ParentId;
+            while (parentId is { } currentId)
+            {
+                if (!visited.Add(currentId)) throw new InvalidOperationException("Scene hierarchy contains a cycle.");
+                depth++;
+                parentId = scene.Find(currentId)?.ParentId;
+            }
+            return depth;
+        }
+
+        return descending
+            ? snapshot.OrderByDescending(Depth).ToArray()
+            : snapshot.OrderBy(Depth).ToArray();
+    }
+
+    private static IReadOnlyList<SceneTemplateObjectState> OrderStateByDepth(
+        IReadOnlyList<SceneTemplateObjectState> objects)
+    {
+        var byId = objects.ToDictionary(item => item.Object.Id);
+        int Depth(SceneTemplateObjectState item)
+        {
+            var depth = 0;
+            var parentId = item.ParentId;
+            var visited = new HashSet<Guid>();
+            while (parentId is { } currentId && byId.TryGetValue(currentId, out var parent))
+            {
+                if (!visited.Add(currentId)) throw new InvalidOperationException("Template instance snapshot contains a cycle.");
+                depth++;
+                parentId = parent.ParentId;
+            }
+            return depth;
+        }
+
+        return objects.OrderBy(Depth).ToArray();
+    }
 }
 
 internal sealed record SceneTemplateInstanceState(Guid WrapperId, IReadOnlyList<SceneTemplateObjectState> Objects);
 
-internal sealed record SceneTemplateObjectState(Guid ObjectId, string Name, Transform Transform,
+internal sealed record SceneTemplateObjectState(SceneObject Object, string Name, Transform Transform,
     Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);

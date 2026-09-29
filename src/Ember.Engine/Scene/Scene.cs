@@ -28,6 +28,25 @@ public sealed class SceneGraph
         }
     }
 
+    /// <summary>Adds an object without applying its saved parent link, for staged hierarchy restoration.</summary>
+    public void AddUnparented(SceneObject sceneObject)
+    {
+        ArgumentNullException.ThrowIfNull(sceneObject);
+        if (_objects.ContainsKey(sceneObject.Id))
+            throw new ArgumentException($"Scene object ID already exists: {sceneObject.Id}", nameof(sceneObject));
+        var originalParentId = sceneObject.ParentId;
+        sceneObject.ParentId = null;
+        try
+        {
+            Add(sceneObject);
+        }
+        catch
+        {
+            if (!_objects.ContainsKey(sceneObject.Id)) sceneObject.ParentId = originalParentId;
+            throw;
+        }
+    }
+
     public SceneObject? Find(Guid id) => _objects.TryGetValue(id, out var value) ? value : null;
 
     public bool Remove(Guid id)

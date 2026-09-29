@@ -246,30 +246,141 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
-    public void UpdateRejectsChangedSourceObjectSetWithoutChangingInstance()
+    public void UpdateRejectsDifferentTemplateWithoutChangingInstance()
     {
         var path = TemporaryTemplatePath();
+        var otherPath = TemporaryTemplatePath();
         try
         {
             var source = new SceneGraph();
             var root = new SceneObject(Guid.NewGuid(), "Room");
             source.Add(root);
             var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var otherTemplate = SceneTemplateFile.Save(source, root.Id, "Other room", otherPath);
             var destination = new SceneGraph();
             var wrapper = SceneTemplateInstanceSystem.Instantiate(destination, firstRevision, Vector3.Zero);
             var instanceRootId = wrapper.TemplateInstance!.InstanceRootObjectId;
-            root.Name = "Updated room";
-            var added = new SceneObject(Guid.NewGuid(), "New prop");
-            source.Add(added);
-            source.SetParent(added.Id, root.Id);
-            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
 
             Assert.Throws<InvalidOperationException>(() =>
-                new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(destination));
+                new UpdateSceneTemplateCommand(wrapper.Id, otherTemplate).Apply(destination));
 
             Assert.Equal(1, wrapper.TemplateInstance.AppliedRevision);
             Assert.Equal("Room", destination.Find(instanceRootId)!.Name);
             Assert.Equal(2, destination.Objects.Count);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+            if (File.Exists(otherPath)) File.Delete(otherPath);
+        }
+    }
+
+    [Fact]
+    public void UpdateAddsAndRemovesObjectsAndRetainsEditedContentAsOrphans()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Interior");
+            var editedSource = new SceneObject(Guid.NewGuid(), "Cabinet");
+            var removedSource = new SceneObject(Guid.NewGuid(), "Old stool");
+            var linkedSpawnSourceId = Guid.NewGuid();
+            var linkedSpawn = new SceneObject(Guid.NewGuid(), "Linked old spawn")
+            {
+                SpawnPoint = new WorldSpawnComponent(linkedSpawnSourceId)
+            };
+            var linkedDoor = new SceneObject(Guid.NewGuid(), "Existing linked door")
+            {
+                Door = new WorldDoorComponent(Guid.NewGuid(), linkedSpawnSourceId, Quaternion.Identity)
+            };
+            source.Add(root);
+            source.Add(editedSource);
+            source.Add(removedSource);
+            source.Add(linkedSpawn);
+            source.Add(linkedDoor);
+            source.SetParent(editedSource.Id, root.Id);
+            source.SetParent(removedSource.Id, root.Id);
+            source.SetParent(linkedSpawn.Id, root.Id);
+            source.SetParent(linkedDoor.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Interior", path);
+
+            var scene = new SceneGraph();
+            var targetCellId = Guid.NewGuid();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero, targetCellId);
+            var originalMappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var editedInstanceId = originalMappings[editedSource.Id];
+            var removedInstanceId = originalMappings[removedSource.Id];
+            var linkedSpawnInstanceId = originalMappings[linkedSpawn.Id];
+            var linkedDoorInstanceId = originalMappings[linkedDoor.Id];
+            var linkedSpawnInstanceSpawnId = scene.Find(linkedSpawnInstanceId)!.SpawnPoint!.Id;
+            scene.Find(editedInstanceId)!.Name = "Player cabinet";
+            var playerProp = new SceneObject(Guid.NewGuid(), "Stored prop");
+            scene.Add(playerProp);
+            scene.SetParent(playerProp.Id, editedInstanceId);
+
+            source.Remove(editedSource.Id);
+            source.Remove(removedSource.Id);
+            source.Remove(linkedSpawn.Id);
+            var spawnSourceId = Guid.NewGuid();
+            var spawnMarker = new SceneObject(Guid.NewGuid(), "New spawn")
+            {
+                SpawnPoint = new WorldSpawnComponent(spawnSourceId)
+            };
+            var door = new SceneObject(Guid.NewGuid(), "New door")
+            {
+                Door = new WorldDoorComponent(Guid.NewGuid(), spawnSourceId, Quaternion.Identity)
+            };
+            source.Add(spawnMarker);
+            source.Add(door);
+            source.SetParent(spawnMarker.Id, root.Id);
+            source.SetParent(door.Id, root.Id);
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Interior", path);
+            var history = new SceneCommandHistory();
+            var command = new UpdateSceneTemplateCommand(wrapper.Id, secondRevision);
+
+            history.Execute(scene, command);
+
+            var updated = wrapper.TemplateInstance!;
+            var newMappings = updated.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            Assert.Equal(4, updated.ObjectMappings.Count);
+            Assert.Equal(originalMappings[root.Id], newMappings[root.Id]);
+            Assert.Equal(linkedDoorInstanceId, newMappings[linkedDoor.Id]);
+            Assert.NotEqual(spawnMarker.Id, newMappings[spawnMarker.Id]);
+            Assert.Equal("Player cabinet", scene.Find(editedInstanceId)!.Name);
+            Assert.Null(scene.Find(removedInstanceId));
+            Assert.NotNull(scene.Find(linkedSpawnInstanceId));
+            Assert.Contains(linkedSpawnInstanceId, command.OrphanedObjectIds);
+            Assert.Equal(linkedSpawnInstanceSpawnId,
+                scene.Find(linkedDoorInstanceId)!.Door!.DestinationSpawnId);
+            Assert.Contains(editedInstanceId, command.OrphanedObjectIds);
+            Assert.Contains(playerProp.Id, command.OrphanedObjectIds);
+            Assert.Equal(targetCellId, updated.TargetWorldCellId);
+            var placedSpawn = scene.Find(newMappings[spawnMarker.Id])!.SpawnPoint!;
+            var placedDoor = scene.Find(newMappings[door.Id])!.Door!;
+            Assert.NotEqual(spawnSourceId, placedSpawn.Id);
+            Assert.Equal(placedSpawn.Id, placedDoor.DestinationSpawnId);
+            Assert.Equal(targetCellId, placedDoor.DestinationCellId);
+
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            Assert.Equal(updated.OrphanedObjectIds, reopened.Find(wrapper.Id)!.TemplateInstance!.OrphanedObjectIds);
+            Assert.Equal(targetCellId, reopened.Find(wrapper.Id)!.TemplateInstance!.TargetWorldCellId);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal(1, wrapper.TemplateInstance!.AppliedRevision);
+            Assert.Equal(5, wrapper.TemplateInstance.ObjectMappings.Count);
+            Assert.NotNull(scene.Find(removedInstanceId));
+            Assert.Null(scene.Find(newMappings[spawnMarker.Id]));
+            Assert.Equal(editedInstanceId, scene.Find(playerProp.Id)!.ParentId);
+
+            Assert.True(history.Redo(scene));
+            Assert.Equal(2, wrapper.TemplateInstance!.AppliedRevision);
+            Assert.Equal(newMappings[spawnMarker.Id], wrapper.TemplateInstance.ObjectMappings
+                .Single(mapping => mapping.SourceObjectId == spawnMarker.Id).InstanceObjectId);
+            Assert.Contains(editedInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
+            Assert.Contains(linkedSpawnInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
         }
         finally
         {

@@ -421,10 +421,10 @@ The authoring library can save a selected object hierarchy as a validated, versi
 template and place independent expanded instances with remapped object, spawn, attachment and RPG
 entity IDs. Scene saves retain each instance's template revision, source-object map and source
 name/transform baselines. `UpdateSceneTemplateCommand` explicitly applies a newer revision while
-preserving local name and transform edits and is undoable. This API currently requires the source
-object set to stay the same; added/removed objects, overrides for other fields, relinking and the
-visible template workflow remain in progress. The roadmap records the intended update and
-broken-source behavior.
+preserving stable mappings and local name/transform edits; it adds new objects, removes unchanged
+objects and tracks edited or referenced removed content as orphans, with undo/redo. Overrides for
+other fields, visible orphan warnings, relinking and the visible template workflow remain in
+progress. The roadmap records the intended broken-source behavior.
 
 `SceneLighting` applies one ambient color and normalized directional light to CharacterStudio's
 static and skinned shader paths. The sample exposes the ambient RGB, direction, and directional RGB
