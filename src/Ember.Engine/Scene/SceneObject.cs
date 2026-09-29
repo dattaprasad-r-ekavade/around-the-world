@@ -102,6 +102,26 @@ public sealed class SceneBoxColliderComponent
         float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
 }
 
+/// <summary>Simple built-in actions that a scene trigger can perform when entered.</summary>
+public enum SceneTriggerActionKind
+{
+    Collect = 0,
+    ReachGoal = 1
+}
+
+/// <summary>A validated, persisted action run when this object's trigger is entered.</summary>
+public sealed class SceneTriggerActionComponent
+{
+    public SceneTriggerActionComponent(SceneTriggerActionKind kind)
+    {
+        if (!Enum.IsDefined(kind))
+            throw new ArgumentOutOfRangeException(nameof(kind), kind, "Trigger action is not supported.");
+        Kind = kind;
+    }
+
+    public SceneTriggerActionKind Kind { get; }
+}
+
 /// <summary>A stable scene object identity and its local authored state.</summary>
 public sealed class SceneObject
 {
@@ -123,6 +143,7 @@ public sealed class SceneObject
     public GltfStaticMeshLod? StaticMeshLod { get; set; }
     public GltfCharacterSettings? CharacterSettings { get; set; }
     public SceneBoxColliderComponent? BoxCollider { get; set; }
+    public SceneTriggerActionComponent? TriggerAction { get; set; }
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }
     public WorldEntityPlacementComponent? WorldEntity { get; set; }
@@ -146,7 +167,8 @@ public sealed class SceneTemplateObjectBaseline
         WorldSpawnComponent? spawnPoint = null, bool hasSpawnPointBaseline = false,
         WorldEntityPlacementComponent? worldEntity = null, bool hasWorldEntityBaseline = false,
         Guid? sourceSpawnPointId = null,
-        SceneBoxColliderComponent? boxCollider = null, bool hasBoxColliderBaseline = false)
+        SceneBoxColliderComponent? boxCollider = null, bool hasBoxColliderBaseline = false,
+        SceneTriggerActionComponent? triggerAction = null, bool hasTriggerActionBaseline = false)
     {
         if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
@@ -177,6 +199,8 @@ public sealed class SceneTemplateObjectBaseline
             throw new ArgumentException("A world entity requires an available source baseline.", nameof(worldEntity));
         if (!hasBoxColliderBaseline && boxCollider is not null)
             throw new ArgumentException("A box collider requires an available source baseline.", nameof(boxCollider));
+        if (!hasTriggerActionBaseline && triggerAction is not null)
+            throw new ArgumentException("A trigger action requires an available source baseline.", nameof(triggerAction));
 
         SourceObjectId = sourceObjectId;
         Name = name;
@@ -200,6 +224,8 @@ public sealed class SceneTemplateObjectBaseline
         HasWorldEntityBaseline = hasWorldEntityBaseline;
         BoxCollider = boxCollider;
         HasBoxColliderBaseline = hasBoxColliderBaseline;
+        TriggerAction = triggerAction;
+        HasTriggerActionBaseline = hasTriggerActionBaseline;
     }
 
     public Guid SourceObjectId { get; }
@@ -224,6 +250,8 @@ public sealed class SceneTemplateObjectBaseline
     public bool HasWorldEntityBaseline { get; }
     public SceneBoxColliderComponent? BoxCollider { get; }
     public bool HasBoxColliderBaseline { get; }
+    public SceneTriggerActionComponent? TriggerAction { get; }
+    public bool HasTriggerActionBaseline { get; }
 
     public Transform ToTransform() => new()
     {

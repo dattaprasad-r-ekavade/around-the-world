@@ -2945,3 +2945,33 @@ continue the still-open UX.1–UX.4 and M1.1 authoring workflow work in parallel
 
 Next: verify the Add library search and project model preview/import workflow through the visible editor;
 continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as interactive evidence.
+
+## M2.1 saved trigger actions and character identity — 29 September 2026
+
+- Scene version 16 persists a validated trigger action on scene objects. The first built-in actions are
+  Collect, which disables its trigger owner in the play copy, and ReachGoal, which records goal
+  completion once per goal object. Both run only on trigger entry and raise a typed event with the
+  action, trigger object and activating character identity.
+- `ScenePlaySession.BindPhysicsCharacter` maps a runtime physics body to a stable scene character ID;
+  trigger behaviours and action events receive that ID alongside the original physics ID. Callers can
+  remove the mapping when a character despawns.
+- Actions require a trigger box collider, execute only while the owner is enabled, and invalid data
+  reports the owning scene object.
+  Scene save/load, old-version migration, template baseline/update/undo, object duplication and play
+  cloning preserve action assignments. A reversible scene command supports later editor authoring.
+- M2.1 remains **In progress**. The beginner What happens? panel, Open action, custom code-behaviour
+  registration, player/camera settings, input actions, collider visualization and editor interaction
+  checks remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused scene file, play session, command-history and template tests | PASS — 59 passed, 0 failed |
+| Scene action save/load and invalid assignment checks | PASS |
+| Stable character identity and Collect/ReachGoal runtime checks | PASS |
+| Template update and undo/redo action preservation | PASS |
+
+Next: expose Collect and ReachGoal in the editor's What happens? controls, then implement Open and the
+remaining player/camera and input-action settings. Keep editor interaction verification as a separate
+gate from source and test coverage.

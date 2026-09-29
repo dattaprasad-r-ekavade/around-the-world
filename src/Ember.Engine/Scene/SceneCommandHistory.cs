@@ -149,6 +149,30 @@ public sealed class EditBoxColliderCommand : ISceneCommand
         scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
 }
 
+/// <summary>Changes or removes the saved trigger action on one scene object.</summary>
+public sealed class EditSceneTriggerActionCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly SceneTriggerActionComponent? _before;
+    private readonly SceneTriggerActionComponent? _after;
+
+    public EditSceneTriggerActionCommand(Guid objectId, SceneTriggerActionComponent? before,
+        SceneTriggerActionComponent? after)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        _objectId = objectId;
+        _before = before;
+        _after = after;
+    }
+
+    public void Apply(SceneGraph scene) => Require(scene, _objectId).TriggerAction = _after;
+
+    public void Revert(SceneGraph scene) => Require(scene, _objectId).TriggerAction = _before;
+
+    private static SceneObject Require(SceneGraph scene, Guid id) =>
+        scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
+}
+
 /// <summary>Changes an object's parent while preserving its world transform when it is representable as TRS.</summary>
 public sealed class ReparentSceneObjectCommand : ISceneCommand
 {
@@ -498,6 +522,7 @@ internal static class SceneObjectCopy
             StaticMeshLod = source.StaticMeshLod,
             CharacterSettings = CopyCharacterSettings(source.CharacterSettings),
             BoxCollider = source.BoxCollider,
+            TriggerAction = source.TriggerAction,
             Door = source.Door,
             ResetPolicy = source.ResetPolicy,
             WorldEntity = source.WorldEntity is null

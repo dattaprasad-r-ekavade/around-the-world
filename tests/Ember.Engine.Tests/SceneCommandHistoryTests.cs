@@ -131,6 +131,28 @@ public sealed class SceneCommandHistoryTests
     }
 
     [Fact]
+    public void TriggerActionEditUndoRedoAndDuplicatePreservesTheAction()
+    {
+        var before = new SceneTriggerActionComponent(SceneTriggerActionKind.Collect);
+        var after = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal);
+        var item = new SceneObject(Guid.NewGuid(), "Goal") { TriggerAction = before };
+        var scene = new SceneGraph();
+        scene.Add(item);
+        var history = new SceneCommandHistory();
+
+        history.Execute(scene, new EditSceneTriggerActionCommand(item.Id, before, after));
+        Assert.Same(after, item.TriggerAction);
+        Assert.True(history.Undo(scene));
+        Assert.Same(before, item.TriggerAction);
+        Assert.True(history.Redo(scene));
+        Assert.Same(after, item.TriggerAction);
+
+        var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, item.Id);
+        Assert.NotEqual(item.Id, duplicate.Id);
+        Assert.Equal(SceneTriggerActionKind.ReachGoal, duplicate.TriggerAction!.Kind);
+    }
+
+    [Fact]
     public void TransformEditUndoesAndRedoesAndNewEditClearsRedo()
     {
         var id = Guid.NewGuid();

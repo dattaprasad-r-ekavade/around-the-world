@@ -230,17 +230,18 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 | M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. | Not started |
 | M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. | **In progress** |
 
-M2.1 now has its first data and authoring-command slice: scene version 15 stores validated local-space
-box colliders with trigger flags, and older scenes load without colliders. Template baselines preserve
-collider defaults and local overrides across explicit updates; undo/redo, duplication and Play-mode
-cloning retain the component. `SceneStaticColliderSet` builds removable static PhysicsWorld boxes
-from enabled scene objects and their world transforms; it reports sheared transforms and maps
-nonblocking trigger enter/exit events back to scene-object IDs. `ScenePlaySession` can forward those
-transitions to per-object behaviour callbacks, but callback registration remains code-configured.
-Persisted behaviour assignments, player/camera settings, input actions and the beginner What happens?
-presets remain open. The existing Inspector now has optional box-collider add/remove and
-center/size/trigger controls; live editor interaction and viewport collider visualization still need
-verification and implementation.
+M2.1 now has persisted scene trigger actions in scene version 16. Trigger owners can run the built-in
+Collect or ReachGoal action on entry; Collect disables its play-session object, and ReachGoal records
+completion once per goal object. The runtime raises a typed action event with the trigger and stable
+scene-character IDs. Physics characters are bound to scene identity through `ScenePlaySession`, while
+unbound physics bodies remain available by physics ID. Actions require a trigger box collider, execute
+only while their owner is enabled, and invalid assignments name their owner. Save/load, template
+baselines and updates, duplication, undo/redo and Play-mode cloning preserve the assignment. M2.1
+remains **In progress**: the editor has no beginner
+What happens? panel yet, Open is not a built-in action, and player/camera settings, input actions,
+custom code-behaviour registration, viewport collider visualization and live editor interaction still
+need implementation or verification. The existing Inspector already has optional box-collider
+add/remove and center/size/trigger controls.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.

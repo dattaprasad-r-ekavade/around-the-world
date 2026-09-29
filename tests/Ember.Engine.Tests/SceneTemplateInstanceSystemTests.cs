@@ -227,6 +227,46 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
+    public void TemplateUpdateCarriesSavedTriggerActionsAndUndoRestoresThePreviousAction()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Goal")
+            {
+                BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+                TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Collect)
+            };
+            var source = new SceneGraph();
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Goal", path);
+
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceId = wrapper.TemplateInstance!.ObjectMappings.Single().InstanceObjectId;
+            Assert.Equal(SceneTriggerActionKind.Collect, scene.Find(instanceId)!.TriggerAction!.Kind);
+
+            root.TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal);
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Goal", path);
+            var history = new SceneCommandHistory();
+            var command = new UpdateSceneTemplateCommand(wrapper.Id, secondRevision);
+            history.Execute(scene, command);
+            Assert.Equal(SceneTriggerActionKind.ReachGoal, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(SceneTriggerActionKind.ReachGoal,
+                SceneFile.FromJson(SceneFile.ToJson(scene)).Find(instanceId)!.TriggerAction!.Kind);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal(SceneTriggerActionKind.Collect, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.True(history.Redo(scene));
+            Assert.Equal(SceneTriggerActionKind.ReachGoal, scene.Find(instanceId)!.TriggerAction!.Kind);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ExplicitUpdatePreservesNameAndTransformOverridesAndCanBeUndone()
     {
         var path = TemporaryTemplatePath();
@@ -442,7 +482,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(45f, overriddenLod.ExitFarDistance);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(15, SceneFile.CurrentVersion);
+            Assert.Equal(16, SceneFile.CurrentVersion);
             var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .ToDictionary(baseline => baseline.SourceObjectId);
             Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
@@ -557,7 +597,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(15, SceneFile.CurrentVersion);
+            Assert.Equal(16, SceneFile.CurrentVersion);
             var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
             Assert.Equal("Walk", characterBaseline.ClipName);
@@ -1167,6 +1207,8 @@ public sealed class SceneTemplateInstanceSystemTests
     {
         baseline.Remove("HasBoxColliderBaseline");
         baseline.Remove("BoxCollider");
+        baseline.Remove("HasTriggerActionBaseline");
+        baseline.Remove("TriggerAction");
     }
 
     private static SceneGraph CreateSourceHierarchy(out Guid rootId, out Guid childId,

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Ember.Physics;
 
 namespace Ember.Scene;
@@ -8,10 +9,13 @@ namespace Ember.Scene;
 public sealed class ScenePlaySession : IDisposable
 {
     private bool _disposed;
+    private readonly Dictionary<PhysicsObjectId, Guid> _characterIds = new();
+    private readonly HashSet<Guid> _reachedGoals = new();
 
     public ScenePlaySession(SceneGraph authoredScene, Action<SceneGraph, SceneBehaviourRuntime>? configure = null)
     {
         ArgumentNullException.ThrowIfNull(authoredScene);
+        ValidateTriggerActions(authoredScene);
         RuntimeScene = SceneGraphCloner.Clone(authoredScene);
         Behaviours = new SceneBehaviourRuntime(RuntimeScene);
         try
@@ -29,6 +33,28 @@ public sealed class ScenePlaySession : IDisposable
     public SceneGraph RuntimeScene { get; }
     public SceneBehaviourRuntime Behaviours { get; }
     public bool IsDisposed => _disposed;
+    public bool HasReachedGoal => _reachedGoals.Count > 0;
+
+    /// <summary>Raised after a saved trigger action completes in this play session.</summary>
+    public event Action<SceneAuthoredActionEvent>? AuthoredActionExecuted;
+
+    /// <summary>Associates a runtime physics body with its stable scene character identity.</summary>
+    public void BindPhysicsCharacter(PhysicsObjectId physicsObjectId, Guid sceneCharacterId)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (physicsObjectId.Value <= 0)
+            throw new ArgumentOutOfRangeException(nameof(physicsObjectId), "Physics object ID must be valid.");
+        if (sceneCharacterId == Guid.Empty)
+            throw new ArgumentException("Scene character ID cannot be empty.", nameof(sceneCharacterId));
+        if (RuntimeScene.Find(sceneCharacterId) is null)
+            throw new ArgumentException($"Scene character {sceneCharacterId} is not in the runtime scene.", nameof(sceneCharacterId));
+        if (_characterIds.TryGetValue(physicsObjectId, out var existingId) && existingId != sceneCharacterId)
+            throw new InvalidOperationException($"Physics object {physicsObjectId.Value} is already bound to scene character {existingId}.");
+        _characterIds[physicsObjectId] = sceneCharacterId;
+    }
+
+    /// <summary>Removes a physics-to-scene identity association when a character despawns.</summary>
+    public bool UnbindPhysicsCharacter(PhysicsObjectId physicsObjectId) => _characterIds.Remove(physicsObjectId);
 
     /// <summary>Routes physics trigger transitions to behaviours on the trigger scene object.</summary>
     /// <returns>The number of behaviour callbacks invoked for enabled trigger owners.</returns>
@@ -47,11 +73,48 @@ public sealed class ScenePlaySession : IDisposable
                 _ => throw new ArgumentOutOfRangeException(nameof(triggerEvents), triggerEvent.Transition,
                     "Trigger transition is not supported.")
             };
+            var instigatorId = _characterIds.TryGetValue(triggerEvent.OtherPhysicsObjectId, out var characterId)
+                ? characterId
+                : (Guid?)null;
             callbacksInvoked += Behaviours.Interact(triggerEvent.TriggerSceneObjectId, action,
-                physicsInstigatorId: triggerEvent.OtherPhysicsObjectId);
+                instigatorId, triggerEvent.OtherPhysicsObjectId);
+
+            if (triggerEvent.Transition == PhysicsTriggerTransition.Entered
+                && RuntimeScene.Find(triggerEvent.TriggerSceneObjectId) is { Enabled: true, TriggerAction: { } triggerAction } owner)
+                ExecuteTriggerAction(owner, triggerAction, instigatorId, triggerEvent.OtherPhysicsObjectId);
         }
 
         return callbacksInvoked;
+    }
+
+    private void ExecuteTriggerAction(SceneObject owner, SceneTriggerActionComponent triggerAction,
+        Guid? instigatorId, PhysicsObjectId physicsInstigatorId)
+    {
+        switch (triggerAction.Kind)
+        {
+            case SceneTriggerActionKind.Collect:
+                owner.Enabled = false;
+                AuthoredActionExecuted?.Invoke(new SceneAuthoredActionEvent(triggerAction.Kind,
+                    owner.Id, owner.Name, instigatorId, physicsInstigatorId));
+                break;
+            case SceneTriggerActionKind.ReachGoal:
+                if (_reachedGoals.Add(owner.Id))
+                    AuthoredActionExecuted?.Invoke(new SceneAuthoredActionEvent(triggerAction.Kind,
+                        owner.Id, owner.Name, instigatorId, physicsInstigatorId));
+                break;
+            default:
+                throw new InvalidOperationException($"Scene object {owner.Id} has an unsupported trigger action.");
+        }
+    }
+
+    private static void ValidateTriggerActions(SceneGraph scene)
+    {
+        foreach (var item in scene.Objects.Where(item => item.TriggerAction is not null))
+        {
+            if (item.BoxCollider is not { IsTrigger: true })
+                throw new InvalidOperationException(
+                    $"Scene object {item.Id} ({item.Name}) has a trigger action but no trigger box collider.");
+        }
     }
 
     public void Dispose()
@@ -84,6 +147,7 @@ public static class SceneGraphCloner
                 StaticMeshLod = item.StaticMeshLod,
                 CharacterSettings = item.CharacterSettings?.DeepCopy(),
                 BoxCollider = item.BoxCollider,
+                TriggerAction = item.TriggerAction,
                 Door = item.Door,
                 SpawnPoint = item.SpawnPoint,
                 WorldEntity = item.WorldEntity,
@@ -99,6 +163,11 @@ public static class SceneGraphCloner
     }
 
 }
+
+/// <summary>Details of a saved scene action executed by a play session.</summary>
+public readonly record struct SceneAuthoredActionEvent(SceneTriggerActionKind Kind,
+    Guid SceneObjectId, string SceneObjectName, Guid? InstigatorId,
+    PhysicsObjectId PhysicsInstigatorId);
 
 /// <summary>A single gameplay interaction sent to a scene object's compiled behaviour.</summary>
 public readonly record struct SceneInteraction(string Action, Guid? InstigatorId = null,

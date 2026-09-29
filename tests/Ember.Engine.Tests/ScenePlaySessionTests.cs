@@ -52,6 +52,86 @@ public sealed class ScenePlaySessionTests
     }
 
     [Fact]
+    public void SavedTriggerActionRunsOnceAndReportsBoundSceneCharacterIdentity()
+    {
+        var triggerId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var physicsId = new PhysicsObjectId(42);
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(triggerId, "Finish")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal)
+        });
+        scene.Add(new SceneObject(characterId, "Player"));
+
+        using var session = new ScenePlaySession(scene);
+        session.BindPhysicsCharacter(physicsId, characterId);
+        SceneAuthoredActionEvent? executed = null;
+        var actionCount = 0;
+        session.AuthoredActionExecuted += value =>
+        {
+            executed = value;
+            actionCount++;
+        };
+
+        Assert.Equal(0, session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Entered)
+        }));
+        Assert.True(session.HasReachedGoal);
+        Assert.NotNull(executed);
+        Assert.Equal(SceneTriggerActionKind.ReachGoal, executed!.Value.Kind);
+        Assert.Equal(triggerId, executed.Value.SceneObjectId);
+        Assert.Equal(characterId, executed.Value.InstigatorId);
+        Assert.Equal(physicsId, executed.Value.PhysicsInstigatorId);
+
+        session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Exited),
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Entered)
+        });
+        Assert.Equal(1, actionCount);
+        Assert.Equal(characterId, executed.Value.InstigatorId);
+    }
+
+    [Fact]
+    public void SavedCollectActionDisablesItsTriggerOnlyInThePlayClone()
+    {
+        var triggerId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(triggerId, "Coin")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Collect)
+        });
+        using var session = new ScenePlaySession(scene);
+
+        session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, new PhysicsObjectId(2), PhysicsTriggerTransition.Entered)
+        });
+
+        Assert.False(session.RuntimeScene.Find(triggerId)!.Enabled);
+        Assert.True(scene.Find(triggerId)!.Enabled);
+    }
+
+    [Fact]
+    public void InvalidSavedTriggerActionNamesItsOwningObject()
+    {
+        var item = new SceneObject(Guid.NewGuid(), "Broken goal")
+        {
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal)
+        };
+        var scene = new SceneGraph();
+        scene.Add(item);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new ScenePlaySession(scene));
+        Assert.Contains(item.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains(item.Name, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CompiledBehaviourStartsStopsAndReceivesEnabledOwnerInteractionsOnce()
     {
         var scene = new SceneGraph();

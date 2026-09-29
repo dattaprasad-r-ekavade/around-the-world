@@ -14,7 +14,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 15;
+    public const int CurrentVersion = 16;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -96,6 +96,7 @@ public static class SceneFile
                 StaticMeshLod = ToStaticMeshLod(data.StaticMeshLod),
                 CharacterSettings = ToCharacterSettings(data.Character),
                 BoxCollider = ToBoxColliderComponent(data.BoxCollider),
+                TriggerAction = ToTriggerActionComponent(data.TriggerAction),
                 Door = ToDoorComponent(data.Door),
                 SpawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id),
                 WorldEntity = ToWorldEntityComponent(data.WorldEntity),
@@ -144,6 +145,7 @@ public static class SceneFile
                     StaticMeshLod = ToStaticMeshLodData(value.StaticMeshLod),
                     Character = ToCharacterData(value.CharacterSettings),
                     BoxCollider = ToBoxColliderData(value.BoxCollider),
+                    TriggerAction = ToTriggerActionData(value.TriggerAction),
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
                     WorldEntity = ToWorldEntityData(value.WorldEntity),
@@ -261,6 +263,19 @@ public static class SceneFile
                 IsTrigger = component.IsTrigger
             };
 
+    private static SceneTriggerActionComponent? ToTriggerActionComponent(SceneTriggerActionData? data)
+    {
+        if (data is null) return null;
+        try { return new SceneTriggerActionComponent(data.Kind); }
+        catch (ArgumentOutOfRangeException exception)
+        {
+            throw new InvalidDataException($"Scene trigger action is invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static SceneTriggerActionData? ToTriggerActionData(SceneTriggerActionComponent? component) =>
+        component is null ? null : new SceneTriggerActionData { Kind = component.Kind };
+
     private static SceneTemplateInstanceComponent? ToTemplateInstanceComponent(
         SceneTemplateInstanceData? data, int documentVersion)
     {
@@ -322,7 +337,9 @@ public static class SceneFile
                     HasWorldEntityBaseline = baseline.HasWorldEntityBaseline,
                     WorldEntity = ToWorldEntityData(baseline.WorldEntity),
                     HasBoxColliderBaseline = baseline.HasBoxColliderBaseline,
-                    BoxCollider = ToBoxColliderData(baseline.BoxCollider)
+                    BoxCollider = ToBoxColliderData(baseline.BoxCollider),
+                    HasTriggerActionBaseline = baseline.HasTriggerActionBaseline,
+                    TriggerAction = ToTriggerActionData(baseline.TriggerAction)
                 }).ToList(),
                 OrphanedObjectIds = component.OrphanedObjectIds.ToList(),
                 TargetWorldCellId = component.TargetWorldCellId
@@ -375,6 +392,10 @@ public static class SceneFile
             if (!hasBoxColliderBaseline && data.BoxCollider is not null)
                 throw new InvalidDataException("Scene template instance baseline has a box collider without a baseline marker.");
             var boxCollider = ToBoxColliderComponent(data.BoxCollider);
+            var hasTriggerActionBaseline = data.HasTriggerActionBaseline ?? documentVersion < 16;
+            if (!hasTriggerActionBaseline && data.TriggerAction is not null)
+                throw new InvalidDataException("Scene template instance baseline has a trigger action without a baseline marker.");
+            var triggerAction = ToTriggerActionComponent(data.TriggerAction);
             return new SceneTemplateObjectBaseline(data.SourceObjectId, data.Name!, new Transform
             {
                 Position = new Vector3(data.Position[0], data.Position[1], data.Position[2]),
@@ -385,7 +406,7 @@ public static class SceneFile
                 characterSettingsBaseline, hasCharacterSettingsBaseline,
                 door, hasDoorBaseline, spawnPoint, hasSpawnPointBaseline,
                 worldEntity, hasWorldEntityBaseline, data.SourceSpawnPointId,
-                boxCollider, hasBoxColliderBaseline);
+                boxCollider, hasBoxColliderBaseline, triggerAction, hasTriggerActionBaseline);
         }
         catch (ArgumentException exception)
         {
@@ -655,7 +676,14 @@ public static class SceneFile
             || data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
                 && (baseline.HasBoxColliderBaseline is not null || baseline.BoxCollider is not null)) == true))
             throw new InvalidDataException($"Object {data.Id} box collider data requires scene version 15.");
+        if (documentVersion < 16 && (data.TriggerAction is not null
+            || data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.HasTriggerActionBaseline is not null || baseline.TriggerAction is not null)) == true))
+            throw new InvalidDataException($"Object {data.Id} trigger action data requires scene version 16.");
         _ = ToBoxColliderComponent(data.BoxCollider);
+        _ = ToTriggerActionComponent(data.TriggerAction);
+        if (data.TriggerAction is not null && data.BoxCollider is not { IsTrigger: true })
+            throw new InvalidDataException($"Object {data.Id} has a trigger action but no trigger box collider.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -803,6 +831,7 @@ public static class SceneFile
         public SceneMeshLodData? StaticMeshLod { get; set; }
         public SceneCharacterData? Character { get; set; }
         public SceneBoxColliderData? BoxCollider { get; set; }
+        public SceneTriggerActionData? TriggerAction { get; set; }
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
         public SceneWorldEntityData? WorldEntity { get; set; }
@@ -854,6 +883,11 @@ public static class SceneFile
         public float[]? Center { get; set; }
         public float[]? Size { get; set; }
         public bool IsTrigger { get; set; }
+    }
+
+    private sealed class SceneTriggerActionData
+    {
+        public SceneTriggerActionKind Kind { get; set; }
     }
 
     private sealed class SceneSpawnData
@@ -913,6 +947,8 @@ public static class SceneFile
         public SceneWorldEntityData? WorldEntity { get; set; }
         public bool? HasBoxColliderBaseline { get; set; }
         public SceneBoxColliderData? BoxCollider { get; set; }
+        public bool? HasTriggerActionBaseline { get; set; }
+        public SceneTriggerActionData? TriggerAction { get; set; }
     }
 
     private sealed class SceneTemplateCharacterSettingsBaselineData
