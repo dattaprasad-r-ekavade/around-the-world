@@ -84,7 +84,7 @@ steps, fixture, configuration, hardware where relevant, result and artifact loca
 
 ## Current status
 
-Passed: M0.1, M0.2, M0.3, M0.5. Every task not listed here or in the table is **Not started**.
+Passed: M0.1, M0.2, M0.3, M0.5, E.1. Every task not listed here or in the table is **Not started**.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
@@ -99,6 +99,7 @@ Passed: M0.1, M0.2, M0.3, M0.5. Every task not listed here or in the table is **
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery | Manual close-cancel, Save As and project switch; interrupted-work recovery; service boundaries (see E.3) | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; controllable Play character; saved Play settings (scene version 17) | Saved player choice; Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
 | M2.3 | In progress | World validation before packaging; path data packaged; relocation tests reopen packaged worlds | Asset/audio/sequence closure; build panel; relocated playable game | [M2](progress/M2.md) |
+| E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 
 ## Next actions
 
@@ -107,8 +108,9 @@ new default editor panels until the M1 gate passes.
 
 1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
    resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. Rerun Windows CI.
-2. **E.1–E.3:** move the editor into `src/Ember.Editor`, split the two large files, and remove
-   the Authoring → Rpg reference. Record tests and Release captures before and after each step.
+2. **E.2–E.3:** split the two large editor files into focused panels, tools, play controller and
+   project session types, then remove the Authoring → Rpg reference. Record tests and Release
+   captures before and after each step.
 3. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
@@ -160,7 +162,7 @@ or scene file formats. Record tests and Release captures before and after each s
 
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
-| E.1 | Create `src/Ember.Editor` and move the editor out of `samples/CharacterStudio`. | Editor UI, tools, play control and project session live in `Ember.Editor`. CharacterStudio is a thin sample that starts the editor with its showcase scene. All tests pass; Release captures of Home, starter scene and showcase scene match the pre-move captures. | Not started |
+| E.1 | Create `src/Ember.Editor` and move the editor out of `samples/CharacterStudio`. | Editor UI, tools, play control and project session live in `Ember.Editor`. CharacterStudio is a thin sample that starts the editor; Home remains the default, and the bundled showcase scene opens through `--open`. All tests pass; Release captures of Home, starter scene and showcase scene match the pre-move captures. | **Passed** |
 | E.2 | Split `CharacterStudioGame.cs` and `CharacterStudioEditorUi.cs`. | Separate panels, tools, play controller and project session types; no source file over about 800 lines. Behaviour, command history and saved data are unchanged; tests and captures match. | Not started |
 | E.3 | Remove the `Ember.Authoring` → `Ember.Rpg` reference. | RPG authoring moves to an optional module. Generic authoring and the editor build and start without Ember.Rpg. RpgSlice, Campaign and the RPG check still build and pass. | Not started |
 
