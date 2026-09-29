@@ -2731,3 +2731,27 @@ M1.1/UX.1–UX.5 workflow verification without treating automated tests as UI ev
 
 Next: continue the ordered M1.1 and UX workflow implementation; keep manual acceptance open until the
 desktop computer-use runtime is available.
+
+## M1.1 open world-only projects — 29 September 2026
+
+- `EngineProjectWorkspace.ResolveInitialScenePath` retains an explicit project startup scene, or loads
+  the first declared cell scene when a project contains only a world manifest. A malformed or empty
+  world cannot silently fall back to a sample scene.
+- CharacterStudio now uses the shared resolver both for `--project` startup and for Open Project. The
+  project model already allowed world-only files, but both editor paths previously called
+  `ResolveStartupScenePath` directly and failed before showing the authored world.
+- M1.1 remains **In progress**. The API regression proves the world-only scene choice; editor picker,
+  preview, import and reopen interactions still require the live UI gate.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `EngineProjectFileTests` Release run | PASS — 18 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 343 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+| Interactive project-open and world-cell walkthrough | NOT RUN — computer-use runtime failed to initialize with missing kernel assets |
+
+Next: verify project opening and cell switching in the editor when desktop input is available; keep
+M1.1 and UX.1–UX.5 open until the complete authoring loop is observed.

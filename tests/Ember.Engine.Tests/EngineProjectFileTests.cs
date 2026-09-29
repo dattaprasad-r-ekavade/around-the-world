@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text.Json.Nodes;
 using Ember.Project;
 using Ember.Scene;
+using Ember.World;
 using SharpGLTF.Schema2;
 using Xunit;
 
@@ -50,6 +51,53 @@ public sealed class EngineProjectFileTests
         finally
         {
             if (Directory.Exists(parent)) Directory.Delete(parent, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void ResolveInitialSceneUsesFirstManifestCellWhenProjectHasNoStartupScene()
+    {
+        var parent = NewDirectory();
+        try
+        {
+            var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(parent, "Game"));
+            var worldDirectory = Path.Combine(project.RootDirectory, "Content", "World");
+            var exteriorScenePath = Path.Combine(worldDirectory, "Scenes", "Exterior.json");
+            var interiorScenePath = Path.Combine(worldDirectory, "Interiors", "House.json");
+            SceneFile.SaveAtomic(new SceneGraph(), exteriorScenePath);
+            SceneFile.SaveAtomic(new SceneGraph(), interiorScenePath);
+
+            var exteriorId = Guid.NewGuid();
+            var interiorId = Guid.NewGuid();
+            var manifestPath = Path.Combine(worldDirectory, "world.json");
+            WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition
+                {
+                    Id = exteriorId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(0, 0),
+                    ScenePath = "Scenes/Exterior.json"
+                },
+                new WorldCellDefinition
+                {
+                    Id = interiorId,
+                    Kind = WorldCellKind.Interior,
+                    ScenePath = "Interiors/House.json"
+                }
+            ]);
+            EngineProjectFile.SaveAtomic(project.FilePath, startupScenePath: null,
+                worldManifestPath: "Content/World/world.json");
+            var worldProject = EngineProjectFile.Load(project.FilePath);
+
+            var initialScenePath = EngineProjectWorkspace.ResolveInitialScenePath(worldProject);
+
+            Assert.Equal(Path.GetFullPath(exteriorScenePath), initialScenePath);
+            Assert.Equal(Path.GetFullPath(worldProject.ResolveWorldManifestPath()!), Path.GetFullPath(manifestPath));
+        }
+        finally
+        {
+            Directory.Delete(parent, recursive: true);
         }
     }
 

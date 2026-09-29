@@ -204,7 +204,7 @@ public sealed class CharacterStudioGame : EngineHost
         {
             _project = EngineProjectFile.Load(projectPath);
             RecordRecentProject(_project.FilePath);
-            openPath = _project.ResolveStartupScenePath();
+            openPath = EngineProjectWorkspace.ResolveInitialScenePath(_project);
         }
         _openSequencePath = ParseOption(args, "--open-sequence");
         _saveSequencePath = ParseOption(args, "--save-sequence");
@@ -2432,7 +2432,7 @@ public sealed class CharacterStudioGame : EngineHost
             ? Path.Combine(Path.GetFullPath(projectPath), EngineProjectFile.DefaultFileName)
             : Path.GetFullPath(projectPath);
         var project = EngineProjectFile.Load(fullProjectPath);
-        var scenePath = project.ResolveStartupScenePath();
+        var scenePath = EngineProjectWorkspace.ResolveInitialScenePath(project);
         var scene = SceneFile.Load(scenePath);
         PreviewResources? candidatePreview = null;
         try

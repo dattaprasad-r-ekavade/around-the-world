@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Text.Json;
 using Ember.Scene;
+using Ember.World;
 
 namespace Ember.Project;
 
@@ -40,6 +41,20 @@ public static class EngineProjectWorkspace
         }
 
         return EngineProjectFile.Load(Path.Combine(destination, EngineProjectFile.DefaultFileName));
+    }
+
+    /// <summary>Resolve the editor's first scene from a startup scene or the first declared world cell.</summary>
+    public static string ResolveInitialScenePath(EngineProjectFile project)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        if (project.StartupScenePath is not null) return project.ResolveStartupScenePath();
+        if (project.WorldManifestPath is null)
+            throw new InvalidDataException($"Project '{project.FilePath}' has neither a startup scene nor a world manifest.");
+
+        var world = WorldManifest.Load(project.ResolveWorldManifestPath());
+        var firstCell = world.Cells.FirstOrDefault()
+            ?? throw new InvalidDataException($"World manifest '{project.WorldManifestPath}' has no cells to open.");
+        return world.ResolveScenePath(firstCell.Id);
     }
 
     public static EngineProjectAssetImport ImportGlb(EngineProjectFile project, string sourcePath)

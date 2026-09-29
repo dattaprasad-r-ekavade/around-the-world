@@ -159,6 +159,10 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 | M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | **In progress** |
 | M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | **In progress** |
 
+Project opening now resolves the initial scene consistently: an explicit startup scene takes
+priority, while a project with only a world manifest opens its first declared cell. CharacterStudio's
+command-line and Open Project paths use this resolver; button-driven verification remains open.
+
 M1.4 now tracks saved positions in scene command history, shows unsaved scene changes, offers Save As
 for untitled scenes, prompts before project changes, and intercepts window close with save/close/cancel
 choices. Project switching rejects a dirty untitled scene unless the user saves it first. These
