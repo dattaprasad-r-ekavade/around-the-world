@@ -2809,3 +2809,24 @@ static colliders to runtime physics and implement trigger overlap events.
 
 Next: expose collider editing and visual feedback in the existing Inspector, then add trigger overlap
 events without treating skipped triggers as functional interactions.
+
+## M2.1 Inspector collider controls — 29 September 2026
+
+- The existing Inspector now has an optional Box collider section. It can add or remove the component,
+  edit its local center and dimensions, and mark it as a trigger. Completed edits use
+  `EditBoxColliderCommand`, so the normal undo/redo and saved-state tracking apply. Nonpositive size
+  input is kept above the component's minimum valid dimension.
+- The Inspector explains local-space values and warns that trigger overlap events are not available
+  yet. This adds no new editor panel; viewport collider visualization is still outstanding.
+- M2.1 remains **In progress**. The Inspector code has compiled, but its mouse/keyboard workflow has
+  not been manually verified in the live editor.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| CharacterStudio Release build | PASS — 0 warnings, 0 errors |
+| Interactive Inspector edit, undo and save/reopen | NOT RUN — desktop computer-use runtime is unavailable in this environment |
+
+Next: add collider viewport feedback and verify Inspector edits through visible controls; continue
+with trigger overlap, then player/camera settings, input actions and behavior assignments.

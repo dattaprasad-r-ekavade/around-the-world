@@ -230,7 +230,9 @@ collider defaults and local overrides across explicit updates; undo/redo, duplic
 cloning retain the component. `SceneStaticColliderSet` builds removable static PhysicsWorld boxes
 from enabled scene objects and their world transforms; it reports sheared transforms and skips
 trigger volumes pending overlap support. Runtime trigger evaluation, player/camera settings, input
-actions, behavior assignments, and visible Inspector/What happens? controls remain open.
+actions, behavior assignments and the beginner What happens? presets remain open. The existing
+Inspector now has optional box-collider add/remove and center/size/trigger controls; live editor
+interaction and viewport collider visualization still need verification and implementation.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.

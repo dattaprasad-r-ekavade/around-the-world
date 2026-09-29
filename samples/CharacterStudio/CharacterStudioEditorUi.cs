@@ -129,6 +129,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private Guid? _selectedAssetId;
     private Guid? _activeTransformObjectId;
     private Transform? _activeTransformStart;
+    private Guid? _activeBoxColliderObjectId;
+    private SceneBoxColliderComponent? _activeBoxColliderStart;
     private Guid? _activeCharacterTimeObjectId;
     private float _activeCharacterTimeStart;
     private float _activeCharacterTimeCurrent;
@@ -346,6 +348,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _selectedAssetId = null;
         _activeTransformObjectId = null;
         _activeTransformStart = null;
+        _activeBoxColliderObjectId = null;
+        _activeBoxColliderStart = null;
         _initialSelectionSet = false;
     }
 
@@ -1814,7 +1818,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         DrawSceneHierarchy(scene);
         ImGui.EndChild();
 
-        if (_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
+        if ((_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
+            || (_activeBoxColliderObjectId is not null && _selectedObjectId != _activeBoxColliderObjectId))
             CommitActiveTransformEdit(scene);
 
         if (_selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
@@ -1915,6 +1920,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             ImGui.TreePop();
         }
 
+        DrawBoxColliderControls(scene, selected);
         DrawCharacterControls(selected);
         DrawLightingControls();
         ImGui.End();
@@ -2346,6 +2352,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void CommitActiveTransformEdit(SceneGraph scene)
     {
+        CommitActiveBoxColliderEdit(scene);
         CommitActiveCharacterTimeEdit();
         if (_activeTransformObjectId is not { } objectId || _activeTransformStart is not { } before)
         {
@@ -2362,6 +2369,106 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         item.Transform = SceneTransformCopy(before);
         _history.Execute(scene, new TransformEditCommand(objectId, before, after));
     }
+
+    private void DrawBoxColliderControls(SceneGraph scene, SceneObject selected)
+    {
+        ImGui.Separator();
+        if (!ImGui.TreeNode("Box collider")) return;
+
+        if (selected.BoxCollider is not { } collider)
+        {
+            ImGui.TextWrapped("A box collider lets this object block a character in Play mode.");
+            if (ImGui.Button("Add box collider", new NumericsVector2(-1f, 30f)))
+            {
+                CommitActiveBoxColliderEdit(scene);
+                var replacement = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One);
+                _history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, replacement));
+                _projectWorkspaceStatus = $"Added a box collider to {selected.Name}.";
+            }
+            ImGui.TreePop();
+            return;
+        }
+
+        ImGui.TextWrapped("The center and size are measured in this object's local space.");
+        var center = new NumericsVector3(collider.Center.X, collider.Center.Y, collider.Center.Z);
+        ImGui.SetNextItemWidth(-1f);
+        var centerChanged = ImGui.InputFloat3("Center", ref center);
+        SceneBoxColliderComponent? centerReplacement = null;
+        if (centerChanged && IsFinite(center))
+            centerReplacement = new SceneBoxColliderComponent(
+                new Vector3(center.X, center.Y, center.Z), collider.Size, collider.IsTrigger);
+        TrackBoxColliderInput(scene, selected, collider, centerChanged, centerReplacement);
+
+        collider = selected.BoxCollider ?? collider;
+        var size = new NumericsVector3(collider.Size.X, collider.Size.Y, collider.Size.Z);
+        ImGui.SetNextItemWidth(-1f);
+        var sizeChanged = ImGui.InputFloat3("Size", ref size);
+        SceneBoxColliderComponent? sizeReplacement = null;
+        if (sizeChanged && IsFinite(size))
+            sizeReplacement = new SceneBoxColliderComponent(
+                collider.Center,
+                new Vector3(MathF.Max(0.01f, size.X), MathF.Max(0.01f, size.Y), MathF.Max(0.01f, size.Z)),
+                collider.IsTrigger);
+        TrackBoxColliderInput(scene, selected, collider, sizeChanged, sizeReplacement);
+
+        collider = selected.BoxCollider ?? collider;
+        var isTrigger = collider.IsTrigger;
+        if (ImGui.Checkbox("Use as trigger", ref isTrigger))
+        {
+            var replacement = new SceneBoxColliderComponent(collider.Center, collider.Size, isTrigger);
+            TrackBoxColliderInput(scene, selected, collider, changed: true, replacement);
+        }
+        if (isTrigger)
+            ImGui.TextWrapped("Trigger volumes are saved, but overlap events are not active yet.");
+
+        if (ImGui.Button("Remove box collider", new NumericsVector2(-1f, 30f)))
+        {
+            CommitActiveBoxColliderEdit(scene);
+            _history.Execute(scene, new EditBoxColliderCommand(selected.Id, selected.BoxCollider, null));
+            _projectWorkspaceStatus = $"Removed the box collider from {selected.Name}.";
+        }
+        ImGui.TreePop();
+    }
+
+    private void TrackBoxColliderInput(SceneGraph scene, SceneObject selected,
+        SceneBoxColliderComponent beforeInput, bool changed, SceneBoxColliderComponent? replacement)
+    {
+        if (ImGui.IsItemActivated() || (changed && _activeBoxColliderObjectId != selected.Id))
+        {
+            if (_activeBoxColliderObjectId is not null && _activeBoxColliderObjectId != selected.Id)
+                CommitActiveBoxColliderEdit(scene);
+            _activeBoxColliderObjectId = selected.Id;
+            _activeBoxColliderStart = beforeInput;
+        }
+
+        if (changed && replacement is not null) selected.BoxCollider = replacement;
+        if (ImGui.IsItemDeactivatedAfterEdit()) CommitActiveBoxColliderEdit(scene);
+    }
+
+    private void CommitActiveBoxColliderEdit(SceneGraph scene)
+    {
+        if (_activeBoxColliderObjectId is not { } objectId
+            || _activeBoxColliderStart is not { } before)
+        {
+            _activeBoxColliderObjectId = null;
+            _activeBoxColliderStart = null;
+            return;
+        }
+
+        _activeBoxColliderObjectId = null;
+        _activeBoxColliderStart = null;
+        if (scene.Find(objectId) is not { } item) return;
+        var after = item.BoxCollider;
+        if (BoxCollidersEqual(before, after)) return;
+        item.BoxCollider = before;
+        _history.Execute(scene, new EditBoxColliderCommand(objectId, before, after));
+        _projectWorkspaceStatus = $"Updated the box collider on {item.Name}.";
+    }
+
+    private static bool BoxCollidersEqual(SceneBoxColliderComponent? left,
+        SceneBoxColliderComponent? right) => left is null ? right is null
+        : right is not null && left.Center == right.Center && left.Size == right.Size
+            && left.IsTrigger == right.IsTrigger;
 
     private void CommitActiveCharacterTimeEdit()
     {
