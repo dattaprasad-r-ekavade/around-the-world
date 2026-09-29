@@ -385,6 +385,7 @@ continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as in
 | `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 370 passed, 0 failed, 0 skipped |
 | `EditorUiAssetsTests.ReadableEditorFontAndLicenseAreCopiedBesideTheHost` | PASS — font and license are present in test output; Release build also copied them beside CharacterStudio |
 | CharacterStudio Release scene capture | PASS — exit 0, stderr empty; `%TEMP%/Ember/UxReadableFont/98c1aa22e0b44c03a7c4b86e17ed43db/starter-scene.png` |
+| Hosted Windows CI | PASS — [run 36603972718](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36603972718) for `fad1f66` |
 | Interactive typography and DPI checks | NOT RUN — 100%/150% scaling and keyboard focus were not exercised |
 
 Next: complete the live UX.1–UX.4 workflow checks, including readable typography at both required
