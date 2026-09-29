@@ -382,7 +382,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(45f, overriddenLod.ExitFarDistance);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(13, SceneFile.CurrentVersion);
+            Assert.Equal(14, SceneFile.CurrentVersion);
             var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .ToDictionary(baseline => baseline.SourceObjectId);
             Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
@@ -497,7 +497,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(13, SceneFile.CurrentVersion);
+            Assert.Equal(14, SceneFile.CurrentVersion);
             var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
             Assert.Equal("Walk", characterBaseline.ClipName);
@@ -696,6 +696,150 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
+    public void UpdateMergesWorldComponentBaselinesAndPreservesLocalOverrides()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var sourceSpawnId = Guid.NewGuid();
+            var updatedSourceSpawnId = Guid.NewGuid();
+            var destinationCellId = Guid.NewGuid();
+            var externalSpawnId = Guid.NewGuid();
+            var entityInstanceId = Guid.NewGuid();
+            var localEntityInstanceId = Guid.NewGuid();
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Room");
+            var spawnObject = new SceneObject(Guid.NewGuid(), "Entry spawn")
+            {
+                SpawnPoint = new WorldSpawnComponent(sourceSpawnId)
+            };
+            var doorObject = new SceneObject(Guid.NewGuid(), "Entry door")
+            {
+                Door = new WorldDoorComponent(Guid.NewGuid(), sourceSpawnId, Quaternion.Identity)
+            };
+            var entityObject = new SceneObject(Guid.NewGuid(), "Room item")
+            {
+                WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item,
+                    "items.old", entityInstanceId)
+            };
+            var overriddenDoorObject = new SceneObject(Guid.NewGuid(), "Local door")
+            {
+                Door = new WorldDoorComponent(Guid.NewGuid(), sourceSpawnId, Quaternion.Identity)
+            };
+            var overriddenEntityObject = new SceneObject(Guid.NewGuid(), "Local item")
+            {
+                WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item,
+                    "items.old", localEntityInstanceId)
+            };
+            var removedComponentsObject = new SceneObject(Guid.NewGuid(), "Retired components")
+            {
+                Door = new WorldDoorComponent(Guid.NewGuid(), Guid.NewGuid(), Quaternion.Identity),
+                SpawnPoint = new WorldSpawnComponent(Guid.NewGuid()),
+                WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item,
+                    "items.retired", Guid.NewGuid())
+            };
+            foreach (var item in new[] { root, spawnObject, doorObject, entityObject,
+                         overriddenDoorObject, overriddenEntityObject, removedComponentsObject })
+                source.Add(item);
+            foreach (var item in new[] { spawnObject, doorObject, entityObject,
+                         overriddenDoorObject, overriddenEntityObject, removedComponentsObject })
+                source.SetParent(item.Id, root.Id);
+
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var scene = new SceneGraph();
+            var targetCellId = Guid.NewGuid();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision,
+                Vector3.Zero, targetCellId);
+            var wrapperId = wrapper.Id;
+            var mappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var localSpawnId = Guid.NewGuid();
+            scene.Find(mappings[spawnObject.Id])!.SpawnPoint = new WorldSpawnComponent(localSpawnId);
+            var entityInstanceIdInScene = scene.Find(mappings[entityObject.Id])!.WorldEntity!.InstanceId;
+            var localDoor = new WorldDoorComponent(Guid.NewGuid(), externalSpawnId,
+                Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.PiOver2));
+            scene.Find(mappings[overriddenDoorObject.Id])!.Door = localDoor;
+            scene.Find(mappings[overriddenEntityObject.Id])!.WorldEntity =
+                new WorldEntityPlacementComponent(WorldEntityKind.Item, "items.local", localEntityInstanceId);
+
+            // The baseline, including stable component IDs, must survive a scene save/reopen.
+            scene = SceneFile.FromJson(SceneFile.ToJson(scene));
+            var persistedWrapper = scene.Find(wrapperId)!;
+            var persistedBaselines = persistedWrapper.TemplateInstance!.ObjectBaselines
+                .ToDictionary(baseline => baseline.SourceObjectId);
+            Assert.True(persistedBaselines[spawnObject.Id].HasSpawnPointBaseline);
+            Assert.True(persistedBaselines[doorObject.Id].HasDoorBaseline);
+            Assert.True(persistedBaselines[entityObject.Id].HasWorldEntityBaseline);
+
+            var updatedFacing = Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.PiOver2);
+            spawnObject.SpawnPoint = new WorldSpawnComponent(updatedSourceSpawnId);
+            doorObject.Door = new WorldDoorComponent(Guid.NewGuid(), updatedSourceSpawnId, updatedFacing);
+            entityObject.WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item,
+                "items.updated", entityInstanceId);
+            overriddenDoorObject.Door = new WorldDoorComponent(Guid.NewGuid(), updatedSourceSpawnId,
+                Quaternion.CreateFromAxisAngle(Vector3.Up, MathHelper.Pi));
+            overriddenEntityObject.WorldEntity = new WorldEntityPlacementComponent(WorldEntityKind.Item,
+                "items.updated", localEntityInstanceId);
+            removedComponentsObject.Door = null;
+            removedComponentsObject.SpawnPoint = null;
+            removedComponentsObject.WorldEntity = null;
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var history = new SceneCommandHistory();
+            var command = new UpdateSceneTemplateCommand(wrapperId, secondRevision);
+
+            history.Execute(scene, command);
+
+            var updatedSpawn = scene.Find(mappings[spawnObject.Id])!.SpawnPoint!;
+            Assert.Equal(localSpawnId, updatedSpawn.Id);
+            var updatedDoor = scene.Find(mappings[doorObject.Id])!.Door!;
+            Assert.Equal(targetCellId, updatedDoor.DestinationCellId);
+            Assert.Equal(localSpawnId, updatedDoor.DestinationSpawnId);
+            Assert.True(MathF.Abs(Quaternion.Dot(updatedFacing, updatedDoor.Facing)) > 0.99999f);
+            Assert.Equal("items.updated", scene.Find(mappings[entityObject.Id])!.WorldEntity!.DefinitionId);
+            Assert.Equal(entityInstanceIdInScene,
+                scene.Find(mappings[entityObject.Id])!.WorldEntity!.InstanceId);
+            Assert.Equal(localDoor.DestinationCellId,
+                scene.Find(mappings[overriddenDoorObject.Id])!.Door!.DestinationCellId);
+            Assert.Equal(localDoor.DestinationSpawnId,
+                scene.Find(mappings[overriddenDoorObject.Id])!.Door!.DestinationSpawnId);
+            Assert.True(MathF.Abs(Quaternion.Dot(localDoor.Facing,
+                scene.Find(mappings[overriddenDoorObject.Id])!.Door!.Facing)) > 0.99999f);
+            Assert.Equal("items.local",
+                scene.Find(mappings[overriddenEntityObject.Id])!.WorldEntity!.DefinitionId);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.Door);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.SpawnPoint);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.WorldEntity);
+
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            var savedSpawnBaseline = reopened.Find(wrapperId)!.TemplateInstance!.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == spawnObject.Id);
+            Assert.Equal(updatedSourceSpawnId, savedSpawnBaseline.SourceSpawnPointId);
+            Assert.Equal("items.updated",
+                reopened.Find(wrapperId)!.TemplateInstance!.ObjectBaselines
+                    .Single(baseline => baseline.SourceObjectId == entityObject.Id)
+                    .WorldEntity!.DefinitionId);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal("items.old", scene.Find(mappings[entityObject.Id])!.WorldEntity!.DefinitionId);
+            Assert.Equal(localSpawnId, scene.Find(mappings[spawnObject.Id])!.SpawnPoint!.Id);
+            Assert.NotNull(scene.Find(mappings[removedComponentsObject.Id])!.Door);
+            Assert.True(MathF.Abs(Quaternion.Dot(localDoor.Facing,
+                scene.Find(mappings[overriddenDoorObject.Id])!.Door!.Facing)) > 0.99999f);
+            Assert.True(history.Redo(scene));
+            Assert.Equal("items.updated", scene.Find(mappings[entityObject.Id])!.WorldEntity!.DefinitionId);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.Door);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.SpawnPoint);
+            Assert.Null(scene.Find(mappings[removedComponentsObject.Id])!.WorldEntity);
+            Assert.True(MathF.Abs(Quaternion.Dot(localDoor.Facing,
+                scene.Find(mappings[overriddenDoorObject.Id])!.Door!.Facing)) > 0.99999f);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void VersionEightInstancesLoadWithoutBaselinesAndCannotBeUpdatedUnsafely()
     {
         var path = TemporaryTemplatePath();
@@ -762,6 +906,7 @@ public sealed class SceneTemplateInstanceSystemTests
                 baseline.AsObject().Remove("StaticMeshLod");
                 baseline.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
+                RemoveVersionFourteenWorldBaselines(baseline.AsObject());
             }
 
             var migrated = SceneFile.FromJson(versionNineJson.ToJsonString());
@@ -846,6 +991,7 @@ public sealed class SceneTemplateInstanceSystemTests
                 baseline.AsObject().Remove("StaticMeshLod");
                 baseline.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
+                RemoveVersionFourteenWorldBaselines(baseline.AsObject());
             }
             var migrated = SceneFile.FromJson(versionTenJson.ToJsonString());
             var migratedWrapper = migrated.Find(wrapper.Id)!;
@@ -916,6 +1062,7 @@ public sealed class SceneTemplateInstanceSystemTests
             {
                 baseline!.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
+                RemoveVersionFourteenWorldBaselines(baseline.AsObject());
             }
             var migrated = SceneFile.FromJson(versionElevenJson.ToJsonString());
             var migratedWrapper = migrated.Find(wrapper.Id)!;
@@ -940,6 +1087,17 @@ public sealed class SceneTemplateInstanceSystemTests
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    private static void RemoveVersionFourteenWorldBaselines(JsonObject baseline)
+    {
+        baseline.Remove("HasDoorBaseline");
+        baseline.Remove("Door");
+        baseline.Remove("HasSpawnPointBaseline");
+        baseline.Remove("SpawnPoint");
+        baseline.Remove("SourceSpawnPointId");
+        baseline.Remove("HasWorldEntityBaseline");
+        baseline.Remove("WorldEntity");
     }
 
     private static SceneGraph CreateSourceHierarchy(out Guid rootId, out Guid childId,

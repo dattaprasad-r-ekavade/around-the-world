@@ -2410,3 +2410,117 @@ attachment synchronization, remaining world components, editor controls and reli
 
 Next: add stable attachment-source mappings and merge attachment additions, removals and overrides;
 then implement template workflow controls and broken-source relinking in CharacterStudio.
+
+## M1.3 version-13 attachment baselines and synchronization — 29 September 2026
+
+- Scene version 13 stores each template attachment's stable source ID, remapped instance ID and
+  source bone/offset defaults. Existing instance attachment IDs remain stable across updates.
+- An explicit update refreshes an attachment only when it still matches the previous template
+  default. New template attachments get unique instance IDs; unchanged removed attachments are
+  deleted; edited attachments and instance-only attachments are retained. Removing a character
+  component from the source removes only an unchanged instance component. Undo/redo restores the
+  previous settings and attachment list.
+- Version-12 baselines without attachment identity mappings remain readable. Their first update
+  conservatively preserves uncertain instance content while recording a source mapping for future
+  revisions.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Template, scene persistence and world-travel focused tests | PASS — 30 tests, 0 failures |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 327 passed, 0 failed |
+| Remote revision | PASS — `944fb7c` on `origin/master` |
+| Visible template placement/update/relink workflow | NOT RUN — CharacterStudio has no scene-template workflow controls yet |
+
+M1.3 remains **In progress**. Door/spawn/world-entity overrides, editor placement/update controls,
+visible orphan warnings and source relinking remain open.
+
+Next: follow the roadmap's M0.4 and UX.1–UX.4 evidence order before extending M1.3's visible
+workflow.
+
+## UX.1 opaque Home background and current Release captures — 29 September 2026
+
+- Home now paints an opaque full-window background, preventing the active 3D preview from showing
+  through its project choices.
+- Move/Turn/Size help text now wraps inside the Inspector instead of clipping at its right edge.
+- Release Home and `ReleaseAShowcase.json` were captured at 1280×720 on Windows 11 build 26200
+  with .NET 9.0.19. The Home capture shows Game, Film and Open choices; the scene capture shows the
+  courtyard, animated characters, Add library, Inspector and viewport gizmo without a black scene.
+  The Move hint is fully readable across two lines in the updated capture.
+- Both screenshot processes exited successfully and wrote no stderr. Evidence is in
+  `%TEMP%/Ember/ManualGraphicsGate/035a4dbcc58c43608d26b0c166b0496e/` (`home.png`,
+  `starter-scene.png`, and stdout/stderr files).
+- `mcp__cua_repl` failed to initialize twice with `failed to write kernel assets: The system cannot
+  find the path specified (os error 3)`. Window resize, DPI scaling, mouse interaction, save/reopen,
+  Play/Stop and keyboard-focus checks remain unverified; these captures do not close the manual
+  graphics gate or UX.1 acceptance.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build after Home background change | PASS — 0 warnings, 0 errors |
+| Home and starter-scene captures | PASS — both 1280×720; exit 0; stderr empty |
+| Interactive desktop verification | NOT RUN — Windows computer-use helper initialization failed |
+
+UX.1 remains **In progress**. The opaque Home backdrop is verified in a Release capture; resize,
+DPI, Reset layout, focus, and the visual create/edit/undo/play/save/reopen actions remain open.
+
+Next: resume the visual workflow gate when desktop input is available, while checking M0.4
+persistence coverage and continuing the code work that does not require mouse interaction.
+
+## M0.4 current persistence-coverage audit — 29 September 2026
+
+- Rechecked the current failure-path tests against the M0.4 acceptance list. `AtomicFileTests`
+  verifies interrupted writes and destination replacement failures preserve the prior file and
+  remove temporary files. `WorldSaveFileTests` verifies failed restore leaves all target stores
+  empty, failed replacement preserves the previous save, and unknown schema members and versions
+  are rejected. `CellActivationQueueTests.CancelBeforeFirstStepDisposesStepperAndPreparedData`
+  checks cancellation cleanup. `AuthoredProjectRecoveryServiceTests` verifies staged recovery
+  leaves source files and the player save unchanged.
+- `.github/workflows/windows-engine.yml` and `MANUAL_GRAPHICS_GATE.md` are present. The Release
+  solution build and all 327 `Ember.Engine.Tests` pass locally. These checks support the CPU/data
+  safety portion only; the required interactive resize, save/reopen and Play/Stop evidence is still
+  missing, so M0.4 remains **In progress**.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Full `Ember.Engine.Tests` run after current UI edits | PASS — 327 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| M0.4 failure-path test/source audit | PASS — interrupted write, failed replacement/restore, cancellation cleanup and schema rejection are covered |
+| Interactive manual graphics gate | NOT RUN — computer-use helper initialization failed twice |
+
+Next: rerun the manual graphics gate when a desktop input helper is available; keep implementation
+and CPU validation moving while that external interaction capability is unavailable.
+
+## M1.3 version-14 world-component baselines and synchronization — 29 September 2026
+
+- Scene version 14 persists template baselines for doors, spawn markers and placed world entities,
+  including source spawn IDs alongside instance-remapped spawn IDs. Older version-9 through
+  version-13 scenes remain loadable; legacy baseline data is treated conservatively until updated.
+- Explicit template updates refresh unchanged door, spawn and world-entity components, preserve
+  local component overrides, keep mapped component IDs stable, and remove source components only
+  when their instance values still match the previous baseline. Door links continue to resolve to
+  the mapped spawn when that source spawn changes or is removed.
+- Template undo/redo now restores these components with the rest of the instance state. A focused
+  regression test covers save/reopen, source updates, local overrides, mapped IDs and undo/redo.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused template, scene persistence and world-travel tests | PASS — 31 passed, 0 failed |
+| Full Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 328 passed, 0 failed |
+| `git diff --check` | PASS |
+| Interactive manual graphics gate | NOT RUN — computer-use helper initialization failed twice; M0.4 and UX.1 remain open |
+
+M1.3 remains **In progress**. Editor placement/update controls, visible orphan warnings and broken
+source relinking remain open. The manual graphics gate remains a separate acceptance dependency.
+
+Next: implement the template workflow in CharacterStudio and continue the M0.4/UX manual evidence
+when desktop input is available.

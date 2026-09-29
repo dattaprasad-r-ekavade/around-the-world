@@ -117,7 +117,11 @@ public sealed class SceneTemplateObjectBaseline
         GltfAssetReference? gltfAsset = null, bool hasGltfAssetBaseline = false,
         GltfStaticMeshLod? staticMeshLod = null, bool hasStaticMeshLodBaseline = false,
         SceneTemplateCharacterSettingsBaseline? characterSettingsBaseline = null,
-        bool hasCharacterSettingsBaseline = false)
+        bool hasCharacterSettingsBaseline = false,
+        WorldDoorComponent? door = null, bool hasDoorBaseline = false,
+        WorldSpawnComponent? spawnPoint = null, bool hasSpawnPointBaseline = false,
+        WorldEntityPlacementComponent? worldEntity = null, bool hasWorldEntityBaseline = false,
+        Guid? sourceSpawnPointId = null)
     {
         if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
@@ -134,6 +138,18 @@ public sealed class SceneTemplateObjectBaseline
             throw new ArgumentException("Static-mesh LOD requires an available source baseline.", nameof(staticMeshLod));
         if (!hasCharacterSettingsBaseline && characterSettingsBaseline is not null)
             throw new ArgumentException("Character settings require an available source baseline.", nameof(characterSettingsBaseline));
+        if (!hasDoorBaseline && door is not null)
+            throw new ArgumentException("A door component requires an available source baseline.", nameof(door));
+        if (!hasSpawnPointBaseline && spawnPoint is not null)
+            throw new ArgumentException("A spawn component requires an available source baseline.", nameof(spawnPoint));
+        if (sourceSpawnPointId == Guid.Empty)
+            throw new ArgumentException("Template source spawn ID cannot be empty.", nameof(sourceSpawnPointId));
+        if (hasSpawnPointBaseline && ((spawnPoint is null) != (sourceSpawnPointId is null)))
+            throw new ArgumentException("Template source and instance spawn baselines must be saved together.", nameof(sourceSpawnPointId));
+        if (!hasSpawnPointBaseline && sourceSpawnPointId is not null)
+            throw new ArgumentException("A source spawn ID requires an available spawn baseline.", nameof(sourceSpawnPointId));
+        if (!hasWorldEntityBaseline && worldEntity is not null)
+            throw new ArgumentException("A world entity requires an available source baseline.", nameof(worldEntity));
 
         SourceObjectId = sourceObjectId;
         Name = name;
@@ -148,6 +164,13 @@ public sealed class SceneTemplateObjectBaseline
         HasStaticMeshLodBaseline = hasStaticMeshLodBaseline;
         CharacterSettingsBaseline = characterSettingsBaseline;
         HasCharacterSettingsBaseline = hasCharacterSettingsBaseline;
+        Door = door;
+        HasDoorBaseline = hasDoorBaseline;
+        SpawnPoint = spawnPoint;
+        HasSpawnPointBaseline = hasSpawnPointBaseline;
+        SourceSpawnPointId = sourceSpawnPointId;
+        WorldEntity = worldEntity;
+        HasWorldEntityBaseline = hasWorldEntityBaseline;
     }
 
     public Guid SourceObjectId { get; }
@@ -163,6 +186,13 @@ public sealed class SceneTemplateObjectBaseline
     public bool HasStaticMeshLodBaseline { get; }
     public SceneTemplateCharacterSettingsBaseline? CharacterSettingsBaseline { get; }
     public bool HasCharacterSettingsBaseline { get; }
+    public WorldDoorComponent? Door { get; }
+    public bool HasDoorBaseline { get; }
+    public WorldSpawnComponent? SpawnPoint { get; }
+    public bool HasSpawnPointBaseline { get; }
+    public Guid? SourceSpawnPointId { get; }
+    public WorldEntityPlacementComponent? WorldEntity { get; }
+    public bool HasWorldEntityBaseline { get; }
 
     public Transform ToTransform() => new()
     {

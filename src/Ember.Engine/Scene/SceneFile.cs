@@ -14,7 +14,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 13;
+    public const int CurrentVersion = 14;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -281,7 +281,15 @@ public static class SceneFile
                     StaticMeshLod = ToStaticMeshLodData(baseline.StaticMeshLod),
                     HasCharacterSettingsBaseline = baseline.HasCharacterSettingsBaseline,
                     CharacterSettingsBaseline = ToTemplateCharacterBaselineData(
-                        baseline.CharacterSettingsBaseline)
+                        baseline.CharacterSettingsBaseline),
+                    HasDoorBaseline = baseline.HasDoorBaseline,
+                    Door = ToDoorData(baseline.Door),
+                    HasSpawnPointBaseline = baseline.HasSpawnPointBaseline,
+                    SpawnPoint = baseline.SpawnPoint is null
+                        ? null : new SceneSpawnData { Id = baseline.SpawnPoint.Id },
+                    SourceSpawnPointId = baseline.SourceSpawnPointId,
+                    HasWorldEntityBaseline = baseline.HasWorldEntityBaseline,
+                    WorldEntity = ToWorldEntityData(baseline.WorldEntity)
                 }).ToList(),
                 OrphanedObjectIds = component.OrphanedObjectIds.ToList(),
                 TargetWorldCellId = component.TargetWorldCellId
@@ -315,6 +323,20 @@ public static class SceneFile
                 throw new InvalidDataException("Scene template instance character settings have no baseline marker.");
             var characterSettingsBaseline = ToTemplateCharacterSettingsBaseline(
                 data.CharacterSettingsBaseline);
+            var hasDoorBaseline = data.HasDoorBaseline == true;
+            if (!hasDoorBaseline && data.Door is not null)
+                throw new InvalidDataException("Scene template instance baseline has a door without a baseline marker.");
+            var door = ToTemplateDoorBaseline(data.Door);
+            var hasSpawnPointBaseline = data.HasSpawnPointBaseline == true;
+            if (!hasSpawnPointBaseline && data.SpawnPoint is not null)
+                throw new InvalidDataException("Scene template instance baseline has a spawn point without a baseline marker.");
+            if (data.SpawnPoint is { Id: var spawnId } && spawnId == Guid.Empty)
+                throw new InvalidDataException("Scene template instance baseline has an empty spawn ID.");
+            var spawnPoint = data.SpawnPoint is null ? null : new WorldSpawnComponent(data.SpawnPoint.Id);
+            var hasWorldEntityBaseline = data.HasWorldEntityBaseline == true;
+            if (!hasWorldEntityBaseline && data.WorldEntity is not null)
+                throw new InvalidDataException("Scene template instance baseline has a world entity without a baseline marker.");
+            var worldEntity = ToWorldEntityComponent(data.WorldEntity);
             return new SceneTemplateObjectBaseline(data.SourceObjectId, data.Name!, new Transform
             {
                 Position = new Vector3(data.Position[0], data.Position[1], data.Position[2]),
@@ -322,12 +344,25 @@ public static class SceneFile
                 Scale = new Vector3(data.Scale[0], data.Scale[1], data.Scale[2])
             }, data.Enabled, data.ResetPolicy, gltfAsset, hasGltfAssetBaseline,
                 staticMeshLod, hasStaticMeshLodBaseline,
-                characterSettingsBaseline, hasCharacterSettingsBaseline);
+                characterSettingsBaseline, hasCharacterSettingsBaseline,
+                door, hasDoorBaseline, spawnPoint, hasSpawnPointBaseline,
+                worldEntity, hasWorldEntityBaseline, data.SourceSpawnPointId);
         }
         catch (ArgumentException exception)
         {
             throw new InvalidDataException($"Scene template instance object baseline is invalid: {exception.Message}", exception);
         }
+    }
+
+    private static WorldDoorComponent? ToTemplateDoorBaseline(SceneDoorData? data)
+    {
+        if (data is null) return null;
+        if (data.DestinationCellId == Guid.Empty || data.DestinationSpawnId == Guid.Empty
+            || data.Facing is null || data.Facing.Length != 4
+            || data.Facing.Any(value => !float.IsFinite(value))
+            || data.Facing.Sum(value => value * value) < 1e-12f)
+            throw new InvalidDataException("Scene template instance door baseline is invalid.");
+        return ToDoorComponent(data);
     }
 
     private static SceneTemplateCharacterSettingsBaselineData? ToTemplateCharacterBaselineData(
@@ -571,6 +606,12 @@ public static class SceneFile
         if (documentVersion < 13 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline?.CharacterSettingsBaseline is { } character
                 && (character.HasAttachmentMappings is not null || character.AttachmentBaselines is not null)) == true)
             throw new InvalidDataException($"Object {data.Id} character attachment mappings require scene version 13.");
+        if (documentVersion < 14 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.HasDoorBaseline is not null || baseline.Door is not null
+                    || baseline.HasSpawnPointBaseline is not null || baseline.SpawnPoint is not null
+                    || baseline.SourceSpawnPointId is not null
+                    || baseline.HasWorldEntityBaseline is not null || baseline.WorldEntity is not null)) == true)
+            throw new InvalidDataException($"Object {data.Id} world component template baselines require scene version 14.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -811,6 +852,13 @@ public static class SceneFile
         public SceneMeshLodData? StaticMeshLod { get; set; }
         public bool? HasCharacterSettingsBaseline { get; set; }
         public SceneTemplateCharacterSettingsBaselineData? CharacterSettingsBaseline { get; set; }
+        public bool? HasDoorBaseline { get; set; }
+        public SceneDoorData? Door { get; set; }
+        public bool? HasSpawnPointBaseline { get; set; }
+        public SceneSpawnData? SpawnPoint { get; set; }
+        public Guid? SourceSpawnPointId { get; set; }
+        public bool? HasWorldEntityBaseline { get; set; }
+        public SceneWorldEntityData? WorldEntity { get; set; }
     }
 
     private sealed class SceneTemplateCharacterSettingsBaselineData

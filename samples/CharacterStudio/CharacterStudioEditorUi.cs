@@ -476,6 +476,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             return;
         }
 
+        var background = ImGui.GetWindowDrawList();
+        var windowPosition = ImGui.GetWindowPos();
+        background.AddRectFilled(windowPosition, windowPosition + ImGui.GetWindowSize(),
+            ImGui.GetColorU32(new NumericsVector4(0.025f, 0.035f, 0.05f, 1f)));
+
         var panelWidth = Math.Min(800f, Math.Max(360f, _logicalWidth - 48f));
         var panelHeight = Math.Min(510f, Math.Max(360f, _logicalHeight - 48f));
         ImGui.SetCursorPos(new NumericsVector2(
@@ -1997,7 +2002,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         switch (_transformTool)
         {
             case TransformTool.Move:
-                ImGui.TextDisabled("Drag a colored axis or move by 25 scene units.");
+                ImGui.TextWrapped("Drag a colored axis or move by 25 scene units.");
                 DrawTransformActionPair("X -", "X +",
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(-25f, 0f, 0f), "X"),
                     () => NudgePosition(scene, selected, new Microsoft.Xna.Framework.Vector3(25f, 0f, 0f), "X"));
@@ -2010,7 +2015,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 DrawMoveSnapControls();
                 break;
             case TransformTool.Turn:
-                ImGui.TextDisabled("Drag a ring or turn 15 degrees around a local axis.");
+                ImGui.TextWrapped("Drag a ring or turn 15 degrees around a local axis.");
                 DrawTransformActionPair("X -", "X +",
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, -15f, "X"),
                     () => Turn(scene, selected, Microsoft.Xna.Framework.Vector3.UnitX, 15f, "X"));
@@ -2023,7 +2028,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 DrawTurnSnapControls();
                 break;
             case TransformTool.Size:
-                ImGui.TextDisabled("Drag a colored axis or change size by 10%.");
+                ImGui.TextWrapped("Drag a colored axis or change size by 10%.");
                 DrawTransformActionPair("Smaller", "Larger",
                     () => Resize(scene, selected, 0.9f),
                     () => Resize(scene, selected, 1.1f));

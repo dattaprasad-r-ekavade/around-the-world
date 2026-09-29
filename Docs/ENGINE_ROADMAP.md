@@ -1,6 +1,6 @@
 # Ember roadmap: lightweight 3D engine and scene generator
 
-Updated: 28 September 2026. This is the sole active roadmap. It supersedes the
+Updated: 29 September 2026. This is the sole active roadmap. It supersedes the
 [RPG implementation plan](archive/ENGINE_ROADMAP_RPG_2026-09-27.md), including its
 next-task instructions and expansion tasks 145–152. Completed implementation history
 remains in [ENGINE_PROGRESS.md](ENGINE_PROGRESS.md); historical completion percentages
@@ -77,6 +77,9 @@ UX.4 now has an optional action-driven first-creation lesson, replayable from th
 per-step Why? explanations, two levels of offline hints, action-based completion checks, and a
 project-local completion record. Its button-driven walkthrough and UX.5 novice observations remain
 unverified.
+UX.1 Home now paints an opaque workspace background; the latest Release capture confirms the
+Game/Film/Open choices without the preview scene showing through. Resize, DPI and button-driven
+verification remain open.
 M1.2 now has a nested selectable object hierarchy, command-based world-preserving reparenting, and
 viewport Move/Turn/Size gizmos. Move is world-aligned with parent-aware placement; Turn and Size use
 the selected object's local axes. Optional position-grid, angle and scale snapping are implemented.
@@ -173,14 +176,16 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
   Updating stays unavailable until the source is repaired or relinked. A missing GLB used by an
   instance follows the normal project asset recovery flow.
 
-The M1.3 API now saves atomic, versioned hierarchy snapshots, places expanded instances with
-remapped IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene
-version 12 stores source name/transform, enabled-state, reset-policy, shared GLB asset, static
-mesh LOD and character playback baselines, plus orphan IDs and the target world cell. Explicit
-updates preserve stable mappings and local overrides for those fields, add and remove source
-objects, retain edited, referenced or uncertain removed content as tracked orphans, and support
-undo/redo. Character attachment-list updates, door/spawn/world-entity overrides, visible orphan
-warnings, the editor placement/update workflow and source relinking remain open.
+The M1.3 API saves atomic, versioned hierarchy snapshots, places expanded instances with remapped
+IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene version 14
+stores source name/transform, enabled-state, reset-policy, shared GLB asset, static-mesh LOD,
+character playback and attachment baselines, door/spawn/world-entity component baselines, plus
+orphan IDs and the target world cell. Explicit updates preserve stable mappings and local overrides,
+synchronize source component and attachment additions/removals, retain edited component content,
+add and remove source objects, track uncertain removed content as orphans, and support undo/redo.
+Version-12 and version-13 baselines without newer source mappings load conservatively and upgrade on
+update. Visible orphan warnings, the editor placement/update workflow and source relinking remain
+open.
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.

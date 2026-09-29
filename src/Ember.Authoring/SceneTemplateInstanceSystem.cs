@@ -61,7 +61,11 @@ public static class SceneTemplateInstanceSystem
                     staticMeshLod: item.StaticMeshLod, hasStaticMeshLodBaseline: true,
                     characterSettingsBaseline: CaptureCharacterSettingsBaseline(
                         item.CharacterSettings, clones[index].CharacterSettings),
-                    hasCharacterSettingsBaseline: true)),
+                    hasCharacterSettingsBaseline: true,
+                    door: clones[index].Door, hasDoorBaseline: true,
+                    spawnPoint: clones[index].SpawnPoint, hasSpawnPointBaseline: true,
+                    worldEntity: clones[index].WorldEntity, hasWorldEntityBaseline: true,
+                    sourceSpawnPointId: item.SpawnPoint?.Id)),
                 targetWorldCellId: targetWorldCellId)
         };
 
@@ -152,6 +156,8 @@ public static class SceneTemplateInstanceSystem
             var baselineIsIncomplete = baseline.Enabled is null || baseline.ResetPolicy is null
                 || !baseline.HasGltfAssetBaseline || !baseline.HasStaticMeshLodBaseline
                 || !baseline.HasCharacterSettingsBaseline
+                || !baseline.HasDoorBaseline || !baseline.HasSpawnPointBaseline
+                || !baseline.HasWorldEntityBaseline
                 || baseline.CharacterSettingsBaseline is { HasAttachmentMappings: false };
             var hasKnownOverride = !string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
                 || !baseline.MatchesTransform(target.Transform)
@@ -160,7 +166,10 @@ public static class SceneTemplateInstanceSystem
                 || baseline.HasGltfAssetBaseline && !MatchesAssetReference(target.GltfAsset, baseline.GltfAsset)
                 || baseline.HasStaticMeshLodBaseline && !MatchesStaticMeshLod(target.StaticMeshLod, baseline.StaticMeshLod)
                 || baseline.HasCharacterSettingsBaseline
-                    && !MatchesCharacterSettings(target.CharacterSettings, baseline.CharacterSettingsBaseline);
+                    && !MatchesCharacterSettings(target.CharacterSettings, baseline.CharacterSettingsBaseline)
+                || baseline.HasDoorBaseline && !MatchesDoor(target.Door, baseline.Door)
+                || baseline.HasSpawnPointBaseline && !MatchesSpawnPoint(target.SpawnPoint, baseline.SpawnPoint)
+                || baseline.HasWorldEntityBaseline && !MatchesWorldEntity(target.WorldEntity, baseline.WorldEntity);
             if (baselineIsIncomplete || hasKnownOverride)
                 retainedRemovedIds.Add(target.Id);
         }
@@ -209,6 +218,13 @@ public static class SceneTemplateInstanceSystem
                     return oldSpawn.Id;
                 return CreateUniqueId(spawnIds);
             });
+        foreach (var sourceId in removedSourceIds)
+        {
+            if (baselines.TryGetValue(sourceId, out var baseline)
+                && baseline.SourceSpawnPointId is { } removedSourceSpawnId
+                && baseline.SpawnPoint is { } removedInstanceSpawn)
+                spawnMap.TryAdd(removedSourceSpawnId, removedInstanceSpawn.Id);
+        }
         var entityIds = destination.Objects.Where(item => item.WorldEntity is not null)
             .Select(item => item.WorldEntity!.InstanceId).ToHashSet();
         var entityMap = source.Objects.Where(item => item.WorldEntity is not null)
@@ -230,10 +246,15 @@ public static class SceneTemplateInstanceSystem
                 attachmentIds, instance.TargetWorldCellId)).ToArray();
         var newObjectsById = newObjects.ToDictionary(item => item.Id);
         var characterBaselinesBySourceId = new Dictionary<Guid, SceneTemplateCharacterSettingsBaseline?>();
+        var worldBaselinesBySourceId = new Dictionary<Guid,
+            (WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
+                WorldEntityPlacementComponent? WorldEntity, Guid? SourceSpawnPointId)>();
 
         var updates = new List<(SceneObject Target, string Name, Transform Transform,
             bool Enabled, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
             GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
+            WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
+            WorldEntityPlacementComponent? WorldEntity,
             SceneTemplateCharacterSettingsBaseline? CharacterBaseline)>();
         foreach (var (sourceId, sourceObject) in sourceById)
         {
@@ -269,13 +290,32 @@ public static class SceneTemplateInstanceSystem
                 : target.StaticMeshLod;
             var characterMerge = MergeCharacterSettings(sourceObject.CharacterSettings,
                 target.CharacterSettings, baseline, attachmentIds);
+            var sourceDoorBaseline = CopyDoorForInstance(
+                sourceObject.Door, spawnMap, instance.TargetWorldCellId);
+            var sourceSpawnBaseline = CopySpawnForInstance(sourceObject.SpawnPoint, spawnMap);
+            var sourceWorldEntityBaseline = CopyWorldEntityForInstance(sourceObject.WorldEntity, entityMap);
+            var door = MergeComponent(sourceDoorBaseline, target.Door, baseline.HasDoorBaseline,
+                baseline.Door, MatchesDoor);
+            var spawnPoint = MergeComponent(sourceSpawnBaseline, target.SpawnPoint,
+                baseline.HasSpawnPointBaseline, baseline.SpawnPoint, MatchesSpawnPoint);
+            var worldEntity = MergeComponent(sourceWorldEntityBaseline, target.WorldEntity,
+                baseline.HasWorldEntityBaseline, baseline.WorldEntity, MatchesWorldEntity);
             characterBaselinesBySourceId[sourceId] = characterMerge.Baseline;
+            worldBaselinesBySourceId[sourceId] =
+                (sourceDoorBaseline, sourceSpawnBaseline, sourceWorldEntityBaseline,
+                    sourceObject.SpawnPoint?.Id);
             updates.Add((target, name, transform, enabled, resetPolicy, gltfAsset,
-                staticMeshLod, characterMerge.Settings, characterMerge.Baseline));
+                staticMeshLod, characterMerge.Settings, door, spawnPoint, worldEntity,
+                characterMerge.Baseline));
         }
         foreach (var sourceObject in source.Objects.Where(item => !oldMappings.ContainsKey(item.Id)))
+        {
+            var clone = newObjectsById[mappings[sourceObject.Id]];
             characterBaselinesBySourceId[sourceObject.Id] = CaptureCharacterSettingsBaseline(
-                sourceObject.CharacterSettings, newObjectsById[mappings[sourceObject.Id]].CharacterSettings);
+                sourceObject.CharacterSettings, clone.CharacterSettings);
+            worldBaselinesBySourceId[sourceObject.Id] =
+                (clone.Door, clone.SpawnPoint, clone.WorldEntity, sourceObject.SpawnPoint?.Id);
+        }
 
         var nextOrphanIds = instance.OrphanedObjectIds
             .Where(id => destination.Find(id) is not null)
@@ -297,6 +337,9 @@ public static class SceneTemplateInstanceSystem
                 update.Target.GltfAsset = update.GltfAsset;
                 update.Target.StaticMeshLod = update.StaticMeshLod;
                 update.Target.CharacterSettings = update.CharacterSettings;
+                update.Target.Door = update.Door;
+                update.Target.SpawnPoint = update.SpawnPoint;
+                update.Target.WorldEntity = update.WorldEntity;
             }
             foreach (var sourceObject in source.Objects)
             {
@@ -318,7 +361,11 @@ public static class SceneTemplateInstanceSystem
                     item.GltfAsset, hasGltfAssetBaseline: true,
                     staticMeshLod: item.StaticMeshLod, hasStaticMeshLodBaseline: true,
                     characterSettingsBaseline: characterBaselinesBySourceId[item.Id],
-                    hasCharacterSettingsBaseline: true)),
+                    hasCharacterSettingsBaseline: true,
+                    door: worldBaselinesBySourceId[item.Id].Door, hasDoorBaseline: true,
+                    spawnPoint: worldBaselinesBySourceId[item.Id].SpawnPoint, hasSpawnPointBaseline: true,
+                    worldEntity: worldBaselinesBySourceId[item.Id].WorldEntity, hasWorldEntityBaseline: true,
+                    sourceSpawnPointId: worldBaselinesBySourceId[item.Id].SourceSpawnPointId)),
                 nextOrphanIds, instance.TargetWorldCellId);
         }
         catch
@@ -347,6 +394,7 @@ public static class SceneTemplateInstanceSystem
                 ?? throw new InvalidOperationException($"Template instance object {id} is missing.");
             return new SceneTemplateObjectState(item, item.Name, item.Enabled, CopyTransform(item.Transform),
                 item.ResetPolicy, item.GltfAsset, item.StaticMeshLod, item.CharacterSettings,
+                item.Door, item.SpawnPoint, item.WorldEntity,
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
         return new SceneTemplateInstanceState(wrapperId, objects);
@@ -383,6 +431,9 @@ public static class SceneTemplateInstanceSystem
             current.GltfAsset = item.GltfAsset;
             current.StaticMeshLod = item.StaticMeshLod;
             current.CharacterSettings = item.CharacterSettings;
+            current.Door = item.Door;
+            current.SpawnPoint = item.SpawnPoint;
+            current.WorldEntity = item.WorldEntity;
             current.TemplateInstance = item.TemplateInstance;
         }
         foreach (var item in state.Objects)
@@ -396,22 +447,6 @@ public static class SceneTemplateInstanceSystem
         Guid? targetWorldCellId)
     {
         var character = CopyCharacterSettings(source.CharacterSettings, usedAttachmentIds);
-        WorldDoorComponent? door = null;
-        if (source.Door is { } sourceDoor)
-        {
-            var cellId = sourceDoor.DestinationCellId;
-            var spawnId = sourceDoor.DestinationSpawnId;
-            if (spawnMap.TryGetValue(spawnId, out var replacementSpawnId))
-            {
-                if (targetWorldCellId is null)
-                    throw new InvalidOperationException(
-                        "This template links a door to a spawn point inside itself; place it in a world cell to remap that link.");
-                cellId = targetWorldCellId.Value;
-                spawnId = replacementSpawnId;
-            }
-            door = new WorldDoorComponent(cellId, spawnId, sourceDoor.Facing);
-        }
-
         return new SceneObject(id, source.Name)
         {
             Enabled = source.Enabled,
@@ -424,14 +459,9 @@ public static class SceneTemplateInstanceSystem
             GltfAsset = source.GltfAsset,
             StaticMeshLod = source.StaticMeshLod,
             CharacterSettings = character,
-            Door = door,
-            SpawnPoint = source.SpawnPoint is { } spawn
-                ? new WorldSpawnComponent(spawnMap[spawn.Id])
-                : null,
-            WorldEntity = source.WorldEntity is { } entity
-                ? new WorldEntityPlacementComponent(entity.Kind, entity.DefinitionId,
-                    entityInstanceMap[entity.InstanceId], entity.TemplateId, entity.TemplateOverrides)
-                : null,
+            Door = CopyDoorForInstance(source.Door, spawnMap, targetWorldCellId),
+            SpawnPoint = CopySpawnForInstance(source.SpawnPoint, spawnMap),
+            WorldEntity = CopyWorldEntityForInstance(source.WorldEntity, entityInstanceMap),
             ResetPolicy = source.ResetPolicy
         };
     }
@@ -502,6 +532,51 @@ public static class SceneTemplateInstanceSystem
         Rotation = source.Rotation,
         Scale = source.Scale
     };
+
+    private static WorldDoorComponent? CopyDoorForInstance(WorldDoorComponent? source,
+        IReadOnlyDictionary<Guid, Guid> spawnMap, Guid? targetWorldCellId)
+    {
+        if (source is null) return null;
+        var cellId = source.DestinationCellId;
+        var spawnId = source.DestinationSpawnId;
+        if (spawnMap.TryGetValue(spawnId, out var replacementSpawnId))
+        {
+            if (targetWorldCellId is null)
+                throw new InvalidOperationException(
+                    "This template links a door to a spawn point inside itself; place it in a world cell to remap that link.");
+            cellId = targetWorldCellId.Value;
+            spawnId = replacementSpawnId;
+        }
+        return new WorldDoorComponent(cellId, spawnId, source.Facing);
+    }
+
+    private static WorldSpawnComponent? CopySpawnForInstance(WorldSpawnComponent? source,
+        IReadOnlyDictionary<Guid, Guid> spawnMap) => source is null
+        ? null : new WorldSpawnComponent(spawnMap[source.Id]);
+
+    private static WorldEntityPlacementComponent? CopyWorldEntityForInstance(
+        WorldEntityPlacementComponent? source, IReadOnlyDictionary<Guid, Guid> entityMap) => source is null
+        ? null : new WorldEntityPlacementComponent(source.Kind, source.DefinitionId,
+            entityMap[source.InstanceId], source.TemplateId, source.TemplateOverrides);
+
+    private static T? MergeComponent<T>(T? source, T? target, bool hasBaseline,
+        T? previousBaseline, Func<T?, T?, bool> matches) where T : class =>
+        hasBaseline && matches(target, previousBaseline) ? source : target;
+
+    private static bool MatchesDoor(WorldDoorComponent? left, WorldDoorComponent? right) =>
+        left is null ? right is null
+        : right is not null && left.DestinationCellId == right.DestinationCellId
+            && left.DestinationSpawnId == right.DestinationSpawnId && left.Facing == right.Facing;
+
+    private static bool MatchesSpawnPoint(WorldSpawnComponent? left, WorldSpawnComponent? right) =>
+        left is null ? right is null : right is not null && left.Id == right.Id;
+
+    private static bool MatchesWorldEntity(WorldEntityPlacementComponent? left,
+        WorldEntityPlacementComponent? right) => left is null ? right is null
+        : right is not null && left.Kind == right.Kind
+            && string.Equals(left.DefinitionId, right.DefinitionId, StringComparison.Ordinal)
+            && left.InstanceId == right.InstanceId && left.TemplateId == right.TemplateId
+            && left.TemplateOverrides == right.TemplateOverrides;
 
     private static bool MatchesAssetReference(GltfAssetReference? left, GltfAssetReference? right) =>
         left is null ? right is null
@@ -760,5 +835,6 @@ internal sealed record SceneTemplateInstanceState(Guid WrapperId, IReadOnlyList<
 
 internal sealed record SceneTemplateObjectState(SceneObject Object, string Name, bool Enabled,
     Transform Transform, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
-    GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings, Guid? ParentId,
-    SceneTemplateInstanceComponent? TemplateInstance);
+    GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
+    WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint, WorldEntityPlacementComponent? WorldEntity,
+    Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);
