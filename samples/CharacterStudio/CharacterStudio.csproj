@@ -14,9 +14,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
-    <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
-    <ProjectReference Include="..\..\src\Ember.Authoring\Ember.Authoring.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Editor\Ember.Editor.csproj" />
   </ItemGroup>
 
   <ItemGroup>
@@ -35,7 +33,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="ImGui.NET" Version="1.91.6.1" />
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5.1" />
   </ItemGroup>
 

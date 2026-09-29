@@ -6,7 +6,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using System.Text.Json;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 internal sealed class CharacterStudioReferenceSession
 {

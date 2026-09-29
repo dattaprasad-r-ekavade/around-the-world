@@ -5,7 +5,7 @@ using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 /// <summary>Small MonoGame backend for the textured triangles emitted by ImGui.NET.</summary>
 internal sealed class ImGuiMonoGameRenderer : IDisposable

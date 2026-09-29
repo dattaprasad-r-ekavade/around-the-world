@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {

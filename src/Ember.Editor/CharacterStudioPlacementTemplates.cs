@@ -7,7 +7,7 @@ using System.IO;
 using System.Linq;
 using NumericsVector2 = System.Numerics.Vector2;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {

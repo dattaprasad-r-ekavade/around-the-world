@@ -10,7 +10,7 @@ using Microsoft.Xna.Framework;
 using NumericsVector2 = System.Numerics.Vector2;
 using NumericsVector4 = System.Numerics.Vector4;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {

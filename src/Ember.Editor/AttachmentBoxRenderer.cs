@@ -2,7 +2,7 @@ using System;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 /// <summary>Small GPU-backed colored cube used to make a bone attachment visible in the preview.</summary>
 internal sealed class AttachmentBoxRenderer : IDisposable

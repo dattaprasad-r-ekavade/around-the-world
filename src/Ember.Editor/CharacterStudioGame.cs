@@ -24,7 +24,7 @@ using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
 using SharpGLTF.Schema2;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 /// <summary>
 /// The first external consumer of the scene foundation: shared-asset scene instances, independent

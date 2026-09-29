@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Windows.Forms;
 
-namespace CharacterStudio;
+namespace Ember.Editor;
 
 internal static class CharacterStudioFilePickers
 {
