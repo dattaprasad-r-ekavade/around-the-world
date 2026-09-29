@@ -312,7 +312,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
 
-    public void CompletePendingEdit(SceneGraph scene) => CommitActiveTransformEdit(scene);
+    public void CompletePendingEdit(SceneGraph scene)
+    {
+        CommitActiveTransformEdit(scene);
+        CommitActivePlaySettingsEdit(scene);
+    }
 
     public void CommitViewportTransform(SceneGraph scene, Guid objectId,
         Transform before, Transform after)
@@ -1989,6 +1993,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         }
 
         DrawWorkspaceFailure();
+        DrawPlaySettingsControls(scene);
 
         if (_isPlaying())
         {

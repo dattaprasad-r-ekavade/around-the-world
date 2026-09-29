@@ -75,6 +75,24 @@ public sealed class SceneCommandHistory
     }
 }
 
+/// <summary>Changes the saved movement, camera, and input defaults for a scene.</summary>
+public sealed class EditScenePlaySettingsCommand : ISceneCommand
+{
+    private readonly ScenePlaySettings _before;
+    private readonly ScenePlaySettings _after;
+
+    public EditScenePlaySettingsCommand(ScenePlaySettings before, ScenePlaySettings after)
+    {
+        ArgumentNullException.ThrowIfNull(before);
+        ArgumentNullException.ThrowIfNull(after);
+        _before = before.ValidatedCopy();
+        _after = after.ValidatedCopy();
+    }
+
+    public void Apply(SceneGraph scene) => scene.PlaySettings = _after;
+    public void Revert(SceneGraph scene) => scene.PlaySettings = _before;
+}
+
 /// <summary>One completed change to a scene object's local transform.</summary>
 public sealed class TransformEditCommand : ISceneCommand
 {

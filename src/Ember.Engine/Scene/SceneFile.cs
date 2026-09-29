@@ -8,13 +8,14 @@ using System.Text.Json.Serialization;
 using Ember.IO;
 using Ember.World;
 using Microsoft.Xna.Framework;
+using Microsoft.Xna.Framework.Input;
 
 namespace Ember.Scene;
 
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 16;
+    public const int CurrentVersion = 17;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -77,12 +78,14 @@ public static class SceneFile
             throw new InvalidDataException($"Unsupported scene version {document.Version}; expected 1 through {CurrentVersion}.");
         if (document.Objects is null)
             throw new InvalidDataException("Scene object list is missing.");
+        if (document.Version < 17 && document.PlaySettings is not null)
+            throw new InvalidDataException("Scene play settings require scene version 17.");
         foreach (var data in document.Objects) ValidateData(data, document.Version);
         ValidateAssetReferences(document.Objects);
         ValidateAttachmentIds(document.Objects);
         ValidateWorldEntityInstanceIds(document.Objects);
 
-        var scene = new SceneGraph();
+        var scene = new SceneGraph { PlaySettings = ToPlaySettings(document.PlaySettings) };
         var parents = new Dictionary<Guid, Guid?>();
         foreach (var data in document.Objects)
         {
@@ -168,7 +171,70 @@ public static class SceneFile
         ValidateWorldEntityInstanceIds(objects);
         ValidateAcyclic(objects);
         ValidateTemplateInstances(scene);
-        return new SceneDocument { Version = CurrentVersion, Objects = objects };
+        return new SceneDocument
+        {
+            Version = CurrentVersion,
+            PlaySettings = ToPlaySettingsData(scene.PlaySettings),
+            Objects = objects
+        };
+    }
+
+    private static ScenePlaySettings ToPlaySettings(ScenePlaySettingsData? data)
+    {
+        if (data is null) return new ScenePlaySettings();
+        try
+        {
+            return new ScenePlaySettings
+            {
+                CapsuleRadius = data.CapsuleRadius,
+                CapsuleCylinderLength = data.CapsuleCylinderLength,
+                MoveSpeed = data.MoveSpeed,
+                JumpSpeed = data.JumpSpeed,
+                CameraTargetOffsetY = data.CameraTargetOffsetY,
+                CameraDistance = data.CameraDistance,
+                CameraOrbitSensitivity = data.CameraOrbitSensitivity,
+                MoveForward = data.MoveForward,
+                MoveForwardAlternate = data.MoveForwardAlternate,
+                MoveBackward = data.MoveBackward,
+                MoveBackwardAlternate = data.MoveBackwardAlternate,
+                MoveLeft = data.MoveLeft,
+                MoveLeftAlternate = data.MoveLeftAlternate,
+                MoveRight = data.MoveRight,
+                MoveRightAlternate = data.MoveRightAlternate,
+                Jump = data.Jump,
+                JumpAlternate = data.JumpAlternate
+            }.ValidatedCopy();
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException($"Scene play settings are invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static ScenePlaySettingsData ToPlaySettingsData(ScenePlaySettings settings)
+    {
+        ArgumentNullException.ThrowIfNull(settings);
+        settings = settings.ValidatedCopy();
+        return new ScenePlaySettingsData
+        {
+            CapsuleRadius = settings.CapsuleRadius,
+            CapsuleCylinderLength = settings.CapsuleCylinderLength,
+            MoveSpeed = settings.MoveSpeed,
+            JumpSpeed = settings.JumpSpeed,
+            CameraTargetOffsetY = settings.CameraTargetOffsetY,
+            CameraDistance = settings.CameraDistance,
+            CameraOrbitSensitivity = settings.CameraOrbitSensitivity,
+            MoveForward = settings.MoveForward,
+            MoveForwardAlternate = settings.MoveForwardAlternate,
+            MoveBackward = settings.MoveBackward,
+            MoveBackwardAlternate = settings.MoveBackwardAlternate,
+            MoveLeft = settings.MoveLeft,
+            MoveLeftAlternate = settings.MoveLeftAlternate,
+            MoveRight = settings.MoveRight,
+            MoveRightAlternate = settings.MoveRightAlternate,
+            Jump = settings.Jump,
+            JumpAlternate = settings.JumpAlternate
+        };
     }
 
     private static GltfCharacterSettings? ToCharacterSettings(SceneCharacterData? data)
@@ -817,7 +883,29 @@ public static class SceneFile
     private sealed class SceneDocument
     {
         public int Version { get; set; }
+        public ScenePlaySettingsData? PlaySettings { get; set; }
         public List<SceneObjectData>? Objects { get; set; }
+    }
+
+    private sealed class ScenePlaySettingsData
+    {
+        public float CapsuleRadius { get; set; } = 0.45f;
+        public float CapsuleCylinderLength { get; set; } = 0.9f;
+        public float MoveSpeed { get; set; } = 3.5f;
+        public float JumpSpeed { get; set; } = 6f;
+        public float CameraTargetOffsetY { get; set; }
+        public float CameraDistance { get; set; } = 4.8f;
+        public float CameraOrbitSensitivity { get; set; } = 0.01f;
+        public Keys MoveForward { get; set; } = Keys.W;
+        public Keys MoveForwardAlternate { get; set; } = Keys.Up;
+        public Keys MoveBackward { get; set; } = Keys.S;
+        public Keys MoveBackwardAlternate { get; set; } = Keys.Down;
+        public Keys MoveLeft { get; set; } = Keys.A;
+        public Keys MoveLeftAlternate { get; set; } = Keys.Left;
+        public Keys MoveRight { get; set; } = Keys.D;
+        public Keys MoveRightAlternate { get; set; } = Keys.Right;
+        public Keys Jump { get; set; } = Keys.Space;
+        public Keys JumpAlternate { get; set; }
     }
 
     private sealed class SceneObjectData

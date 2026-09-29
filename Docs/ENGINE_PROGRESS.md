@@ -3028,5 +3028,33 @@ input is available.
 | CharacterStudio play/stop/reload lifecycle smoke | PASS — 3/3 cycles; 6 owned preview resources after each reload |
 | Manual keyboard movement, jump, camera follow and trigger workflow | NOT RUN — desktop input unavailable |
 
-Next: persist an explicit player assignment and movement/camera/input defaults, then add a saved Open
-action for doors. Keep the editor interaction gate open until keyboard and mouse controls are verified.
+Next: persist an explicit player assignment, then add a saved Open action for doors and continue
+custom behaviour registration and collider visualization. Keep the editor interaction gate open until
+keyboard and mouse controls are verified.
+
+## M2.1 saved Play movement, camera and input settings — 29 September 2026
+
+- Scene version 17 stores capsule radius/length, movement and jump speed, camera target offset,
+  camera distance/orbit sensitivity, and primary/alternate keys for movement and jump actions. Older
+  scene versions load the default settings; settings in an older-version document are rejected rather
+  than silently treated as migrated data.
+- The Inspector now exposes these values in a collapsed Play setup section. Numeric changes commit as
+  one undoable edit when the control is released; key choices commit as individual undoable edits.
+  Invalid duplicate action bindings are rejected with an Inspector explanation.
+- Play installs the saved key map, creates player and route-following capsules with the saved size and
+  speed, and applies the saved camera follow offset, distance and orbit sensitivity. The settings are
+  copied into the runtime scene and stop/reload returns to the authored settings.
+- M2.1 remains **In progress**: choosing a player explicitly, saved Open behavior, custom code behavior
+  registration, collider visualization and live mouse/keyboard verification remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` Release run | PASS — 364 passed, 0 failed |
+| Settings round-trip, legacy migration, validation, input sampling and undo/redo | PASS |
+| Manual Play setup editing and saved keyboard controls | NOT RUN — desktop input unavailable |
+
+Next: persist an explicit player assignment and implement collider visualization before continuing to
+the saved Open action and custom behaviour registration. Keep the editor interaction gate separate.

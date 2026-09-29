@@ -131,7 +131,7 @@ public static class SceneGraphCloner
     public static SceneGraph Clone(SceneGraph source)
     {
         ArgumentNullException.ThrowIfNull(source);
-        var clone = new SceneGraph();
+        var clone = new SceneGraph { PlaySettings = source.PlaySettings };
         foreach (var item in source.Objects)
         {
             var copy = new SceneObject(item.Id, item.Name)

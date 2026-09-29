@@ -11,8 +11,16 @@ namespace Ember.Scene;
 public sealed class SceneGraph
 {
     private readonly Dictionary<Guid, SceneObject> _objects = new();
+    private ScenePlaySettings _playSettings = new();
 
     public IReadOnlyCollection<SceneObject> Objects => _objects.Values;
+
+    /// <summary>Saved gameplay defaults used by the scene's Play session.</summary>
+    public ScenePlaySettings PlaySettings
+    {
+        get => _playSettings;
+        set => _playSettings = (value ?? throw new ArgumentNullException(nameof(value))).ValidatedCopy();
+    }
 
     public void Add(SceneObject sceneObject)
     {

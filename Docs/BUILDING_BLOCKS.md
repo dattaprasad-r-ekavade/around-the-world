@@ -160,12 +160,15 @@ var view = camera.View;
 ```
 
 `InputActionMap` supplies named `MoveForward`, `MoveBackward`, `MoveLeft`, `MoveRight`, and `Jump`
-actions, with WASD/arrow/space defaults. Sample it once per render frame with both window-focus
-and UI-keyboard-capture state. Captured or unfocused input is neutral, and keys held through either
-state stay suppressed until release. Apply the movement result every render frame, including its
-zero value while input is blocked. Use `ConsumePressed(Jump)` before fixed-step advance: the press
-remains pending until consumed and can be consumed only once, even if the render frame produces
-several physics substeps.
+actions, with WASD/arrow/space defaults. `ScenePlaySettings.ApplyInputBindings` installs a scene's
+saved primary and optional alternate keys into a fresh map. Scene version 17 also stores capsule
+dimensions, movement/jump speed and orbit-camera follow settings; CharacterStudio exposes them in its
+collapsed Play setup Inspector section and Play reads them from the runtime scene copy. Sample the map
+once per render frame with both window-focus and UI-keyboard-capture state. Captured or unfocused input
+is neutral, and keys held through either state stay suppressed until release. Apply the movement result
+every render frame, including its zero value while input is blocked. Use `ConsumePressed(Jump)` before
+fixed-step advance: the press remains pending until consumed and can be consumed only once, even if the
+render frame produces several physics substeps.
 
 ```csharp
 var inputFrame = actions.Sample(keyboard, windowFocused, uiCapturesKeyboard);
@@ -187,8 +190,9 @@ its horizontal velocity.
 The engine pins `BepuPhysics` 2.5.0-beta.29 (with matching transitive `BepuUtilities`), a v2
 prerelease under Apache-2.0. This is a deliberate dependency choice for the current adapter; the
 stable 2.4.0 release is older and can be substituted if prerelease use is rejected for a release.
-Physics colliders are still authored through code: imported mesh colliders, moving-platform
-support, step climbing, coyote-time jumps, gamepad/rebinding support, and scene-file physics
+Scene objects can persist local box colliders, including trigger boxes; scene-level play settings
+persist the player capsule dimensions and tuning used by CharacterStudio. Imported mesh colliders,
+moving-platform support, step climbing, coyote-time jumps, gamepad input, and per-object physics
 components remain future work.
 
 ## Rendering

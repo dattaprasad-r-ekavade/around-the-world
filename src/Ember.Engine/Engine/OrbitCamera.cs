@@ -74,10 +74,14 @@ public sealed class OrbitCamera
         Reset(bounds.Center, MathHelper.Clamp(distance, MinDistance, MaxDistance), Yaw, Pitch);
     }
 
-    public void Orbit(Vector2 delta)
+    public void Orbit(Vector2 delta, float? sensitivityOverride = null)
     {
-        Yaw -= delta.X * OrbitSensitivity;
-        Pitch = MathHelper.Clamp(Pitch - delta.Y * OrbitSensitivity, -1.5f, 1.5f);
+        if (sensitivityOverride is { } overrideValue
+            && (!float.IsFinite(overrideValue) || overrideValue <= 0f))
+            throw new ArgumentOutOfRangeException(nameof(sensitivityOverride), "Orbit sensitivity must be finite and positive.");
+        var sensitivity = sensitivityOverride ?? OrbitSensitivity;
+        Yaw -= delta.X * sensitivity;
+        Pitch = MathHelper.Clamp(Pitch - delta.Y * sensitivity, -1.5f, 1.5f);
         RebuildView();
     }
 

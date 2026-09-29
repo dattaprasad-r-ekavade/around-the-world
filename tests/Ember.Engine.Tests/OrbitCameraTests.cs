@@ -33,6 +33,18 @@ public sealed class OrbitCameraTests
     }
 
     [Fact]
+    public void OrbitCanUseAPlaySessionSensitivityWithoutChangingTheEditorDefault()
+    {
+        var camera = new OrbitCamera { OrbitSensitivity = 0.01f };
+        camera.Reset(Vector3.Zero);
+
+        camera.Orbit(new Vector2(10f, 0f), sensitivityOverride: 0.02f);
+
+        Assert.Equal(-0.2f, camera.Yaw, 5);
+        Assert.Equal(0.01f, camera.OrbitSensitivity);
+    }
+
+    [Fact]
     public void WorldTransformBuildsTheExpectedCameraView()
     {
         var camera = new OrbitCamera();

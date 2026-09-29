@@ -482,7 +482,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(45f, overriddenLod.ExitFarDistance);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(16, SceneFile.CurrentVersion);
+            Assert.Equal(17, SceneFile.CurrentVersion);
             var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .ToDictionary(baseline => baseline.SourceObjectId);
             Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
@@ -597,7 +597,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(16, SceneFile.CurrentVersion);
+            Assert.Equal(17, SceneFile.CurrentVersion);
             var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
             Assert.Equal("Walk", characterBaseline.ClipName);
@@ -953,6 +953,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
             var legacyJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             legacyJson["Version"] = 8;
+            legacyJson.Remove("PlaySettings");
             var wrapperData = legacyJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             wrapperData["TemplateInstance"]!.AsObject().Remove("ObjectBaselines");
@@ -993,6 +994,7 @@ public sealed class SceneTemplateInstanceSystemTests
 
             var versionNineJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionNineJson["Version"] = 9;
+            versionNineJson.Remove("PlaySettings");
             var wrapperData = versionNineJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
@@ -1081,6 +1083,7 @@ public sealed class SceneTemplateInstanceSystemTests
 
             var versionTenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionTenJson["Version"] = 10;
+            versionTenJson.Remove("PlaySettings");
             var wrapperData = versionTenJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
@@ -1158,6 +1161,7 @@ public sealed class SceneTemplateInstanceSystemTests
 
             var versionElevenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionElevenJson["Version"] = 11;
+            versionElevenJson.Remove("PlaySettings");
             var wrapperData = versionElevenJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())

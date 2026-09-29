@@ -490,7 +490,8 @@ public sealed class CharacterStudioGame : EngineHost
         if (!sequenceExportRunning && !_sequencePreviewEnabled && _viewportTransformDrag is null
             && !uiCapturesMouse && mouse.LeftButton == ButtonState.Pressed)
         {
-            _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y));
+            _camera.Orbit(new Vector2(mouse.X - _lastMouse.X, mouse.Y - _lastMouse.Y),
+                _playSession?.RuntimeScene.PlaySettings.CameraOrbitSensitivity);
         }
 
         if (!sequenceExportRunning && !_sequencePreviewEnabled && _viewportTransformDrag is null && !uiCapturesMouse)
@@ -1897,6 +1898,7 @@ public sealed class CharacterStudioGame : EngineHost
                     _ => $"{actor} triggered {action.SceneObjectName}."
                 };
             };
+            candidate.RuntimeScene.PlaySettings.ApplyInputBindings(_playInputMap);
             InitializePlayPhysics(candidate);
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(candidate.RuntimeScene), candidate.RuntimeScene));
@@ -1908,11 +1910,18 @@ public sealed class CharacterStudioGame : EngineHost
             BuildSequencePreview();
             var controls = _playCharacterController is null
                 ? "Play clone started. Follow a path to move an actor; P stops and restores."
-                : "Play clone started. WASD/arrows move; Space jumps; E interacts; P stops and restores.";
+                : "Play clone started. Configured move keys move; the configured jump key jumps; E interacts; P stops and restores.";
             _reimportStatus = cleanupError is null
                 ? controls
                 : $"{controls} Previous preview cleanup failed: {cleanupError.Message}";
             if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
+            if (_playCharacterController is { } playerController)
+            {
+                var settings = _playSession!.RuntimeScene.PlaySettings;
+                _camera.Reset(playerController.Pose.Position
+                    + new Vector3(0f, settings.CameraTargetOffsetY, 0f),
+                    settings.CameraDistance, _camera.Yaw, _camera.Pitch);
+            }
         }
         catch (Exception exception)
         {
@@ -1946,9 +1955,11 @@ public sealed class CharacterStudioGame : EngineHost
 
         var physicsWorld = _pathPreviewWorld
             ?? throw new InvalidOperationException("Play physics world could not be initialized.");
+        var settings = scene.PlaySettings;
+        var centerOffset = CharacterCenterOffset(settings);
         var worldPosition = scene.GetWorldMatrix(objectId).Translation;
         var controller = new PhysicsCharacterController(physicsWorld,
-            worldPosition + new Vector3(0f, 0.9f, 0f), new PhysicsCharacterSettings { MoveSpeed = 3.5f });
+            worldPosition + new Vector3(0f, centerOffset, 0f), ToPhysicsCharacterSettings(settings));
         try
         {
             session.BindPhysicsCharacter(controller.PhysicsBodyId, objectId);
@@ -2036,6 +2047,7 @@ public sealed class CharacterStudioGame : EngineHost
             catch (Exception exception) { sessionCleanupError = exception; }
             _playSession = null;
             _playAudioClip = null;
+            _sceneData.PlaySettings.ApplyInputBindings(_playInputMap);
             _editorUi?.SetHistory(_editorHistory);
             BuildSequencePreview();
             var errors = new[] { cleanupError, sessionCleanupError }.Where(error => error is not null)
@@ -2082,9 +2094,11 @@ public sealed class CharacterStudioGame : EngineHost
 
             var physicsWorld = _pathPreviewWorld
                 ?? throw new InvalidOperationException("Play physics world could not be initialized.");
+            var settings = CurrentScene.PlaySettings;
+            var centerOffset = CharacterCenterOffset(settings);
             var worldPosition = CurrentScene.GetWorldMatrix(objectId).Translation;
             var controller = new PhysicsCharacterController(physicsWorld,
-                worldPosition + new Vector3(0f, 0.9f, 0f), new PhysicsCharacterSettings { MoveSpeed = 3.5f });
+                worldPosition + new Vector3(0f, centerOffset, 0f), ToPhysicsCharacterSettings(settings));
             try
             {
                 var follower = new PhysicsCharacterPathFollower(controller, graph, route);
@@ -2140,7 +2154,7 @@ public sealed class CharacterStudioGame : EngineHost
             var physicsPose = _pathPreviewWorld.GetInterpolatedPose(agent.Controller.PhysicsBodyId,
                 step.InterpolationAlpha);
             SetObjectWorldPosition(CurrentScene, actor,
-                physicsPose.Position - new Vector3(0f, 0.9f, 0f));
+                physicsPose.Position - new Vector3(0f, CharacterCenterOffset(CurrentScene.PlaySettings), 0f));
         }
         if (_playCharacterController is { } playerController
             && _playCharacterObjectId is { } playerObjectId
@@ -2149,10 +2163,23 @@ public sealed class CharacterStudioGame : EngineHost
             var position = _pathPreviewWorld.GetInterpolatedPose(playerController.PhysicsBodyId,
                 step.InterpolationAlpha).Position;
             SetObjectWorldPosition(CurrentScene, playerObject,
-                position - new Vector3(0f, 0.9f, 0f));
-            _camera.Reset(position, _camera.Distance, _camera.Yaw, _camera.Pitch);
+                position - new Vector3(0f, CharacterCenterOffset(CurrentScene.PlaySettings), 0f));
+            var cameraSettings = CurrentScene.PlaySettings;
+            _camera.Reset(position + new Vector3(0f, cameraSettings.CameraTargetOffsetY, 0f),
+                _camera.Distance, _camera.Yaw, _camera.Pitch);
         }
     }
+
+    private static PhysicsCharacterSettings ToPhysicsCharacterSettings(ScenePlaySettings settings) => new()
+    {
+        Radius = settings.CapsuleRadius,
+        CylinderLength = settings.CapsuleCylinderLength,
+        MoveSpeed = settings.MoveSpeed,
+        JumpSpeed = settings.JumpSpeed
+    };
+
+    private static float CharacterCenterOffset(ScenePlaySettings settings) =>
+        settings.CapsuleRadius + settings.CapsuleCylinderLength * 0.5f;
 
     private static void SetObjectWorldPosition(SceneGraph scene, SceneObject item, Vector3 worldPosition)
     {
