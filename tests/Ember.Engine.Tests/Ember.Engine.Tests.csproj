@@ -21,6 +21,9 @@
     <ProjectReference Include="..\..\src\Ember.Engine\Ember.Engine.csproj" />
     <ProjectReference Include="..\..\src\Ember.Rpg\Ember.Rpg.csproj" />
     <ProjectReference Include="..\..\src\Ember.Authoring\Ember.Authoring.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Authoring.Rpg\Ember.Authoring.Rpg.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Editor\Ember.Editor.csproj" />
+    <ProjectReference Include="..\..\src\Ember.Editor.Rpg\Ember.Editor.Rpg.csproj" />
   </ItemGroup>
 
   <ItemGroup>

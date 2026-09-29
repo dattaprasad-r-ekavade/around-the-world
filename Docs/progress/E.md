@@ -51,5 +51,26 @@ class keeps thin forwarding methods. The largest C# file under `src/Ember.Editor
 
 E.2 is **Passed**: the panels and Play controller now own their feature behavior, all editor source
 files are within the size target, and build, tests and captures pass. The live desktop interaction
-gate remains unverified under M0.4. E.3 is next: remove the Authoring → RPG dependency and keep RPG
-authoring optional.
+gate remains unverified under M0.4.
+
+## E.3 Optional RPG authoring module — in progress, 29 September 2026
+
+Moved `AuthoredProjectValidator` and `AuthoredProjectRecoveryService` into the new
+`Ember.Authoring.Rpg` assembly and removed the `Ember.Authoring` → `Ember.Rpg` project reference.
+Added a generic editor tool extension contract and loader for app-local `Modules`, then moved the
+Placement, Dialogue and Quest authoring UI into the optional `Ember.Editor.Rpg` module. CharacterStudio
+copies that module beside the app by default and can omit it with `EnableRpgAuthoringModule=false`.
+The generic World authoring panel retains Templates, Travel and Paths.
+
+| Check | Result |
+| --- | --- |
+| `dotnet build src/Ember.Authoring/Ember.Authoring.csproj --configuration Release --nologo` | PASS — 0 warnings, 0 errors |
+| `dotnet build Ember.sln --configuration Release --nologo` | PASS — 0 warnings, 0 errors |
+| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 367 passed, 0 failed, 0 skipped, including authoring-boundary and extension-loading tests |
+| `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-build --no-restore` | PASS — save then load equals original |
+| CharacterStudio Home and Release A showcase captures | PASS — both exited successfully and saved 1280×720 PNGs under `%TEMP%/Ember/ManualGraphicsGate/e3-plugin-4be9b42ae65e4313ab5bf996de06d6d2/` |
+
+E.3 remains **In progress**. `Ember.Editor` still directly references RPG assemblies for project validation
+and recovery, so the editor has not yet been proven to build and start with the RPG module disabled.
+RpgSlice/Campaign-specific verification also remains for the final E.3 gate. The M0.4 live resize,
+save/reopen, Play/Stop and recovery-dialog checks remain a separate manual desktop gate.

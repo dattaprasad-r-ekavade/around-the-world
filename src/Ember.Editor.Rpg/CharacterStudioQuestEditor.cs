@@ -7,7 +7,7 @@ using NumericsVector4 = System.Numerics.Vector4;
 
 namespace Ember.Editor;
 
-internal sealed partial class CharacterStudioEditorUi
+public sealed partial class RpgEditorTool
 {
     private readonly QuestPanel _questPanel;
 
@@ -15,9 +15,9 @@ internal sealed partial class CharacterStudioEditorUi
 
     private sealed class QuestPanel
     {
-        private readonly CharacterStudioEditorUi _owner;
+        private readonly RpgEditorTool _owner;
 
-        public QuestPanel(CharacterStudioEditorUi owner) =>
+        public QuestPanel(RpgEditorTool owner) =>
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private static readonly QuestEventKind[] QuestEventKinds =
     [
@@ -221,7 +221,7 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void AddQuestStage(QuestDef quest)
     {
-        var id = CharacterStudioEditorUi.UniqueId("objective", quest.Stages.Select(stage => stage.Id));
+        var id = RpgEditorTool.UniqueId("objective", quest.Stages.Select(stage => stage.Id));
         var stage = new QuestStage
         {
             Id = id,

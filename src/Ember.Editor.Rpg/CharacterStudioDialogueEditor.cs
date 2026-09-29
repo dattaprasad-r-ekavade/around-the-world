@@ -8,7 +8,7 @@ using NumericsVector4 = System.Numerics.Vector4;
 
 namespace Ember.Editor;
 
-internal sealed partial class CharacterStudioEditorUi
+public sealed partial class RpgEditorTool
 {
     private readonly DialoguePanel _dialoguePanel;
 
@@ -18,9 +18,9 @@ internal sealed partial class CharacterStudioEditorUi
 
     private sealed class DialoguePanel
     {
-        private readonly CharacterStudioEditorUi _owner;
+        private readonly RpgEditorTool _owner;
 
-        public DialoguePanel(CharacterStudioEditorUi owner) =>
+        public DialoguePanel(RpgEditorTool owner) =>
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private string? _selectedDialogueId;
     private string? _selectedDialogueNodeId;

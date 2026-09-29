@@ -108,7 +108,7 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._showToolMenu = false;
             _owner._showSequenceTools = true;
             _owner._showWorldTools = false;
-            _owner._showRpgTools = false;
+            _owner._showWorldAuthoringTools = false;
             _owner._showSceneTemplateTools = false;
             if (_owner._getSequenceInfo() is null)
                 _owner._projectWorkspaceStatus = "Add an animated character to this scene to create a film sequence.";
@@ -119,7 +119,7 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._showToolMenu = false;
             _owner._showSequenceTools = true;
             _owner._showWorldTools = false;
-            _owner._showRpgTools = false;
+            _owner._showWorldAuthoringTools = false;
             _owner._showSceneTemplateTools = false;
             if (_owner._getSequenceInfo() is null)
                 _owner._projectWorkspaceStatus = "A film sequence is needed before frames can be exported.";
@@ -131,7 +131,7 @@ internal sealed partial class CharacterStudioEditorUi
         {
             _owner._showToolMenu = !_owner._showToolMenu;
             if (_owner._showToolMenu)
-                _owner._showSequenceTools = _owner._showWorldTools = _owner._showRpgTools = _owner._showSceneTemplateTools = false;
+                _owner._showSequenceTools = _owner._showWorldTools = _owner._showWorldAuthoringTools = _owner._showSceneTemplateTools = false;
         }
 
         var currentProject = _owner._getCurrentProjectPath();
@@ -152,7 +152,10 @@ internal sealed partial class CharacterStudioEditorUi
     {
         if (!_owner._showToolMenu) return false;
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 48f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(230f, _owner._logicalWidth), 236f));
+        var optionalToolRows = Math.Max(1, _owner._toolExtensions.Count) + _owner._toolExtensionLoadErrors.Count;
+        var menuHeight = 246f + optionalToolRows * 22f;
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(260f, _owner._logicalWidth),
+            Math.Min(menuHeight, Math.Max(180f, _owner._logicalHeight - 56f))));
         if (!ImGui.Begin("More tools", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -163,30 +166,56 @@ internal sealed partial class CharacterStudioEditorUi
         if (ImGui.Checkbox("Animate and Finish", ref showSequenceTools))
         {
             _owner._showSequenceTools = showSequenceTools;
-            if (showSequenceTools) _owner._showWorldTools = _owner._showRpgTools = _owner._showSceneTemplateTools = false;
+            if (showSequenceTools) _owner._showWorldTools = _owner._showWorldAuthoringTools = _owner._showSceneTemplateTools = false;
+            if (showSequenceTools) _owner._activeToolExtensionId = null;
             _owner._showToolMenu = false;
         }
         var showWorldTools = _owner._showWorldTools;
         if (ImGui.Checkbox("World Cells", ref showWorldTools))
         {
             _owner._showWorldTools = showWorldTools;
-            if (showWorldTools) _owner._showSequenceTools = _owner._showRpgTools = _owner._showSceneTemplateTools = false;
+            if (showWorldTools) _owner._showSequenceTools = _owner._showWorldAuthoringTools = _owner._showSceneTemplateTools = false;
+            if (showWorldTools) _owner._activeToolExtensionId = null;
             _owner._showToolMenu = false;
         }
-        var showRpgTools = _owner._showRpgTools;
-        if (ImGui.Checkbox("RPG authoring", ref showRpgTools))
+        var showWorldAuthoringTools = _owner._showWorldAuthoringTools;
+        if (ImGui.Checkbox("World authoring", ref showWorldAuthoringTools))
         {
-            _owner._showRpgTools = showRpgTools;
-            if (showRpgTools) _owner._showSequenceTools = _owner._showWorldTools = _owner._showSceneTemplateTools = false;
+            _owner._showWorldAuthoringTools = showWorldAuthoringTools;
+            if (showWorldAuthoringTools) _owner._showSequenceTools = _owner._showWorldTools = _owner._showSceneTemplateTools = false;
+            if (showWorldAuthoringTools) _owner._activeToolExtensionId = null;
             _owner._showToolMenu = false;
         }
         var showSceneTemplateTools = _owner._showSceneTemplateTools;
         if (ImGui.Checkbox("Scene templates", ref showSceneTemplateTools))
         {
             _owner._showSceneTemplateTools = showSceneTemplateTools;
-            if (showSceneTemplateTools) _owner._showSequenceTools = _owner._showWorldTools = _owner._showRpgTools = false;
+            if (showSceneTemplateTools) _owner._showSequenceTools = _owner._showWorldTools = _owner._showWorldAuthoringTools = false;
+            if (showSceneTemplateTools) _owner._activeToolExtensionId = null;
             _owner._showToolMenu = false;
         }
+        if (_owner._toolExtensions.Count > 0)
+        {
+            ImGui.Separator();
+            ImGui.TextDisabled("Optional tools");
+            foreach (var extension in _owner._toolExtensions)
+            {
+                var selected = string.Equals(_owner._activeToolExtensionId, extension.Id,
+                    StringComparison.OrdinalIgnoreCase);
+                if (!ImGui.Checkbox($"{extension.DisplayName}##tool-{extension.Id}", ref selected)) continue;
+                _owner._activeToolExtensionId = selected ? extension.Id : null;
+                if (!selected) continue;
+                _owner._showSequenceTools = _owner._showWorldTools = _owner._showWorldAuthoringTools = false;
+                _owner._showSceneTemplateTools = false;
+                _owner._showToolMenu = false;
+            }
+        }
+        else if (_owner._toolExtensionLoadErrors.Count == 0)
+        {
+            ImGui.TextDisabled("No optional tools installed.");
+        }
+        foreach (var error in _owner._toolExtensionLoadErrors)
+            ImGui.TextWrapped(error);
         if (ImGui.Checkbox("Performance details", ref _owner._showDiagnostics))
             _owner._setDiagnosticsVisible(_owner._showDiagnostics);
         ImGui.Separator();
@@ -196,8 +225,9 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._showToolMenu = false;
             _owner._showSequenceTools = false;
             _owner._showWorldTools = false;
-            _owner._showRpgTools = false;
+            _owner._showWorldAuthoringTools = false;
             _owner._showSceneTemplateTools = false;
+            _owner._activeToolExtensionId = null;
             _owner._showDiagnostics = false;
             _owner._setDiagnosticsVisible(false);
         }

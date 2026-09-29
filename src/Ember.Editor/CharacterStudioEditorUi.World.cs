@@ -1,6 +1,5 @@
 using Ember.Scene;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.World;
@@ -24,9 +23,8 @@ internal sealed partial class CharacterStudioEditorUi
 {
     private readonly WorldPanel _worldPanel;
 
-    private void DrawRpgAuthoringPanel(SceneGraph scene) => _worldPanel.DrawRpgAuthoringPanel(scene);
+    private void DrawWorldAuthoringPanel(SceneGraph scene) => _worldPanel.DrawWorldAuthoringPanel(scene);
     private void DrawWorldCellPanel(SceneGraph scene) => _worldPanel.DrawWorldCellPanel(scene);
-    private void LoadRpgPlacementContent() => _worldPanel.LoadRpgPlacementContent();
     private void LoadWorldManifest() => _worldPanel.LoadWorldManifest();
     private void CancelRecoveryReview() => _worldPanel.CancelRecoveryReview();
     private static void DeleteRecoveryStaging(AuthoredProjectRecoveryStaging staging, string? recoveryDirectory) =>

@@ -2,18 +2,17 @@
 
   <PropertyGroup>
     <TargetFramework>net9.0-windows</TargetFramework>
-    <UseWindowsForms>true</UseWindowsForms>
+    <EnableWindowsTargeting>true</EnableWindowsTargeting>
     <Nullable>enable</Nullable>
-    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
     <ImplicitUsings>disable</ImplicitUsings>
     <RootNamespace>Ember.Editor</RootNamespace>
-    <AssemblyName>Ember.Editor</AssemblyName>
+    <AssemblyName>Ember.Editor.Rpg</AssemblyName>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Ember.Engine\Ember.Engine.csproj" />
-    <ProjectReference Include="..\Ember.Authoring\Ember.Authoring.csproj" />
     <ProjectReference Include="..\Ember.Authoring.Rpg\Ember.Authoring.Rpg.csproj" />
+    <ProjectReference Include="..\Ember.Editor\Ember.Editor.csproj" />
     <ProjectReference Include="..\Ember.Rpg\Ember.Rpg.csproj" />
   </ItemGroup>
 

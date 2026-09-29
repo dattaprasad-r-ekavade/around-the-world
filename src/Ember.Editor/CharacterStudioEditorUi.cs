@@ -28,7 +28,6 @@ internal sealed record SequenceExportEditorInfo(
     bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
 internal sealed record SequenceExportEditorRequest(
     string OutputDirectory, float StartTime, float EndTime, int FrameRate, int Width, int Height);
-internal sealed record RpgPlacementOption(WorldEntityKind Kind, string Id, string Name);
 internal delegate string RecoveryCaptureAction(SceneGraph scene, string worldManifestPath, string rpgContentPath,
     string? currentScenePath, RpgContentSet? content);
 internal delegate string RecoveryApplyAction(AuthoredProjectRecoveryStaging staging);
@@ -93,6 +92,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Func<GltfAssetReference, string> _reloadProjectAsset;
     private readonly Func<IReadOnlyList<string>> _getRecentProjectPaths;
     private readonly Action<bool> _setDiagnosticsVisible;
+    private readonly IReadOnlyList<IEditorToolExtension> _toolExtensions;
+    private readonly IReadOnlyList<string> _toolExtensionLoadErrors;
     private FirstCreationLesson? _firstCreationLesson;
     private string? _lessonProjectOpenCheck;
     private readonly int _logicalWidth;
@@ -104,10 +105,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private string _renameCellName = string.Empty;
     private string _sceneSaveAsPath = Path.Combine(Environment.CurrentDirectory, "Scenes", "Untitled.json");
     private string _rpgContentPath = Path.Combine(AppContext.BaseDirectory, "Assets", "RpgPlacementDefinitions.json");
-    private string _rpgPlacementStatus = "Load RPG placement definitions.";
     private RpgContentSet? _rpgContent;
-    private string? _selectedRpgDefinitionKey;
-    private NumericsVector3 _rpgPlacementPosition = NumericsVector3.Zero;
     private NumericsVector3 _spawnMarkerPosition = NumericsVector3.Zero;
     private string _travelStatus = "Open a world manifest to author travel links.";
     private Guid? _selectedTravelCellId;
@@ -159,8 +157,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _showToolMenu;
     private bool _showSequenceTools;
     private bool _showWorldTools;
-    private bool _showRpgTools;
+    private bool _showWorldAuthoringTools;
     private bool _showSceneTemplateTools;
+    private string? _activeToolExtensionId;
     private bool _showDiagnostics;
     private bool _showFirstCreationLesson;
     private bool _showLessonWhy;
@@ -229,14 +228,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _scenePanel = new ScenePanel(this);
         _inspectorPanel = new InspectorPanel(this);
         _worldPanel = new WorldPanel(this);
-        _dialoguePanel = new DialoguePanel(this);
-        _questPanel = new QuestPanel(this);
         _pathPanel = new PathPanel(this);
         _placementTemplatePanel = new PlacementTemplatePanel(this);
         _playSettingsPanel = new PlaySettingsPanel(this);
         _unsavedChangesController = new UnsavedChangesController(this);
         _projectValidationPanel = new ProjectValidationPanel(this);
         _sceneTemplatePanel = new SceneTemplatePanel(this);
+        var loadedExtensions = EditorToolExtensionLoader.Load(AppContext.BaseDirectory);
+        _toolExtensions = loadedExtensions.Extensions;
+        _toolExtensionLoadErrors = loadedExtensions.Errors;
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
         _getCharacterInfo = getCharacterInfo ?? throw new ArgumentNullException(nameof(getCharacterInfo));
@@ -324,6 +324,20 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
+
+    private void LoadRpgPlacementContent()
+    {
+        _rpgContent = null;
+        try
+        {
+            var parsed = RpgContentJson.ParseForValidation(File.ReadAllText(_rpgContentPath));
+            _rpgContent = parsed.Content;
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Could not load RPG content for recovery: {exception.Message}";
+        }
+    }
 
     public void CompletePendingEdit(SceneGraph scene)
     {
@@ -497,8 +511,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 {
                     if (_showSequenceTools) DrawSequencePanel();
                     if (_showWorldTools) DrawWorldCellPanel(scene);
-                    if (_showRpgTools) DrawRpgAuthoringPanel(scene);
+                    if (_showWorldAuthoringTools) DrawWorldAuthoringPanel(scene);
                     if (_showSceneTemplateTools) DrawSceneTemplatePanel(scene);
+                    DrawActiveToolExtension(scene);
                 }
             }
         }
@@ -506,6 +521,40 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
+    }
+
+    private void DrawActiveToolExtension(SceneGraph scene)
+    {
+        if (_activeToolExtensionId is not { } activeId) return;
+        var extension = _toolExtensions.FirstOrDefault(tool =>
+            string.Equals(tool.Id, activeId, StringComparison.OrdinalIgnoreCase));
+        if (extension is null)
+        {
+            _activeToolExtensionId = null;
+            return;
+        }
+
+        try
+        {
+            extension.Draw(new EditorToolContext(scene, _isPlaying(), _getCurrentProjectPath(),
+                _getCurrentScenePath(), sceneObject => AddSceneObjectFromExtension(scene, sceneObject)));
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"{extension.DisplayName} stopped after an error: {exception.Message}";
+            _activeToolExtensionId = null;
+        }
+    }
+
+    private void AddSceneObjectFromExtension(SceneGraph scene, SceneObject sceneObject)
+    {
+        if (_isPlaying()) throw new InvalidOperationException("Stop Play before adding an authored object.");
+        if (scene.Find(sceneObject.Id) is not null)
+            throw new InvalidOperationException($"Scene object ID '{sceneObject.Id}' is already in use.");
+
+        CommitActiveTransformEdit(scene);
+        RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(sceneObject)));
+        _selectedObjectId = sceneObject.Id;
     }
 
 }

@@ -1,6 +1,5 @@
 using Ember.Scene;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.World;
@@ -28,11 +27,11 @@ internal sealed partial class CharacterStudioEditorUi
 
         public WorldPanel(CharacterStudioEditorUi owner) =>
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
-    public void DrawRpgAuthoringPanel(SceneGraph scene)
+    public void DrawWorldAuthoringPanel(SceneGraph scene)
     {
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 56f));
         ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth), Math.Max(180f, _owner._logicalHeight - 64f)));
-        if (!ImGui.Begin("RPG Authoring", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
+        if (!ImGui.Begin("World authoring", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
             return;
@@ -40,11 +39,6 @@ internal sealed partial class CharacterStudioEditorUi
 
         if (ImGui.BeginTabBar("RPG authoring tabs"))
         {
-            if (ImGui.BeginTabItem("Placement"))
-            {
-                DrawRpgPlacementTab(scene);
-                ImGui.EndTabItem();
-            }
             if (ImGui.BeginTabItem("Templates"))
             {
                 _owner.DrawPlacementTemplatesTab(scene);
@@ -60,105 +54,9 @@ internal sealed partial class CharacterStudioEditorUi
                 _owner.DrawPathAuthoringTab(scene);
                 ImGui.EndTabItem();
             }
-            if (ImGui.BeginTabItem("Dialogue"))
-            {
-                _owner.DrawDialogueAuthoringTab();
-                ImGui.EndTabItem();
-            }
-            if (ImGui.BeginTabItem("Quests"))
-            {
-                _owner.DrawQuestAuthoringTab();
-                ImGui.EndTabItem();
-            }
             ImGui.EndTabBar();
         }
         ImGui.End();
-    }
-
-    private void DrawRpgPlacementTab(SceneGraph scene)
-    {
-        ImGui.SetNextItemWidth(-1f);
-        ImGui.InputTextWithHint("##rpgContentPath", "Path to registered RPG definitions", ref _owner._rpgContentPath, 1024);
-        if (ImGui.Button("Load definitions")) LoadRpgPlacementContent();
-        ImGui.SameLine();
-        ImGui.TextDisabled(_owner._rpgContent is null ? "No definitions loaded" :
-            $"{_owner._rpgContent.Actors.Count} actors · {_owner._rpgContent.Items.Count} items");
-
-        if (_owner._rpgContent is not null)
-        {
-            var options = GetRpgPlacementOptions();
-            ImGui.BeginChild("RPG definition list", new NumericsVector2(0f, 112f), ImGuiChildFlags.Borders);
-            foreach (var option in options)
-            {
-                var key = RpgPlacementKey(option);
-                if (ImGui.Selectable($"{option.Name} · {option.Kind}##{key}",
-                    string.Equals(_owner._selectedRpgDefinitionKey, key, StringComparison.Ordinal)))
-                    _owner._selectedRpgDefinitionKey = key;
-            }
-            ImGui.EndChild();
-
-            ImGui.SetNextItemWidth(-1f);
-            ImGui.InputFloat3("Position", ref _owner._rpgPlacementPosition);
-            var selected = options.FirstOrDefault(option =>
-                string.Equals(RpgPlacementKey(option), _owner._selectedRpgDefinitionKey, StringComparison.Ordinal));
-            var canPlace = selected is not null && !_owner._isPlaying();
-            if (!canPlace) ImGui.BeginDisabled();
-            if (ImGui.Button("Place selected definition")) PlaceRpgDefinition(scene, selected!);
-            if (!canPlace) ImGui.EndDisabled();
-        }
-
-        ImGui.TextWrapped(_owner._rpgPlacementStatus);
-    }
-
-    private IReadOnlyList<RpgPlacementOption> GetRpgPlacementOptions()
-    {
-        if (_owner._rpgContent is null) return Array.Empty<RpgPlacementOption>();
-        return _owner._rpgContent.Actors.All.Values
-            .Select(actor => new RpgPlacementOption(WorldEntityKind.Actor, actor.Id.Value, actor.Name))
-            .Concat(_owner._rpgContent.Items.All.Values
-                .Select(item => new RpgPlacementOption(WorldEntityKind.Item, item.Id.Value, item.Name)))
-            .OrderBy(option => option.Kind)
-            .ThenBy(option => option.Name, StringComparer.OrdinalIgnoreCase)
-            .ThenBy(option => option.Id, StringComparer.Ordinal)
-            .ToArray();
-    }
-
-    private static string RpgPlacementKey(RpgPlacementOption option) => $"{option.Kind}:{option.Id}";
-
-    public void LoadRpgPlacementContent()
-    {
-        _owner._rpgContent = null;
-        _owner._selectedRpgDefinitionKey = null;
-        try
-        {
-            var parsed = RpgContentJson.ParseForValidation(File.ReadAllText(_owner._rpgContentPath));
-            _owner._rpgContent = parsed.Content;
-            _owner._rpgPlacementStatus = parsed.Diagnostics.Count == 0
-                ? $"Loaded definitions from {Path.GetFileName(_owner._rpgContentPath)}."
-                : $"Loaded draft from {Path.GetFileName(_owner._rpgContentPath)} with {parsed.Diagnostics.Count} validation issue(s).";
-        }
-        catch (Exception exception)
-        {
-            _owner._rpgPlacementStatus = $"Could not load definitions: {exception.Message}";
-        }
-    }
-
-    private void PlaceRpgDefinition(SceneGraph scene, RpgPlacementOption option)
-    {
-        try
-        {
-            var placement = SceneObjectFactory.CreateWorldEntityPlacement(scene, option.Kind, option.Id,
-                option.Name, new Vector3(_owner._rpgPlacementPosition.X, _owner._rpgPlacementPosition.Y, _owner._rpgPlacementPosition.Z));
-            _owner.CommitActiveTransformEdit(scene);
-            _owner.RunStructureChange(scene, () => _owner._history.Execute(scene, new CreateSceneObjectCommand(placement)));
-            _owner._selectedObjectId = placement.Id;
-            _owner._rpgPlacementStatus = $"Placed {option.Kind.ToString().ToLowerInvariant()} '{option.Name}' " +
-                $"with instance ID {placement.WorldEntity!.InstanceId}.";
-        }
-        catch (Exception exception)
-        {
-            _owner._rpgPlacementStatus = $"Could not place definition: {exception.Message}";
-        }
     }
 
     private void DrawWorldTravelTab(SceneGraph scene)
@@ -719,7 +617,7 @@ internal sealed partial class CharacterStudioEditorUi
         _owner._recoveryCanApply = false;
         _owner._recoveryReport = string.Empty;
         LoadWorldManifest();
-        LoadRpgPlacementContent();
+        _owner.LoadRpgPlacementContent();
     }
 
     private void CreateWorldManifest()

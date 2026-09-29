@@ -11,6 +11,7 @@
     <RootNamespace>CharacterStudio</RootNamespace>
     <AssemblyName>CharacterStudio</AssemblyName>
     <MonoGamePlatform>Windows</MonoGamePlatform>
+    <EnableRpgAuthoringModule Condition="'$(EnableRpgAuthoringModule)' == ''">true</EnableRpgAuthoringModule>
   </PropertyGroup>
 
   <ItemGroup>
@@ -23,7 +24,7 @@
     <Content Include="Assets\ReleaseACourtyard.glb" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\README.md" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\InteractionChime.wav" CopyToOutputDirectory="PreserveNewest" />
-    <Content Include="Assets\RpgPlacementDefinitions.json" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\RpgPlacementDefinitions.json" CopyToOutputDirectory="PreserveNewest" Condition="'$(EnableRpgAuthoringModule)' == 'true'" />
     <Content Include="Scenes\ReleaseAShowcase.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Scenes\FilmStarter.json" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
@@ -35,5 +36,21 @@
   <ItemGroup>
     <PackageReference Include="MonoGame.Content.Builder.Task" Version="3.8.5.1" />
   </ItemGroup>
+
+  <ItemGroup Condition="'$(EnableRpgAuthoringModule)' == 'true'">
+    <ProjectReference Include="..\..\src\Ember.Editor.Rpg\Ember.Editor.Rpg.csproj"
+                      ReferenceOutputAssembly="false" />
+  </ItemGroup>
+
+  <Target Name="CopyRpgAuthoringModule" AfterTargets="Build"
+          Condition="'$(EnableRpgAuthoringModule)' == 'true'">
+    <ItemGroup>
+      <RpgAuthoringModuleFile Include="..\..\src\Ember.Editor.Rpg\bin\$(Configuration)\net9.0-windows\*.dll" />
+      <RpgAuthoringModuleFile Include="..\..\src\Ember.Editor.Rpg\bin\$(Configuration)\net9.0-windows\*.deps.json" />
+    </ItemGroup>
+    <MakeDir Directories="$(OutDir)Modules" />
+    <Copy SourceFiles="@(RpgAuthoringModuleFile)" DestinationFolder="$(OutDir)Modules"
+          SkipUnchangedFiles="true" />
+  </Target>
 
 </Project>

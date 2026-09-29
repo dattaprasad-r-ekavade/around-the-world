@@ -224,7 +224,7 @@ internal sealed partial class CharacterStudioEditorUi
                 _projectName = projectName;
                 _owner._showSequenceTools = false;
                 _owner._showWorldTools = false;
-                _owner._showRpgTools = false;
+                _owner._showWorldAuthoringTools = false;
                 _owner._showSceneTemplateTools = false;
                 _owner._startLessonAfterProjectCreate = _owner._guideNewProject;
                 _owner._showHome = false;
@@ -248,7 +248,7 @@ internal sealed partial class CharacterStudioEditorUi
                 _owner._lessonProjectOpenCheck = path;
                 _owner._showSequenceTools = false;
                 _owner._showWorldTools = false;
-                _owner._showRpgTools = false;
+                _owner._showWorldAuthoringTools = false;
                 _owner._showSceneTemplateTools = false;
                 _owner._showHome = false;
             }
