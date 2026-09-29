@@ -225,6 +225,17 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _logicalHeight = Math.Max(1, logicalHeight);
         _windowHandle = device.PresentationParameters.DeviceWindowHandle;
         _homePanel = new HomePanel(this);
+        _workspacePanel = new WorkspacePanel(this);
+        _scenePanel = new ScenePanel(this);
+        _inspectorPanel = new InspectorPanel(this);
+        _worldPanel = new WorldPanel(this);
+        _dialoguePanel = new DialoguePanel(this);
+        _questPanel = new QuestPanel(this);
+        _pathPanel = new PathPanel(this);
+        _placementTemplatePanel = new PlacementTemplatePanel(this);
+        _playSettingsPanel = new PlaySettingsPanel(this);
+        _unsavedChangesController = new UnsavedChangesController(this);
+        _projectValidationPanel = new ProjectValidationPanel(this);
         _sceneTemplatePanel = new SceneTemplatePanel(this);
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));

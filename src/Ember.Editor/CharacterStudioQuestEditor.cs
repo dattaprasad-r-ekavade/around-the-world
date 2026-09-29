@@ -9,6 +9,16 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
+    private readonly QuestPanel _questPanel;
+
+    private void DrawQuestAuthoringTab() => _questPanel.DrawQuestAuthoringTab();
+
+    private sealed class QuestPanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public QuestPanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private static readonly QuestEventKind[] QuestEventKinds =
     [
         QuestEventKind.Interaction,
@@ -32,26 +42,26 @@ internal sealed partial class CharacterStudioEditorUi
     private int _questEventKindIndex;
     private string? _questEditorMessage;
 
-    private void DrawQuestAuthoringTab()
+    public void DrawQuestAuthoringTab()
     {
         ImGui.BeginChild("Quest authoring", new NumericsVector2(0f, 0f), ImGuiChildFlags.Borders);
-        if (_rpgContent is null)
+        if (_owner._rpgContent is null)
         {
             ImGui.TextWrapped("Load an RPG content pack in the Placement tab before authoring quests.");
             ImGui.EndChild();
             return;
         }
 
-        ImGui.TextDisabled($"{_rpgContent.Quests.Count} quests · {_rpgContentPath}");
+        ImGui.TextDisabled($"{_owner._rpgContent.Quests.Count} quests · {_owner._rpgContentPath}");
         ImGui.SetNextItemWidth(150f);
         ImGui.InputText("New quest ID", ref _newQuestId, 128);
         ImGui.SetNextItemWidth(180f);
         ImGui.InputText("Title", ref _newQuestTitle, 256);
         if (ImGui.Button("Add quest")) AddQuestFromEditor();
         ImGui.SameLine();
-        if (ImGui.Button("Reload pack")) LoadRpgPlacementContent();
+        if (ImGui.Button("Reload pack")) _owner.LoadRpgPlacementContent();
 
-        var quests = _rpgContent.Quests.All()
+        var quests = _owner._rpgContent.Quests.All()
             .OrderBy(quest => quest.Id.Value, StringComparer.Ordinal)
             .ToArray();
         var selectedQuest = GetSelectedQuest();
@@ -121,7 +131,7 @@ internal sealed partial class CharacterStudioEditorUi
             }
         }
 
-        var diagnostics = GetQuestDiagnostics(_rpgContent);
+        var diagnostics = GetQuestDiagnostics(_owner._rpgContent);
         ImGui.Separator();
         if (diagnostics.Length == 0)
             ImGui.TextColored(new NumericsVector4(0.35f, 0.9f, 0.5f, 1f),
@@ -137,22 +147,22 @@ internal sealed partial class CharacterStudioEditorUi
 
         var canSave = diagnostics.Length == 0;
         if (!canSave) ImGui.BeginDisabled();
-        if (ImGui.Button("Save validated content pack")) SaveDialogueContent();
+        if (ImGui.Button("Save validated content pack")) _owner.SaveDialogueContent();
         if (!canSave) ImGui.EndDisabled();
         ImGui.SameLine();
-        ImGui.TextWrapped(_questEditorMessage ?? _rpgPlacementStatus);
+        ImGui.TextWrapped(_questEditorMessage ?? _owner._rpgPlacementStatus);
         ImGui.EndChild();
     }
 
-    private QuestDef? GetSelectedQuest() => _rpgContent is not null && _selectedQuestId is not null
-        ? _rpgContent.Quests.Get(_selectedQuestId)
+    private QuestDef? GetSelectedQuest() => _owner._rpgContent is not null && _selectedQuestId is not null
+        ? _owner._rpgContent.Quests.Get(_selectedQuestId)
         : null;
 
     private void AddQuestFromEditor()
     {
-        if (_rpgContent is null) return;
+        if (_owner._rpgContent is null) return;
         var id = _newQuestId.Trim();
-        if (id.Length == 0 || _rpgContent.Quests.TryGet(id, out _))
+        if (id.Length == 0 || _owner._rpgContent.Quests.TryGet(id, out _))
         {
             _questEditorMessage = $"Quest ID '{id}' is empty or already exists.";
             return;
@@ -165,7 +175,7 @@ internal sealed partial class CharacterStudioEditorUi
         try
         {
             var quest = new QuestDef { Id = new ContentId<QuestContentKind>(id), Title = _newQuestTitle.Trim() };
-            _rpgContent.Quests.Add(quest);
+            _owner._rpgContent.Quests.Add(quest);
             _selectedQuestId = id;
             _selectedQuestStageId = null;
             _questDraftIdentity = null;
@@ -199,7 +209,7 @@ internal sealed partial class CharacterStudioEditorUi
             return;
         }
         var dialogueId = _questStartDialogueDraft.Trim();
-        _rpgContent!.Quests.Add(quest with
+        _owner._rpgContent!.Quests.Add(quest with
         {
             Title = _questTitleDraft.Trim(),
             StartDialogueId = dialogueId.Length == 0
@@ -211,14 +221,14 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void AddQuestStage(QuestDef quest)
     {
-        var id = UniqueId("objective", quest.Stages.Select(stage => stage.Id));
+        var id = CharacterStudioEditorUi.UniqueId("objective", quest.Stages.Select(stage => stage.Id));
         var stage = new QuestStage
         {
             Id = id,
             Journal = "Describe the objective for the player.",
             CompleteOn = QuestEventKind.Interaction
         };
-        _rpgContent!.Quests.Add(quest with { Stages = quest.Stages.Append(stage).ToArray() });
+        _owner._rpgContent!.Quests.Add(quest with { Stages = quest.Stages.Append(stage).ToArray() });
         _selectedQuestStageId = id;
         _stageDraftIdentity = null;
         _questEditorMessage = $"Added objective '{id}'. Assign a target before saving.";
@@ -282,7 +292,7 @@ internal sealed partial class CharacterStudioEditorUi
                 RequiredItemId = itemText.Length == 0 ? null : new ContentId<ItemContentKind>(itemText),
                 TargetWorldInstanceId = worldInstanceId
             };
-            _rpgContent!.Quests.Add(quest with
+            _owner._rpgContent!.Quests.Add(quest with
             {
                 Stages = quest.Stages.Select(stage => stage.Id == previous.Id ? replacement : stage).ToArray()
             });
@@ -297,5 +307,7 @@ internal sealed partial class CharacterStudioEditorUi
     {
         try { return content.Validate().Select(item => item.ToString()).ToArray(); }
         catch (Exception exception) { return new[] { $"Content validation failed: {exception.Message}" }; }
+    }
+
     }
 }

@@ -10,6 +10,18 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
+    private readonly DialoguePanel _dialoguePanel;
+
+    private void DrawDialogueAuthoringTab() => _dialoguePanel.DrawDialogueAuthoringTab();
+    private void SaveDialogueContent() => _dialoguePanel.SaveDialogueContent();
+    private static string UniqueId(string prefix, IEnumerable<string> used) => DialoguePanel.UniqueId(prefix, used);
+
+    private sealed class DialoguePanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public DialoguePanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private string? _selectedDialogueId;
     private string? _selectedDialogueNodeId;
     private string? _dialogueNodeIdDraftTarget;
@@ -20,29 +32,29 @@ internal sealed partial class CharacterStudioEditorUi
     private string _newDialogueId = "dialogue.new";
     private string _newFactionRequirementId = "factions.example";
 
-    private void DrawDialogueAuthoringTab()
+    public void DrawDialogueAuthoringTab()
     {
         ImGui.BeginChild("Dialogue authoring", new NumericsVector2(0f, 0f), ImGuiChildFlags.Borders);
-        if (_rpgContent is null)
+        if (_owner._rpgContent is null)
         {
             ImGui.TextWrapped("Load an RPG content pack in the Placement tab before authoring dialogue.");
             ImGui.EndChild();
             return;
         }
 
-        ImGui.TextDisabled($"{_rpgContent.Dialogues.Count} conversation records · {_rpgContentPath}");
+        ImGui.TextDisabled($"{_owner._rpgContent.Dialogues.Count} conversation records · {_owner._rpgContentPath}");
         ImGui.SetNextItemWidth(210f);
         ImGui.InputText("New dialogue ID", ref _newDialogueId, 128);
         ImGui.SameLine();
         if (ImGui.Button("Add dialogue")) AddDialogue();
         ImGui.SameLine();
-        if (ImGui.Button("Reload pack")) LoadRpgPlacementContent();
+        if (ImGui.Button("Reload pack")) _owner.LoadRpgPlacementContent();
 
         var selectedTree = GetSelectedDialogue();
         ImGui.SetNextItemWidth(-1f);
         if (ImGui.BeginCombo("Conversation", selectedTree?.Id.Value ?? "Select conversation"))
         {
-            foreach (var tree in _rpgContent.Dialogues.OrderBy(item => item.Id.Value, StringComparer.Ordinal))
+            foreach (var tree in _owner._rpgContent.Dialogues.OrderBy(item => item.Id.Value, StringComparer.Ordinal))
             {
                 var selected = selectedTree?.Id == tree.Id;
                 if (ImGui.Selectable(tree.Id.Value, selected))
@@ -63,7 +75,7 @@ internal sealed partial class CharacterStudioEditorUi
         selectedTree = GetSelectedDialogue();
         if (selectedTree is not null) DrawDialogueTreeEditor(selectedTree);
 
-        var diagnostics = GetDialogueDiagnostics(_rpgContent);
+        var diagnostics = GetDialogueDiagnostics(_owner._rpgContent);
         ImGui.Separator();
         if (diagnostics.Count == 0)
             ImGui.TextColored(new NumericsVector4(0.35f, 0.9f, 0.5f, 1f), "Content references and dialogue records validate.");
@@ -80,7 +92,7 @@ internal sealed partial class CharacterStudioEditorUi
         if (ImGui.Button("Save validated content pack")) SaveDialogueContent();
         if (!canSave) ImGui.EndDisabled();
         ImGui.SameLine();
-        ImGui.TextWrapped(_rpgPlacementStatus);
+        ImGui.TextWrapped(_owner._rpgPlacementStatus);
         ImGui.EndChild();
     }
 
@@ -126,15 +138,15 @@ internal sealed partial class CharacterStudioEditorUi
         if (ImGui.Button("Rename node"))
         {
             var newId = _dialogueNodeIdDraft.Trim();
-            if (string.IsNullOrWhiteSpace(newId)) _rpgPlacementStatus = "A dialogue node needs an ID.";
+            if (string.IsNullOrWhiteSpace(newId)) _owner._rpgPlacementStatus = "A dialogue node needs an ID.";
             else if (newId != node.Id && tree.Nodes.Any(item => item.Id == newId))
-                _rpgPlacementStatus = $"Node ID '{newId}' is already in this conversation.";
+                _owner._rpgPlacementStatus = $"Node ID '{newId}' is already in this conversation.";
             else
             {
                 UpdateDialogueNode(node with { Id = newId });
                 _dialogueNodeIdDraft = newId;
                 _dialogueNodeIdDraftTarget = newId;
-                _rpgPlacementStatus = $"Renamed node to '{newId}' and updated incoming choice links.";
+                _owner._rpgPlacementStatus = $"Renamed node to '{newId}' and updated incoming choice links.";
             }
         }
         var speaker = node.Speaker;
@@ -472,7 +484,7 @@ internal sealed partial class CharacterStudioEditorUi
         }
     }
 
-    private DialogueTree? GetSelectedDialogue() => _rpgContent?.Dialogues.FirstOrDefault(
+    private DialogueTree? GetSelectedDialogue() => _owner._rpgContent?.Dialogues.FirstOrDefault(
         tree => tree.Id.Value == _selectedDialogueId);
 
     private DialogueNode? GetSelectedDialogueNode() => GetSelectedDialogue()?.Nodes.FirstOrDefault(
@@ -487,13 +499,13 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void AddDialogue()
     {
-        if (_rpgContent is null || string.IsNullOrWhiteSpace(_newDialogueId)) return;
+        if (_owner._rpgContent is null || string.IsNullOrWhiteSpace(_newDialogueId)) return;
         try
         {
             var id = new ContentId<DialogueContentKind>(_newDialogueId.Trim());
-            if (_rpgContent.Dialogues.Any(tree => tree.Id == id))
+            if (_owner._rpgContent.Dialogues.Any(tree => tree.Id == id))
             {
-                _rpgPlacementStatus = $"Dialogue ID '{id.Value}' is already in use.";
+                _owner._rpgPlacementStatus = $"Dialogue ID '{id.Value}' is already in use.";
                 return;
             }
             var tree = new DialogueTree
@@ -501,13 +513,13 @@ internal sealed partial class CharacterStudioEditorUi
                 Id = id,
                 Nodes = new List<DialogueNode> { new() { Id = "start", Speaker = "Speaker", Text = "New dialogue." } }
             };
-            ReplaceDialogues(_rpgContent.Dialogues.Append(tree).ToArray());
+            ReplaceDialogues(_owner._rpgContent.Dialogues.Append(tree).ToArray());
             _selectedDialogueId = id.Value;
             _selectedDialogueNodeId = "start";
-            _newDialogueId = UniqueId("dialogue.new", _rpgContent.Dialogues.Select(item => item.Id.Value));
-            _rpgPlacementStatus = $"Added conversation '{id.Value}'.";
+            _newDialogueId = UniqueId("dialogue.new", _owner._rpgContent.Dialogues.Select(item => item.Id.Value));
+            _owner._rpgPlacementStatus = $"Added conversation '{id.Value}'.";
         }
-        catch (Exception exception) { _rpgPlacementStatus = $"Could not add dialogue: {exception.Message}"; }
+        catch (Exception exception) { _owner._rpgPlacementStatus = $"Could not add dialogue: {exception.Message}"; }
     }
 
     private void AddDialogueNode(DialogueTree tree)
@@ -602,7 +614,7 @@ internal sealed partial class CharacterStudioEditorUi
         if (!string.Equals(oldName, newName, StringComparison.Ordinal)
             && GetSelectedDialogueOption()?.Sets.ContainsKey(newName) == true)
         {
-            _rpgPlacementStatus = $"Effect flag '{newName}' already exists on this choice.";
+            _owner._rpgPlacementStatus = $"Effect flag '{newName}' already exists on this choice.";
             return;
         }
         UpdateDialogueOption(optionIndex, option =>
@@ -641,7 +653,7 @@ internal sealed partial class CharacterStudioEditorUi
         _selectedDialogueOptionIndex = null;
         _selectedDialogueConditionIndex = null;
         _selectedDialogueEffectName = null;
-        _rpgPlacementStatus = "Deleted node; choices that pointed to it now end the conversation.";
+        _owner._rpgPlacementStatus = "Deleted node; choices that pointed to it now end the conversation.";
     }
 
     private void MoveDialogueNodeToStart(int index)
@@ -657,16 +669,16 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void ReplaceDialogue(DialogueTree replacement)
     {
-        var content = _rpgContent;
+        var content = _owner._rpgContent;
         if (content is null) return;
         ReplaceDialogues(content.Dialogues.Select(tree => tree.Id == replacement.Id ? replacement : tree).ToArray());
     }
 
     private void ReplaceDialogues(IReadOnlyList<DialogueTree> dialogues)
     {
-        var content = _rpgContent;
+        var content = _owner._rpgContent;
         if (content is null) return;
-        _rpgContent = new RpgContentSet
+        _owner._rpgContent = new RpgContentSet
         {
             Actors = content.Actors,
             Items = content.Items,
@@ -696,18 +708,18 @@ internal sealed partial class CharacterStudioEditorUi
         catch (Exception exception) { return new[] { $"Content validation failed: {exception.Message}" }; }
     }
 
-    private void SaveDialogueContent()
+    public void SaveDialogueContent()
     {
-        if (_rpgContent is null) return;
+        if (_owner._rpgContent is null) return;
         try
         {
-            RpgContentJson.SaveAtomic(_rpgContentPath, _rpgContent);
-            _rpgPlacementStatus = $"Saved validated content to {_rpgContentPath}.";
+            RpgContentJson.SaveAtomic(_owner._rpgContentPath, _owner._rpgContent);
+            _owner._rpgPlacementStatus = $"Saved validated content to {_owner._rpgContentPath}.";
         }
-        catch (Exception exception) { _rpgPlacementStatus = $"Could not save content: {exception.Message}"; }
+        catch (Exception exception) { _owner._rpgPlacementStatus = $"Could not save content: {exception.Message}"; }
     }
 
-    private static string UniqueId(string prefix, IEnumerable<string> used)
+    public static string UniqueId(string prefix, IEnumerable<string> used)
     {
         var ids = new HashSet<string>(used, StringComparer.Ordinal);
         if (!ids.Contains(prefix)) return prefix;
@@ -751,5 +763,7 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.EndCombo();
         }
         return changed;
+    }
+
     }
 }

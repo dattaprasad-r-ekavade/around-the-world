@@ -13,6 +13,16 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
+    private readonly PathPanel _pathPanel;
+
+    private void DrawPathAuthoringTab(SceneGraph scene) => _pathPanel.DrawPathAuthoringTab(scene);
+
+    private sealed class PathPanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public PathPanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private Guid? _pathGraphCellId;
     private CellPathGraph? _pathGraph;
     private Guid? _selectedPathNodeId;
@@ -25,10 +35,10 @@ internal sealed partial class CharacterStudioEditorUi
     private bool _pathEdgeBidirectional = true;
     private string _pathStatus = "Open a world cell to author its navigation graph.";
 
-    private void DrawPathAuthoringTab(SceneGraph scene)
+    public void DrawPathAuthoringTab(SceneGraph scene)
     {
-        var activeCell = FindCurrentWorldCell();
-        if (_worldManifest is null || activeCell is null)
+        var activeCell = _owner.FindCurrentWorldCell();
+        if (_owner._worldManifest is null || activeCell is null)
         {
             ImGui.TextWrapped("Open a scene that belongs to the current world to edit its path graph.");
             ImGui.TextWrapped(_pathStatus);
@@ -137,16 +147,16 @@ internal sealed partial class CharacterStudioEditorUi
         {
             ImGui.TextColored(new NumericsVector4(0.4f, 0.9f, 0.5f, 1f),
                 $"Reachable · {route.NodeIds.Count} nodes · {route.Distance:0.##} m");
-            var previewObject = _selectedObjectId is { } actorId ? scene.Find(actorId) : null;
-            var canFollow = _isPlaying() && previewObject is not null;
+            var previewObject = _owner._selectedObjectId is { } actorId ? scene.Find(actorId) : null;
+            var canFollow = _owner._isPlaying() && previewObject is not null;
             if (!canFollow) ImGui.BeginDisabled();
             if (ImGui.Button("Follow route with selected object in play mode"))
-                _pathStatus = _startPathFollow(previewObject!.Id, graph, route);
+                _pathStatus = _owner._startPathFollow(previewObject!.Id, graph, route);
             if (!canFollow) ImGui.EndDisabled();
-            if (previewObject is not null && _getPathFollowStatus(previewObject.Id) is { } followStatus)
+            if (previewObject is not null && _owner._getPathFollowStatus(previewObject.Id) is { } followStatus)
             {
                 ImGui.SameLine();
-                if (ImGui.Button("Stop")) _stopPathFollow(previewObject.Id);
+                if (ImGui.Button("Stop")) _owner._stopPathFollow(previewObject.Id);
                 ImGui.TextDisabled($"Follow state: {followStatus}");
             }
         }
@@ -182,7 +192,7 @@ internal sealed partial class CharacterStudioEditorUi
     }
 
     private string PathGraphPath(WorldCellDefinition cell) =>
-        Path.Combine(_worldManifest!.RootDirectory, "Navigation", $"{cell.Id:N}.paths.json");
+        Path.Combine(_owner._worldManifest!.RootDirectory, "Navigation", $"{cell.Id:N}.paths.json");
 
     private void AddPathNode()
     {
@@ -323,8 +333,8 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void SavePathGraph(CellPathGraph? graph, Action? afterSave, string success)
     {
-        if (graph is null || _worldManifest is null || _pathGraphCellId is not { } cellId) return;
-        var cell = _worldManifest.FindCell(cellId);
+        if (graph is null || _owner._worldManifest is null || _pathGraphCellId is not { } cellId) return;
+        var cell = _owner._worldManifest.FindCell(cellId);
         if (cell is null) return;
         try
         {
@@ -350,5 +360,7 @@ internal sealed partial class CharacterStudioEditorUi
             _pathStatus = $"Path graph is invalid: {exception.Message}";
             return null;
         }
+    }
+
     }
 }

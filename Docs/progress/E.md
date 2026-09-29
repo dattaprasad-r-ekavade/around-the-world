@@ -25,31 +25,31 @@ reviewed as matching at 1280×720.
 | After artifacts | `%TEMP%/Ember/ManualGraphicsGate/after-editor-extraction-3b0ebad37e8c4f98b02b4b157bae8b0b/` (`home.png`, `starter-scene.png`, `showcase.png`, logs) |
 | Code commit | PASS — `71b0031` (`refactor: extract editor project`) |
 
-Still open: E.2 must split the two large editor files into focused types/files; E.3 must remove the
-Authoring → RPG dependency. M0.4 and UX still need their live desktop interaction gates.
+Still open: E.3 must remove the Authoring → RPG dependency. M0.4 and UX still need their live desktop
+interaction gates.
 
 ## E.2 Editor feature groups, session, controller and panels — 29 September 2026
 
 Split `CharacterStudioGame` into feature-group files for viewport input, rendering, diagnostics,
-play, sequences, projects and assets. Split `CharacterStudioEditorUi` into Home, workspace, World,
-scene and inspector files. These remain partial declarations of the existing host/UI types, so this
-is an organizational step rather than the final panel architecture. Added `EditorProjectSession` to
-own the open project, cached asset catalog and recent-project persistence; project switching
-invalidates the catalog through that session. Added `CharacterStudioPlayController` to own the play
-session, history, input map, interaction audio, character/path-following state and physics cleanup.
-Home and Scene Templates now have independent panel types. Every C# file under `src/Ember.Editor`
-is at most 782 lines.
+play, sequences, projects and assets. Extracted the actual editor UI state and behavior into
+independent Workspace, World, Scene, Inspector, Dialogue, Quest, Path, Placement Template, Play
+Settings and Project Validation panel types, alongside the existing Home and Scene Template panels.
+Moved unsaved-change prompts into `UnsavedChangesController`. Added `EditorProjectSession` to own the
+open project, cached asset catalog and recent-project persistence; project switching invalidates the
+catalog through that session. `CharacterStudioPlayController` now owns and performs play start/stop,
+runtime updates, input, character/path following, interaction audio and physics cleanup; the game
+class keeps thin forwarding methods. The largest C# file under `src/Ember.Editor` is 790 lines.
 
 | Check | Result |
 | --- | --- |
 | `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
 | `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 364 passed, 0 failed, 0 skipped |
-| Home, Film starter and Release A showcase captures | PASS — each exited 0 at 1280×720; stderr files empty; visually match the prior captures |
-| After artifacts | `%TEMP%/Ember/ManualGraphicsGate/after-e2-panels-14dd799776324e1aa422afaca113701b/` (`home.png`, `starter-scene.png`, `showcase-scene.png`, logs) |
-| Max editor source file | PASS — 782 lines (`CharacterStudioEditorUi.World.cs`) |
+| Home, Film starter and Release A showcase captures | PASS — each exited 0 at 1280×720; stderr files empty; Home and starter are byte-identical to prior captures, and showcase is visually unchanged |
+| After artifacts | `%TEMP%/Ember/ManualGraphicsGate/after-e2-all-panels-ba869fdaa9fd4a868a5fe22775db5bb1/` (`home.png`, `starter-scene.png`, `showcase-scene.png`, logs) |
+| Max editor source file | PASS — 790 lines (`CharacterStudioEditorUi.WorldPanel.cs`) |
 | Hosted Windows CI | PASS — [run 36584401989](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36584401989) for `6c98dc5` |
 
-E.2 remains **In progress**. Workspace, World, scene and inspector UI still live on the shared
-`CharacterStudioEditorUi` host. `CharacterStudioGame` still coordinates play start/stop and runtime
-updates around the extracted controller. Finish those boundaries, then rerun the same checks before
-marking E.2 Passed. The manual desktop interaction gate remains unverified under M0.4.
+E.2 is **Passed**: the panels and Play controller now own their feature behavior, all editor source
+files are within the size target, and build, tests and captures pass. The live desktop interaction
+gate remains unverified under M0.4. E.3 is next: remove the Authoring → RPG dependency and keep RPG
+authoring optional.

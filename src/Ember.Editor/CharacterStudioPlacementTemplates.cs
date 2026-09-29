@@ -11,6 +11,16 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
+    private readonly PlacementTemplatePanel _placementTemplatePanel;
+
+    private void DrawPlacementTemplatesTab(SceneGraph scene) => _placementTemplatePanel.DrawPlacementTemplatesTab(scene);
+
+    private sealed class PlacementTemplatePanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public PlacementTemplatePanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private string _placementTemplatePath = string.Empty;
     private string _placementTemplateNameDraft = string.Empty;
     private string _placementTemplateStatus = "Load or create a placement template library.";
@@ -18,7 +28,7 @@ internal sealed partial class CharacterStudioEditorUi
     private Guid? _selectedPlacementTemplateId;
     private bool _placementTemplatesLoaded;
 
-    private void DrawPlacementTemplatesTab(SceneGraph scene)
+    public void DrawPlacementTemplatesTab(SceneGraph scene)
     {
         if (!_placementTemplatesLoaded)
         {
@@ -51,15 +61,15 @@ internal sealed partial class CharacterStudioEditorUi
         {
             ImGui.SetNextItemWidth(-1f);
             ImGui.InputText("Template name", ref _placementTemplateNameDraft, 256);
-            var selectedObject = _selectedObjectId is { } objectId ? scene.Find(objectId) : null;
-            var canUpdate = !_isPlaying()
+            var selectedObject = _owner._selectedObjectId is { } objectId ? scene.Find(objectId) : null;
+            var canUpdate = !_owner._isPlaying()
                 && selectedObject?.WorldEntity?.TemplateId == selectedTemplate.Id;
             if (!canUpdate) ImGui.BeginDisabled();
             if (ImGui.Button("Update defaults from selected placement"))
                 UpdatePlacementTemplateFromSelection(scene, selectedTemplate, selectedObject!);
             if (!canUpdate) ImGui.EndDisabled();
 
-            var canPlace = !_isPlaying();
+            var canPlace = !_owner._isPlaying();
             if (!canPlace) ImGui.BeginDisabled();
             if (ImGui.Button("Place template instance")) PlaceTemplateInstance(scene, selectedTemplate);
             if (!canPlace) ImGui.EndDisabled();
@@ -67,7 +77,7 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.TextDisabled($"Template ID {selectedTemplate.Id:N}; changes affect {scene.Objects.Count(item => item.WorldEntity?.TemplateId == selectedTemplate.Id)} instance(s) in the active scene.");
         }
 
-        var activeSelection = _selectedObjectId is { } selectedId ? scene.Find(selectedId) : null;
+        var activeSelection = _owner._selectedObjectId is { } selectedId ? scene.Find(selectedId) : null;
         var selectedPlacement = activeSelection?.WorldEntity;
         ImGui.Separator();
         if (selectedPlacement is null)
@@ -77,7 +87,7 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.TextWrapped($"Selected {selectedPlacement.Kind}: {selectedPlacement.DefinitionId} · instance {selectedPlacement.InstanceId:N}");
             ImGui.SetNextItemWidth(-1f);
             ImGui.InputText("New template name", ref _placementTemplateNameDraft, 256);
-            if (!_isPlaying() && ImGui.Button("Create or update template from selected"))
+            if (!_owner._isPlaying() && ImGui.Button("Create or update template from selected"))
                 CreateOrUpdatePlacementTemplate(scene, activeSelection!);
 
             if (selectedPlacement.TemplateId is { } templateId
@@ -107,9 +117,9 @@ internal sealed partial class CharacterStudioEditorUi
 
     private string DefaultPlacementTemplatePath()
     {
-        if (_worldManifest is not null)
-            return Path.Combine(_worldManifest.RootDirectory, "PlacementTemplates.json");
-        if (_getCurrentScenePath() is { } scenePath)
+        if (_owner._worldManifest is not null)
+            return Path.Combine(_owner._worldManifest.RootDirectory, "PlacementTemplates.json");
+        if (_owner._getCurrentScenePath() is { } scenePath)
             return Path.Combine(Path.GetDirectoryName(Path.GetFullPath(scenePath))!, "PlacementTemplates.json");
         return Path.Combine(Environment.CurrentDirectory, "PlacementTemplates.json");
     }
@@ -171,9 +181,9 @@ internal sealed partial class CharacterStudioEditorUi
             var replacement = new WorldEntityPlacementComponent(placement.Kind,
                 placement.DefinitionId, placement.InstanceId, template.Id,
                 existing is null ? PlacementTemplateOverrideFlags.None : placement.TemplateOverrides);
-            RunStructureChange(scene, () => _history.Execute(scene,
+            _owner.RunStructureChange(scene, () => _owner._history.Execute(scene,
                 new WorldEntityPlacementEditCommand(sceneObject.Id, replacement)));
-            RunStructureChange(scene, () => _history.Execute(scene,
+            _owner.RunStructureChange(scene, () => _owner._history.Execute(scene,
                 new WorldEntityPlacementTemplateApplyCommand(template)));
             _selectedPlacementTemplateId = template.Id;
             _placementTemplateNameDraft = template.Name;
@@ -202,7 +212,7 @@ internal sealed partial class CharacterStudioEditorUi
             };
             _placementTemplates.Replace(updated);
             var affected = scene.Objects.Count(item => item.WorldEntity?.TemplateId == updated.Id);
-            RunStructureChange(scene, () => _history.Execute(scene,
+            _owner.RunStructureChange(scene, () => _owner._history.Execute(scene,
                 new WorldEntityPlacementTemplateApplyCommand(updated)));
             _placementTemplateStatus = $"Updated '{updated.Name}' and refreshed {affected} active-scene instance(s).";
         }
@@ -217,9 +227,9 @@ internal sealed partial class CharacterStudioEditorUi
         try
         {
             var placement = WorldEntityPlacementTemplateSystem.CreatePlacement(scene, template);
-            CommitActiveTransformEdit(scene);
-            RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(placement)));
-            _selectedObjectId = placement.Id;
+            _owner.CommitActiveTransformEdit(scene);
+            _owner.RunStructureChange(scene, () => _owner._history.Execute(scene, new CreateSceneObjectCommand(placement)));
+            _owner._selectedObjectId = placement.Id;
             _placementTemplateStatus = $"Placed '{template.Name}' as world instance {placement.WorldEntity!.InstanceId:N}.";
         }
         catch (Exception exception)
@@ -236,7 +246,7 @@ internal sealed partial class CharacterStudioEditorUi
         var overrides = enabled ? placement.TemplateOverrides | flag : placement.TemplateOverrides & ~flag;
         var replacement = new WorldEntityPlacementComponent(placement.Kind, placement.DefinitionId,
             placement.InstanceId, placement.TemplateId, overrides);
-        RunStructureChange(scene, () => _history.Execute(scene,
+        _owner.RunStructureChange(scene, () => _owner._history.Execute(scene,
             new WorldEntityPlacementEditCommand(sceneObject.Id, replacement)));
     }
 
@@ -259,5 +269,7 @@ internal sealed partial class CharacterStudioEditorUi
                 ?? throw new InvalidOperationException($"Cannot undo missing placement object {objectId}.");
             sceneObject.WorldEntity = _before;
         }
+    }
+
     }
 }

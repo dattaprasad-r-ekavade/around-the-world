@@ -9,8 +9,22 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
-    private const string UnsavedChangesPopupName = "Unsaved scene changes";
     private readonly Action _confirmExit;
+    private readonly UnsavedChangesController _unsavedChangesController;
+
+    public void RequestCloseConfirmation() => _unsavedChangesController.RequestCloseConfirmation();
+    private void RequestSaveBeforeContinue(string actionDescription, Action continueAfterSave) => _unsavedChangesController.RequestSaveBeforeContinue(actionDescription, continueAfterSave);
+    private void DrawUnsavedChangesDialog(SceneGraph scene) => _unsavedChangesController.DrawUnsavedChangesDialog(scene);
+    private bool SaveSceneFromUi(SceneGraph scene) => _unsavedChangesController.SaveSceneFromUi(scene);
+
+    private sealed class UnsavedChangesController
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public UnsavedChangesController(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+
+    private const string UnsavedChangesPopupName = "Unsaved scene changes";
     private Action? _continueAfterSave;
     private bool _unsavedDialogPending;
     private bool _unsavedDialogOpened;
@@ -19,7 +33,7 @@ internal sealed partial class CharacterStudioEditorUi
 
     public void RequestCloseConfirmation()
     {
-        if (!_history.IsDirty || _unsavedDialogPending) return;
+        if (!_owner._history.IsDirty || _unsavedDialogPending) return;
         _continueAfterSave = null;
         _exitAfterSave = true;
         _unsavedDialogMessage = "This scene has edits that have not been saved.";
@@ -27,9 +41,9 @@ internal sealed partial class CharacterStudioEditorUi
         _unsavedDialogOpened = false;
     }
 
-    private void RequestSaveBeforeContinue(string actionDescription, Action continueAfterSave)
+    public void RequestSaveBeforeContinue(string actionDescription, Action continueAfterSave)
     {
-        if (!_history.IsDirty)
+        if (!_owner._history.IsDirty)
         {
             continueAfterSave();
             return;
@@ -42,7 +56,7 @@ internal sealed partial class CharacterStudioEditorUi
         _unsavedDialogOpened = false;
     }
 
-    private void DrawUnsavedChangesDialog(SceneGraph scene)
+    public void DrawUnsavedChangesDialog(SceneGraph scene)
     {
         if (_unsavedDialogPending && !_unsavedDialogOpened)
         {
@@ -85,39 +99,39 @@ internal sealed partial class CharacterStudioEditorUi
         ImGui.EndPopup();
     }
 
-    private bool SaveSceneFromUi(SceneGraph scene)
+    public bool SaveSceneFromUi(SceneGraph scene)
     {
-        if (_isPlaying())
+        if (_owner._isPlaying())
         {
-            _projectWorkspaceStatus = "Stop Play before saving the authored scene.";
+            _owner._projectWorkspaceStatus = "Stop Play before saving the authored scene.";
             return false;
         }
 
-        var scenePath = _getCurrentScenePath();
+        var scenePath = _owner._getCurrentScenePath();
         if (scenePath is null)
         {
-            var projectPath = _getCurrentProjectPath();
+            var projectPath = _owner._getCurrentProjectPath();
             var initialDirectory = projectPath is null
                 ? Environment.CurrentDirectory
                 : Path.Combine(Path.GetDirectoryName(projectPath)!, "Scenes");
             scenePath = CharacterStudioFilePickers.PickSceneSaveFile(
-                initialDirectory, "Scene.json", _windowHandle);
+                initialDirectory, "Scene.json", _owner._windowHandle);
             if (scenePath is null) return false;
         }
 
         try
         {
-            _saveSceneAs(scenePath);
-            _history.MarkSaved();
-            if (_firstCreationLesson is { } lesson
-                && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
-                lesson.ObserveSaved(_getCurrentProjectPath()!, scenePath, scene);
-            _projectWorkspaceStatus = $"Saved {Path.GetFileName(scenePath)}.";
+            _owner._saveSceneAs(scenePath);
+            _owner._history.MarkSaved();
+            if (_owner._firstCreationLesson is { } lesson
+                && CharacterStudioEditorUi.IsSamePath(lesson.ProjectFilePath, _owner._getCurrentProjectPath()))
+                lesson.ObserveSaved(_owner._getCurrentProjectPath()!, scenePath, scene);
+            _owner._projectWorkspaceStatus = $"Saved {Path.GetFileName(scenePath)}.";
             return true;
         }
         catch (Exception exception)
         {
-            _projectWorkspaceStatus = $"Could not save the scene: {exception.Message}";
+            _owner._projectWorkspaceStatus = $"Could not save the scene: {exception.Message}";
             return false;
         }
     }
@@ -139,7 +153,9 @@ internal sealed partial class CharacterStudioEditorUi
         }
 
         if (closeWithoutSaving)
-            _projectWorkspaceStatus = "Closed without saving the current scene.";
-        _confirmExit();
+            _owner._projectWorkspaceStatus = "Closed without saving the current scene.";
+        _owner._confirmExit();
+    }
+
     }
 }

@@ -22,9 +22,80 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
-    private void DrawTransformToolActions(SceneGraph scene, SceneObject selected)
+    private readonly InspectorPanel _inspectorPanel;
+
+    private void DrawTransformToolActions(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawTransformToolActions(scene, selected);
+    private void DrawSequencePanel() => _inspectorPanel.DrawSequencePanel();
+    private void DrawBoxColliderControls(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawBoxColliderControls(scene, selected);
+    private void DrawCharacterControls(SceneObject selected) => _inspectorPanel.DrawCharacterControls(selected);
+    private void DrawLightingControls() => _inspectorPanel.DrawLightingControls();
+    private void DrawWhatHappensControls(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawWhatHappensControls(scene, selected);
+    private void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform, bool changed, Action applyChange) => _inspectorPanel.TrackTransformInput(scene, objectId, transform, changed, applyChange);
+    private void CommitActiveTransformEdit(SceneGraph scene) => _inspectorPanel.CommitActiveTransformEdit(scene);
+    private void RunHistoryAction(SceneGraph scene, bool undo) => _inspectorPanel.RunHistoryAction(scene, undo);
+    private void CreateEmpty(SceneGraph scene) => _inspectorPanel.CreateEmpty(scene);
+    private void Duplicate(SceneGraph scene, SceneObject selected) => _inspectorPanel.Duplicate(scene, selected);
+    private void Delete(SceneGraph scene, Guid objectId) => _inspectorPanel.Delete(scene, objectId);
+    private void RunStructureChange(SceneGraph scene, Action action) => _inspectorPanel.RunStructureChange(scene, action);
+    private static Transform SceneTransformCopy(Transform source) => InspectorPanel.SceneTransformCopy(source);
+    private static bool TransformsEqual(Transform first, Transform second) => InspectorPanel.TransformsEqual(first, second);
+
+    private static NumericsVector3 ToEulerDegrees(Microsoft.Xna.Framework.Quaternion rotation)
     {
-        switch (_transformTool)
+        var sinPitch = 2f * (rotation.W * rotation.X - rotation.Y * rotation.Z);
+        var pitch = MathF.Abs(sinPitch) >= 1f
+            ? MathF.CopySign(MathF.PI / 2f, sinPitch)
+            : MathF.Asin(sinPitch);
+        var yaw = MathF.Atan2(
+            2f * (rotation.W * rotation.Y + rotation.X * rotation.Z),
+            1f - 2f * (rotation.X * rotation.X + rotation.Y * rotation.Y));
+        var roll = MathF.Atan2(
+            2f * (rotation.W * rotation.Z + rotation.X * rotation.Y),
+            1f - 2f * (rotation.X * rotation.X + rotation.Z * rotation.Z));
+        var degrees = 180f / MathF.PI;
+        return new NumericsVector3(pitch * degrees, yaw * degrees, roll * degrees);
+    }
+
+    private static bool IsFinite(NumericsVector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        CancelRecoveryReview();
+        if (_recoveryReviewTask is { } recoveryTask)
+        {
+            try
+            {
+                var review = recoveryTask.GetAwaiter().GetResult();
+                DeleteRecoveryStaging(review.Staging, _recoveryReviewDirectory);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"Recovery review cleanup during editor shutdown failed: {exception}");
+            }
+        }
+        _recoveryReviewCancellation?.Dispose();
+        _recoveryReviewCancellation = null;
+        _recoveryReviewTask = null;
+        _recoveryReviewDirectory = null;
+        _recoveryReviewProjectRoot = null;
+        Interlocked.Exchange(ref _recoveryReviewActivity, null);
+        Interlocked.Exchange(ref _recoveryReviewProgress, null);
+        _renderer.Dispose();
+        ImGui.DestroyContext(_context);
+    }
+    private sealed class InspectorPanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public InspectorPanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+    public void DrawTransformToolActions(SceneGraph scene, SceneObject selected)
+    {
+        switch (_owner._transformTool)
         {
             case TransformTool.Move:
                 ImGui.TextWrapped("Drag a colored axis or move by 25 scene units.");
@@ -65,13 +136,13 @@ internal sealed partial class CharacterStudioEditorUi
     private void DrawMoveSnapControls()
     {
         ImGui.Separator();
-        ImGui.Checkbox("Snap Move to grid", ref _snapMoveToGrid);
-        if (_snapMoveToGrid)
+        ImGui.Checkbox("Snap Move to grid", ref _owner._snapMoveToGrid);
+        if (_owner._snapMoveToGrid)
         {
-            var gridStep = _moveGridStep;
+            var gridStep = _owner._moveGridStep;
             ImGui.SetNextItemWidth(110f);
             if (ImGui.InputFloat("Grid step", ref gridStep, 0.5f, 5f, "%.2f"))
-                _moveGridStep = Math.Clamp(float.IsFinite(gridStep) ? gridStep : _moveGridStep,
+                _owner._moveGridStep = Math.Clamp(float.IsFinite(gridStep) ? gridStep : _owner._moveGridStep,
                     0.1f, 1_000f);
             ImGui.TextDisabled("World units");
         }
@@ -80,24 +151,24 @@ internal sealed partial class CharacterStudioEditorUi
     private void DrawTurnSnapControls()
     {
         ImGui.Separator();
-        ImGui.Checkbox("Snap Turn", ref _snapTurnToStep);
-        if (!_snapTurnToStep) return;
-        var step = _turnSnapDegrees;
+        ImGui.Checkbox("Snap Turn", ref _owner._snapTurnToStep);
+        if (!_owner._snapTurnToStep) return;
+        var step = _owner._turnSnapDegrees;
         ImGui.SetNextItemWidth(110f);
         if (ImGui.InputFloat("Angle step", ref step, 1f, 5f, "%.1f"))
-            _turnSnapDegrees = Math.Clamp(float.IsFinite(step) ? step : _turnSnapDegrees, 0.1f, 180f);
+            _owner._turnSnapDegrees = Math.Clamp(float.IsFinite(step) ? step : _owner._turnSnapDegrees, 0.1f, 180f);
         ImGui.TextDisabled("Degrees");
     }
 
     private void DrawSizeSnapControls()
     {
         ImGui.Separator();
-        ImGui.Checkbox("Snap Size", ref _snapSizeToStep);
-        if (!_snapSizeToStep) return;
-        var step = _sizeSnapStep;
+        ImGui.Checkbox("Snap Size", ref _owner._snapSizeToStep);
+        if (!_owner._snapSizeToStep) return;
+        var step = _owner._sizeSnapStep;
         ImGui.SetNextItemWidth(110f);
         if (ImGui.InputFloat("Scale step", ref step, 0.05f, 0.25f, "%.2f"))
-            _sizeSnapStep = Math.Clamp(float.IsFinite(step) ? step : _sizeSnapStep, 0.01f, 10f);
+            _owner._sizeSnapStep = Math.Clamp(float.IsFinite(step) ? step : _owner._sizeSnapStep, 0.01f, 10f);
         ImGui.TextDisabled("Scale multiplier");
     }
 
@@ -155,17 +226,17 @@ internal sealed partial class CharacterStudioEditorUi
         if (TransformsEqual(before, after)) return;
 
         selected.Transform = SceneTransformCopy(before);
-        _history.Execute(scene, new TransformEditCommand(selected.Id, before, after));
-        _projectWorkspaceStatus = status;
+        _owner._history.Execute(scene, new TransformEditCommand(selected.Id, before, after));
+        _owner._projectWorkspaceStatus = status;
     }
 
-    private void DrawSequencePanel()
+    public void DrawSequencePanel()
     {
-        var sequence = _getSequenceInfo();
+        var sequence = _owner._getSequenceInfo();
         if (sequence is null) return;
 
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 60f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _logicalWidth * 0.5f), 150f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth * 0.5f), 150f));
         if (!ImGui.Begin("Animate and Finish", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -174,16 +245,16 @@ internal sealed partial class CharacterStudioEditorUi
 
         ImGui.Text(sequence.Name);
         if (ImGui.Button(sequence.IsPlaying ? "Pause" : "Play"))
-            _setSequencePlaying(!sequence.IsPlaying);
+            _owner._setSequencePlaying(!sequence.IsPlaying);
         ImGui.SameLine();
         var previewEnabled = sequence.PreviewEnabled;
         if (ImGui.Checkbox("Preview sequence", ref previewEnabled))
-            _setSequencePreviewEnabled(previewEnabled);
+            _owner._setSequencePreviewEnabled(previewEnabled);
 
         var time = Math.Clamp(sequence.Time, 0f, sequence.Duration);
         ImGui.SetNextItemWidth(-1f);
         if (ImGui.SliderFloat("Time (seconds)", ref time, 0f, sequence.Duration, "%.2f"))
-            _seekSequence(time);
+            _owner._seekSequence(time);
         ImGui.TextDisabled(sequence.CameraName is null
             ? "No camera cut at this time"
             : $"Camera cut: {sequence.CameraName}");
@@ -194,15 +265,15 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void DrawSequenceExportPanel(SequenceEditorInfo sequence)
     {
-        var export = _getSequenceExportInfo();
-        if (!_sequenceExportEndTimeInitialized)
+        var export = _owner._getSequenceExportInfo();
+        if (!_owner._sequenceExportEndTimeInitialized)
         {
-            _sequenceExportEndTime = sequence.Duration;
-            _sequenceExportEndTimeInitialized = true;
+            _owner._sequenceExportEndTime = sequence.Duration;
+            _owner._sequenceExportEndTimeInitialized = true;
         }
 
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 218f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _logicalWidth * 0.5f), 330f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth * 0.5f), 330f));
         if (!ImGui.Begin("Finish film", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -216,22 +287,22 @@ internal sealed partial class CharacterStudioEditorUi
                 ? Math.Clamp((float)export.CompletedFrames / export.TotalFrames, 0f, 1f)
                 : 0f;
             ImGui.ProgressBar(progress, new NumericsVector2(-1f, 0f));
-            if (ImGui.Button("Cancel export")) _cancelSequenceExport();
+            if (ImGui.Button("Cancel export")) _owner._cancelSequenceExport();
         }
         else
         {
             ImGui.SetNextItemWidth(-1f);
-            ImGui.InputTextWithHint("Output folder", "Choose an empty folder", ref _sequenceExportDirectory, 1024);
-            ImGui.InputInt("Width", ref _sequenceExportWidth);
-            ImGui.InputInt("Height", ref _sequenceExportHeight);
-            ImGui.InputInt("Frames per second", ref _sequenceExportFrameRate);
-            ImGui.InputFloat("Start time", ref _sequenceExportStartTime, 0f, 0f, "%.2f");
-            ImGui.InputFloat("End time", ref _sequenceExportEndTime, 0f, 0f, "%.2f");
+            ImGui.InputTextWithHint("Output folder", "Choose an empty folder", ref _owner._sequenceExportDirectory, 1024);
+            ImGui.InputInt("Width", ref _owner._sequenceExportWidth);
+            ImGui.InputInt("Height", ref _owner._sequenceExportHeight);
+            ImGui.InputInt("Frames per second", ref _owner._sequenceExportFrameRate);
+            ImGui.InputFloat("Start time", ref _owner._sequenceExportStartTime, 0f, 0f, "%.2f");
+            ImGui.InputFloat("End time", ref _owner._sequenceExportEndTime, 0f, 0f, "%.2f");
             if (ImGui.Button("Export PNG frames"))
             {
-                _startSequenceExport(new SequenceExportEditorRequest(_sequenceExportDirectory,
-                    _sequenceExportStartTime, _sequenceExportEndTime,
-                    _sequenceExportFrameRate, _sequenceExportWidth, _sequenceExportHeight));
+                _owner._startSequenceExport(new SequenceExportEditorRequest(_owner._sequenceExportDirectory,
+                    _owner._sequenceExportStartTime, _owner._sequenceExportEndTime,
+                    _owner._sequenceExportFrameRate, _owner._sequenceExportWidth, _owner._sequenceExportHeight));
             }
         }
 
@@ -243,12 +314,12 @@ internal sealed partial class CharacterStudioEditorUi
         ImGui.End();
     }
 
-    private void DrawCharacterControls(SceneObject selected)
+    public void DrawCharacterControls(SceneObject selected)
     {
-        if (_activeCharacterTimeObjectId is { } editingObjectId && editingObjectId != selected.Id)
+        if (_owner._activeCharacterTimeObjectId is { } editingObjectId && editingObjectId != selected.Id)
             CommitActiveCharacterTimeEdit();
 
-        var character = _getCharacterInfo(selected.Id);
+        var character = _owner._getCharacterInfo(selected.Id);
         ImGui.Separator();
         ImGui.Text("Character animation");
         if (character is null || character.ClipNames.Count == 0)
@@ -263,7 +334,7 @@ internal sealed partial class CharacterStudioEditorUi
             foreach (var clipName in character.ClipNames)
             {
                 var isSelected = string.Equals(character.ClipName, clipName, StringComparison.OrdinalIgnoreCase);
-                if (ImGui.Selectable(clipName, isSelected)) _selectCharacterClip(selected.Id, clipName);
+                if (ImGui.Selectable(clipName, isSelected)) _owner._selectCharacterClip(selected.Id, clipName);
                 if (isSelected) ImGui.SetItemDefaultFocus();
             }
             ImGui.EndCombo();
@@ -276,88 +347,88 @@ internal sealed partial class CharacterStudioEditorUi
             var changed = ImGui.SliderFloat("Time (seconds)", ref time, 0f, character.Duration, "%.2f");
             if (ImGui.IsItemActivated())
             {
-                _activeCharacterTimeObjectId = selected.Id;
-                _activeCharacterTimeStart = character.Time;
-                _activeCharacterTimeCurrent = character.Time;
+                _owner._activeCharacterTimeObjectId = selected.Id;
+                _owner._activeCharacterTimeStart = character.Time;
+                _owner._activeCharacterTimeCurrent = character.Time;
             }
             if (changed)
             {
-                if (_activeCharacterTimeObjectId != selected.Id)
+                if (_owner._activeCharacterTimeObjectId != selected.Id)
                 {
-                    _activeCharacterTimeObjectId = selected.Id;
-                    _activeCharacterTimeStart = character.Time;
+                    _owner._activeCharacterTimeObjectId = selected.Id;
+                    _owner._activeCharacterTimeStart = character.Time;
                 }
-                _activeCharacterTimeCurrent = time;
-                _seekCharacter(selected.Id, time);
+                _owner._activeCharacterTimeCurrent = time;
+                _owner._seekCharacter(selected.Id, time);
             }
             if (ImGui.IsItemDeactivatedAfterEdit()) CommitActiveCharacterTimeEdit();
         }
 
         var playing = character.IsPlaying;
-        if (ImGui.Checkbox("Preview playing", ref playing)) _setCharacterPlaying(selected.Id, playing);
+        if (ImGui.Checkbox("Preview playing", ref playing)) _owner._setCharacterPlaying(selected.Id, playing);
     }
 
-    private void DrawLightingControls()
+    public void DrawLightingControls()
     {
         ImGui.Separator();
         if (!ImGui.TreeNode("Scene lighting")) return;
 
-        var ambient = new NumericsVector3(_lighting.AmbientColor.X, _lighting.AmbientColor.Y, _lighting.AmbientColor.Z);
+        var ambient = new NumericsVector3(_owner._lighting.AmbientColor.X, _owner._lighting.AmbientColor.Y, _owner._lighting.AmbientColor.Z);
         ImGui.SetNextItemWidth(-1f);
         if (ImGui.SliderFloat3("Ambient RGB", ref ambient, 0f, 1.5f))
-            _lighting.AmbientColor = new Microsoft.Xna.Framework.Vector3(ambient.X, ambient.Y, ambient.Z);
+            _owner._lighting.AmbientColor = new Microsoft.Xna.Framework.Vector3(ambient.X, ambient.Y, ambient.Z);
 
         var direction = new NumericsVector3(
-            _lighting.DirectionalDirection.X, _lighting.DirectionalDirection.Y, _lighting.DirectionalDirection.Z);
+            _owner._lighting.DirectionalDirection.X, _owner._lighting.DirectionalDirection.Y, _owner._lighting.DirectionalDirection.Z);
         ImGui.SetNextItemWidth(-1f);
         if (ImGui.SliderFloat3("Direction", ref direction, -1f, 1f)
             && direction.LengthSquared() > 0.0001f)
-            _lighting.DirectionalDirection = new Microsoft.Xna.Framework.Vector3(
+            _owner._lighting.DirectionalDirection = new Microsoft.Xna.Framework.Vector3(
                 direction.X, direction.Y, direction.Z);
 
         var directional = new NumericsVector3(
-            _lighting.DirectionalColor.X, _lighting.DirectionalColor.Y, _lighting.DirectionalColor.Z);
+            _owner._lighting.DirectionalColor.X, _owner._lighting.DirectionalColor.Y, _owner._lighting.DirectionalColor.Z);
         ImGui.SetNextItemWidth(-1f);
         if (ImGui.SliderFloat3("Sun RGB", ref directional, 0f, 1.5f))
-            _lighting.DirectionalColor = new Microsoft.Xna.Framework.Vector3(
+            _owner._lighting.DirectionalColor = new Microsoft.Xna.Framework.Vector3(
                 directional.X, directional.Y, directional.Z);
         ImGui.TreePop();
     }
 
-    private void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform,
+    public void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform,
         bool changed, Action applyChange)
     {
         if (ImGui.IsItemActivated())
         {
-            _activeTransformObjectId = objectId;
-            _activeTransformStart = SceneTransformCopy(transform);
+            _owner._activeTransformObjectId = objectId;
+            _owner._activeTransformStart = SceneTransformCopy(transform);
         }
 
         if (changed) applyChange();
         if (ImGui.IsItemDeactivatedAfterEdit()) CommitActiveTransformEdit(scene);
     }
 
-    private void CommitActiveTransformEdit(SceneGraph scene)
+    public void CommitActiveTransformEdit(SceneGraph scene)
     {
         CommitActiveBoxColliderEdit(scene);
         CommitActiveCharacterTimeEdit();
-        if (_activeTransformObjectId is not { } objectId || _activeTransformStart is not { } before)
+        if (_owner._activeTransformObjectId is not { } objectId || _owner._activeTransformStart is not { } before)
         {
-            _activeTransformObjectId = null;
-            _activeTransformStart = null;
+            _owner._activeTransformObjectId = null;
+            _owner._activeTransformStart = null;
             return;
         }
 
-        _activeTransformObjectId = null;
-        _activeTransformStart = null;
+        _owner._activeTransformObjectId = null;
+        _owner._activeTransformStart = null;
         if (scene.Find(objectId) is not { } item) return;
         var after = SceneTransformCopy(item.Transform);
         if (TransformsEqual(before, after)) return;
         item.Transform = SceneTransformCopy(before);
-        _history.Execute(scene, new TransformEditCommand(objectId, before, after));
+        _owner._history.Execute(scene, new TransformEditCommand(objectId, before, after));
     }
 
-    private void DrawBoxColliderControls(SceneGraph scene, SceneObject selected)
+    public void DrawBoxColliderControls(SceneGraph scene, SceneObject selected)
     {
         ImGui.Separator();
         if (!ImGui.TreeNode("Box collider")) return;
@@ -369,8 +440,8 @@ internal sealed partial class CharacterStudioEditorUi
             {
                 CommitActiveBoxColliderEdit(scene);
                 var replacement = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One);
-                _history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, replacement));
-                _projectWorkspaceStatus = $"Added a box collider to {selected.Name}.";
+                _owner._history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, replacement));
+                _owner._projectWorkspaceStatus = $"Added a box collider to {selected.Name}.";
             }
             ImGui.TreePop();
             return;
@@ -417,8 +488,8 @@ internal sealed partial class CharacterStudioEditorUi
         if (ImGui.Button("Remove box collider", new NumericsVector2(-1f, 30f)))
         {
             CommitActiveBoxColliderEdit(scene);
-            _history.Execute(scene, new EditBoxColliderCommand(selected.Id, selected.BoxCollider, null));
-            _projectWorkspaceStatus = $"Removed the box collider from {selected.Name}.";
+            _owner._history.Execute(scene, new EditBoxColliderCommand(selected.Id, selected.BoxCollider, null));
+            _owner._projectWorkspaceStatus = $"Removed the box collider from {selected.Name}.";
         }
         if (selected.TriggerAction is not null)
         {
@@ -428,13 +499,13 @@ internal sealed partial class CharacterStudioEditorUi
         ImGui.TreePop();
     }
 
-    private void DrawWhatHappensControls(SceneGraph scene, SceneObject selected)
+    public void DrawWhatHappensControls(SceneGraph scene, SceneObject selected)
     {
         ImGui.Separator();
         if (!ImGui.TreeNodeEx("What happens?", ImGuiTreeNodeFlags.DefaultOpen)) return;
 
         ImGui.TextWrapped("Choose what this object does when a character enters its trigger.");
-        if (_isPlaying())
+        if (_owner._isPlaying())
         {
             ImGui.TextWrapped("Stop Play to change saved scene actions.");
             ImGui.TreePop();
@@ -451,8 +522,8 @@ internal sealed partial class CharacterStudioEditorUi
                 {
                     CommitActiveBoxColliderEdit(scene);
                     var trigger = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true);
-                    _history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, trigger));
-                    _projectWorkspaceStatus = $"Added a trigger collider to {selected.Name}.";
+                    _owner._history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, trigger));
+                    _owner._projectWorkspaceStatus = $"Added a trigger collider to {selected.Name}.";
                 }
             }
             else
@@ -461,8 +532,8 @@ internal sealed partial class CharacterStudioEditorUi
                 {
                     CommitActiveBoxColliderEdit(scene);
                     var trigger = new SceneBoxColliderComponent(collider.Center, collider.Size, isTrigger: true);
-                    _history.Execute(scene, new EditBoxColliderCommand(selected.Id, collider, trigger));
-                    _projectWorkspaceStatus = $"Changed {selected.Name}'s box collider to a trigger.";
+                    _owner._history.Execute(scene, new EditBoxColliderCommand(selected.Id, collider, trigger));
+                    _owner._projectWorkspaceStatus = $"Changed {selected.Name}'s box collider to a trigger.";
                 }
             }
             ImGui.TreePop();
@@ -505,8 +576,8 @@ internal sealed partial class CharacterStudioEditorUi
         CommitActiveBoxColliderEdit(scene);
         var before = selected.TriggerAction;
         var after = nextKind is { } kind ? new SceneTriggerActionComponent(kind) : null;
-        _history.Execute(scene, new EditSceneTriggerActionCommand(selected.Id, before, after));
-        _projectWorkspaceStatus = after is null
+        _owner._history.Execute(scene, new EditSceneTriggerActionCommand(selected.Id, before, after));
+        _owner._projectWorkspaceStatus = after is null
             ? $"Removed the saved trigger action from {selected.Name}."
             : $"Set {selected.Name} to {label.ToLowerInvariant()} when its trigger is entered.";
     }
@@ -514,12 +585,12 @@ internal sealed partial class CharacterStudioEditorUi
     private void TrackBoxColliderInput(SceneGraph scene, SceneObject selected,
         SceneBoxColliderComponent beforeInput, bool changed, SceneBoxColliderComponent? replacement)
     {
-        if (ImGui.IsItemActivated() || (changed && _activeBoxColliderObjectId != selected.Id))
+        if (ImGui.IsItemActivated() || (changed && _owner._activeBoxColliderObjectId != selected.Id))
         {
-            if (_activeBoxColliderObjectId is not null && _activeBoxColliderObjectId != selected.Id)
+            if (_owner._activeBoxColliderObjectId is not null && _owner._activeBoxColliderObjectId != selected.Id)
                 CommitActiveBoxColliderEdit(scene);
-            _activeBoxColliderObjectId = selected.Id;
-            _activeBoxColliderStart = beforeInput;
+            _owner._activeBoxColliderObjectId = selected.Id;
+            _owner._activeBoxColliderStart = beforeInput;
         }
 
         if (changed && replacement is not null) selected.BoxCollider = replacement;
@@ -528,22 +599,22 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void CommitActiveBoxColliderEdit(SceneGraph scene)
     {
-        if (_activeBoxColliderObjectId is not { } objectId
-            || _activeBoxColliderStart is not { } before)
+        if (_owner._activeBoxColliderObjectId is not { } objectId
+            || _owner._activeBoxColliderStart is not { } before)
         {
-            _activeBoxColliderObjectId = null;
-            _activeBoxColliderStart = null;
+            _owner._activeBoxColliderObjectId = null;
+            _owner._activeBoxColliderStart = null;
             return;
         }
 
-        _activeBoxColliderObjectId = null;
-        _activeBoxColliderStart = null;
+        _owner._activeBoxColliderObjectId = null;
+        _owner._activeBoxColliderStart = null;
         if (scene.Find(objectId) is not { } item) return;
         var after = item.BoxCollider;
         if (BoxCollidersEqual(before, after)) return;
         item.BoxCollider = before;
-        _history.Execute(scene, new EditBoxColliderCommand(objectId, before, after));
-        _projectWorkspaceStatus = $"Updated the box collider on {item.Name}.";
+        _owner._history.Execute(scene, new EditBoxColliderCommand(objectId, before, after));
+        _owner._projectWorkspaceStatus = $"Updated the box collider on {item.Name}.";
     }
 
     private static bool BoxCollidersEqual(SceneBoxColliderComponent? left,
@@ -553,58 +624,58 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void CommitActiveCharacterTimeEdit()
     {
-        if (_activeCharacterTimeObjectId is not { } objectId) return;
-        var before = _activeCharacterTimeStart;
-        var after = _activeCharacterTimeCurrent;
-        _activeCharacterTimeObjectId = null;
-        _activeCharacterTimeStart = 0f;
-        _activeCharacterTimeCurrent = 0f;
+        if (_owner._activeCharacterTimeObjectId is not { } objectId) return;
+        var before = _owner._activeCharacterTimeStart;
+        var after = _owner._activeCharacterTimeCurrent;
+        _owner._activeCharacterTimeObjectId = null;
+        _owner._activeCharacterTimeStart = 0f;
+        _owner._activeCharacterTimeCurrent = 0f;
         if (MathF.Abs(before - after) > 0.0001f)
-            _commitCharacterTimeEdit(objectId, before, after);
+            _owner._commitCharacterTimeEdit(objectId, before, after);
     }
 
-    private void RunHistoryAction(SceneGraph scene, bool undo)
+    public void RunHistoryAction(SceneGraph scene, bool undo)
     {
         CommitActiveTransformEdit(scene);
-        var changed = undo ? _history.Undo(scene) : _history.Redo(scene);
-        if (undo && changed && _firstCreationLesson is { } lesson
-            && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
+        var changed = undo ? _owner._history.Undo(scene) : _owner._history.Redo(scene);
+        if (undo && changed && _owner._firstCreationLesson is { } lesson
+            && CharacterStudioEditorUi.IsSamePath(lesson.ProjectFilePath, _owner._getCurrentProjectPath()))
             lesson.ObserveUndo(scene, undoSucceeded: true);
-        _afterStructureChange();
-        _projectWorkspaceStatus = undo ? "Undid the last change." : "Redid the last change.";
-        if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
-            _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
+        _owner._afterStructureChange();
+        _owner._projectWorkspaceStatus = undo ? "Undid the last change." : "Redid the last change.";
+        if (_owner._selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
+            _owner._selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
     }
 
-    private void CreateEmpty(SceneGraph scene)
+    public void CreateEmpty(SceneGraph scene)
     {
         CommitActiveTransformEdit(scene);
         var item = new SceneObject(Guid.NewGuid(), UniqueName("New Object", scene.Objects.Select(value => value.Name)));
-        RunStructureChange(scene, () => _history.Execute(scene, new CreateSceneObjectCommand(item)));
-        _selectedObjectId = item.Id;
-        _projectWorkspaceStatus = $"Added {item.Name}. Select it to change its position, rotation or size in the Inspector.";
+        RunStructureChange(scene, () => _owner._history.Execute(scene, new CreateSceneObjectCommand(item)));
+        _owner._selectedObjectId = item.Id;
+        _owner._projectWorkspaceStatus = $"Added {item.Name}. Select it to change its position, rotation or size in the Inspector.";
     }
 
-    private void Duplicate(SceneGraph scene, SceneObject selected)
+    public void Duplicate(SceneGraph scene, SceneObject selected)
     {
         CommitActiveTransformEdit(scene);
         var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, selected.Id);
-        _history.Execute(scene, new CreateSceneObjectCommand(duplicate));
-        _afterStructureChange();
-        _selectedObjectId = duplicate.Id;
+        _owner._history.Execute(scene, new CreateSceneObjectCommand(duplicate));
+        _owner._afterStructureChange();
+        _owner._selectedObjectId = duplicate.Id;
     }
 
-    private void Delete(SceneGraph scene, Guid objectId)
+    public void Delete(SceneGraph scene, Guid objectId)
     {
         CommitActiveTransformEdit(scene);
-        RunStructureChange(scene, () => _history.Execute(scene, new DeleteSceneObjectCommand(objectId)));
-        _selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
+        RunStructureChange(scene, () => _owner._history.Execute(scene, new DeleteSceneObjectCommand(objectId)));
+        _owner._selectedObjectId = scene.Objects.FirstOrDefault()?.Id;
     }
 
-    private void RunStructureChange(SceneGraph scene, Action action)
+    public void RunStructureChange(SceneGraph scene, Action action)
     {
         action();
-        _afterStructureChange();
+        _owner._afterStructureChange();
     }
 
     private static string UniqueName(string basis, IEnumerable<string> existingNames)
@@ -618,61 +689,16 @@ internal sealed partial class CharacterStudioEditorUi
         }
     }
 
-    private static Transform SceneTransformCopy(Transform source) => new()
+    public static Transform SceneTransformCopy(Transform source) => new()
     {
         Position = source.Position,
         Rotation = source.Rotation,
         Scale = source.Scale
     };
 
-    private static bool TransformsEqual(Transform first, Transform second) =>
+    public static bool TransformsEqual(Transform first, Transform second) =>
         first.Position == second.Position && first.Rotation == second.Rotation && first.Scale == second.Scale;
 
-    private static NumericsVector3 ToEulerDegrees(Microsoft.Xna.Framework.Quaternion rotation)
-    {
-        var sinPitch = 2f * (rotation.W * rotation.X - rotation.Y * rotation.Z);
-        var pitch = MathF.Abs(sinPitch) >= 1f
-            ? MathF.CopySign(MathF.PI / 2f, sinPitch)
-            : MathF.Asin(sinPitch);
-        var yaw = MathF.Atan2(
-            2f * (rotation.W * rotation.Y + rotation.X * rotation.Z),
-            1f - 2f * (rotation.X * rotation.X + rotation.Y * rotation.Y));
-        var roll = MathF.Atan2(
-            2f * (rotation.W * rotation.Z + rotation.X * rotation.Y),
-            1f - 2f * (rotation.X * rotation.X + rotation.Z * rotation.Z));
-        var degrees = 180f / MathF.PI;
-        return new NumericsVector3(pitch * degrees, yaw * degrees, roll * degrees);
-    }
 
-    private static bool IsFinite(NumericsVector3 value) =>
-        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
-
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        CancelRecoveryReview();
-        if (_recoveryReviewTask is { } recoveryTask)
-        {
-            try
-            {
-                var review = recoveryTask.GetAwaiter().GetResult();
-                DeleteRecoveryStaging(review.Staging, _recoveryReviewDirectory);
-            }
-            catch (OperationCanceledException) { }
-            catch (Exception exception)
-            {
-                Console.Error.WriteLine($"Recovery review cleanup during editor shutdown failed: {exception}");
-            }
-        }
-        _recoveryReviewCancellation?.Dispose();
-        _recoveryReviewCancellation = null;
-        _recoveryReviewTask = null;
-        _recoveryReviewDirectory = null;
-        _recoveryReviewProjectRoot = null;
-        Interlocked.Exchange(ref _recoveryReviewActivity, null);
-        Interlocked.Exchange(ref _recoveryReviewProgress, null);
-        _renderer.Dispose();
-        ImGui.DestroyContext(_context);
     }
 }

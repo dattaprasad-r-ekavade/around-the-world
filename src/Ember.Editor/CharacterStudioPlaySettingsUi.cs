@@ -9,6 +9,17 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
+    private readonly PlaySettingsPanel _playSettingsPanel;
+
+    private void DrawPlaySettingsControls(SceneGraph scene) => _playSettingsPanel.DrawPlaySettingsControls(scene);
+    private void CommitActivePlaySettingsEdit(SceneGraph scene) => _playSettingsPanel.CommitActivePlaySettingsEdit(scene);
+
+    private sealed class PlaySettingsPanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public PlaySettingsPanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
     private static readonly Keys[] PlayKeyOptions = Enum.GetValues<Keys>()
         .Where(key => key != Keys.None)
         .OrderBy(key => key.ToString(), StringComparer.Ordinal)
@@ -17,11 +28,11 @@ internal sealed partial class CharacterStudioEditorUi
     private ScenePlaySettings? _activePlaySettingsStart;
     private string? _playSettingsError;
 
-    private void DrawPlaySettingsControls(SceneGraph scene)
+    public void DrawPlaySettingsControls(SceneGraph scene)
     {
         if (!ImGui.TreeNode("Play setup")) return;
 
-        if (_isPlaying())
+        if (_owner._isPlaying())
         {
             ImGui.TextWrapped("Stop Play to change saved movement, camera, or key settings.");
             ImGui.TreePop();
@@ -126,7 +137,7 @@ internal sealed partial class CharacterStudioEditorUi
         {
             replacement = replacement.ValidatedCopy();
             if (replacement == before) return;
-            _history.Execute(scene, new EditScenePlaySettingsCommand(before, replacement));
+            _owner._history.Execute(scene, new EditScenePlaySettingsCommand(before, replacement));
             _playSettingsError = null;
         }
         catch (ArgumentException exception)
@@ -135,7 +146,7 @@ internal sealed partial class CharacterStudioEditorUi
         }
     }
 
-    private void CommitActivePlaySettingsEdit(SceneGraph scene)
+    public void CommitActivePlaySettingsEdit(SceneGraph scene)
     {
         if (_activePlaySettingsStart is not { } before) return;
         _activePlaySettingsStart = null;
@@ -144,12 +155,14 @@ internal sealed partial class CharacterStudioEditorUi
         scene.PlaySettings = before;
         try
         {
-            _history.Execute(scene, new EditScenePlaySettingsCommand(before, after));
+            _owner._history.Execute(scene, new EditScenePlaySettingsCommand(before, after));
             _playSettingsError = null;
         }
         catch (ArgumentException exception)
         {
             _playSettingsError = exception.Message;
         }
+    }
+
     }
 }

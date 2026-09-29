@@ -61,20 +61,31 @@ internal sealed partial class CharacterStudioEditorUi
         _io.AddKeyEvent(ImGuiKey.ModAlt, leftAlt || rightAlt);
     }
 
-    private void DrawPanel(SceneGraph scene)
-    {
-        if (!_initialSelectionSet)
-        {
-            _selectedObjectId = scene.Objects.FirstOrDefault(item => item.CharacterSettings is not null)?.Id
-                ?? scene.Objects.FirstOrDefault()?.Id;
-            _initialSelectionSet = true;
-        }
-        else if (_selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
-            _selectedObjectId = null;
+    private readonly ScenePanel _scenePanel;
 
-        var inspectorWidth = Math.Min(280f, _logicalWidth * 0.24f);
-        ImGui.SetNextWindowPos(new NumericsVector2(Math.Max(0f, _logicalWidth - inspectorWidth), 48f));
-        ImGui.SetNextWindowSize(new NumericsVector2(inspectorWidth, Math.Max(160f, _logicalHeight - 48f)));
+    private void DrawPanel(SceneGraph scene) => _scenePanel.DrawPanel(scene);
+
+    private sealed class ScenePanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+
+        public ScenePanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+
+        public void DrawPanel(SceneGraph scene)
+    {
+        if (!_owner._initialSelectionSet)
+        {
+            _owner._selectedObjectId = scene.Objects.FirstOrDefault(item => item.CharacterSettings is not null)?.Id
+                ?? scene.Objects.FirstOrDefault()?.Id;
+            _owner._initialSelectionSet = true;
+        }
+        else if (_owner._selectedObjectId is { } selectedId && scene.Find(selectedId) is null)
+            _owner._selectedObjectId = null;
+
+        var inspectorWidth = Math.Min(280f, _owner._logicalWidth * 0.24f);
+        ImGui.SetNextWindowPos(new NumericsVector2(Math.Max(0f, _owner._logicalWidth - inspectorWidth), 48f));
+        ImGui.SetNextWindowSize(new NumericsVector2(inspectorWidth, Math.Max(160f, _owner._logicalHeight - 48f)));
         if (!ImGui.Begin("Inspector", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -82,51 +93,51 @@ internal sealed partial class CharacterStudioEditorUi
         }
 
         DrawWorkspaceFailure();
-        DrawPlaySettingsControls(scene);
+        _owner.DrawPlaySettingsControls(scene);
 
-        if (_isPlaying())
+        if (_owner._isPlaying())
         {
             ImGui.TextColored(new NumericsVector4(1f, 0.72f, 0.2f, 1f), "PLAYING ON CLONE");
             ImGui.TextWrapped("Changes made during Play are temporary. Stop to return to the scene you were editing.");
-            if (ImGui.Button("Interact")) _interact();
-            var volume = _getInteractionVolume();
+            if (ImGui.Button("Interact")) _owner._interact();
+            var volume = _owner._getInteractionVolume();
             ImGui.SetNextItemWidth(-1f);
             if (ImGui.SliderFloat("Interaction volume", ref volume, 0f, 1f, "%.2f"))
-                _setInteractionVolume(volume);
+                _owner._setInteractionVolume(volume);
         }
         ImGui.Text("Objects");
-        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, Math.Min(132f, _logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
+        ImGui.BeginChild("Scene hierarchy", new NumericsVector2(0f, Math.Min(132f, _owner._logicalHeight * 0.2f)), ImGuiChildFlags.Borders);
         DrawSceneHierarchy(scene);
         ImGui.EndChild();
 
-        if ((_activeTransformObjectId is not null && _selectedObjectId != _activeTransformObjectId)
-            || (_activeBoxColliderObjectId is not null && _selectedObjectId != _activeBoxColliderObjectId))
-            CommitActiveTransformEdit(scene);
+        if ((_owner._activeTransformObjectId is not null && _owner._selectedObjectId != _owner._activeTransformObjectId)
+            || (_owner._activeBoxColliderObjectId is not null && _owner._selectedObjectId != _owner._activeBoxColliderObjectId))
+            _owner.CommitActiveTransformEdit(scene);
 
-        if (_selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
+        if (_owner._selectedObjectId is not { } objectId || scene.Find(objectId) is not { } selected)
         {
-            var pendingPreviewName = _getPendingAssetPreviewName();
+            var pendingPreviewName = _owner._getPendingAssetPreviewName();
             if (pendingPreviewName is not null)
             {
                 ImGui.TextWrapped($"Previewing {pendingPreviewName}. It is not in the scene yet; use the Add panel to place it or cancel the preview.");
-                if (!_showAddLibrary && ImGui.Button("Show model actions", new NumericsVector2(-1f, 34f)))
-                    _showAddLibrary = true;
+                if (!_owner._showAddLibrary && ImGui.Button("Show model actions", new NumericsVector2(-1f, 34f)))
+                    _owner._showAddLibrary = true;
             }
             else if (scene.Objects.Count == 0)
             {
                 ImGui.TextWrapped("This scene is empty. Add a simple object or a model to give yourself something to build with.");
                 if (ImGui.Button("Add an empty object", new NumericsVector2(-1f, 34f)))
-                    CreateEmpty(scene);
+                    _owner.CreateEmpty(scene);
 
-                if (_getCurrentProjectPath() is null)
+                if (_owner._getCurrentProjectPath() is null)
                 {
                     if (ImGui.Button("Make or open a project…", new NumericsVector2(-1f, 34f)))
-                        _showHome = true;
+                        _owner._showHome = true;
                     ImGui.TextWrapped("Create or open a project to add a model.");
                 }
                 else if (ImGui.Button("Browse for a model…", new NumericsVector2(-1f, 34f)))
                 {
-                    BrowseForModel();
+                    _owner.BrowseForModel();
                 }
             }
             else
@@ -140,24 +151,24 @@ internal sealed partial class CharacterStudioEditorUi
         DrawParentControl(scene, selected);
         ImGui.Separator();
         ImGui.Text($"Selected: {selected.Name}");
-        if (ImGui.Button("Duplicate")) Duplicate(scene, selected);
+        if (ImGui.Button("Duplicate")) _owner.Duplicate(scene, selected);
         ImGui.SameLine();
-        if (ImGui.Button("Delete")) Delete(scene, selected.Id);
+        if (ImGui.Button("Delete")) _owner.Delete(scene, selected.Id);
 
         ImGui.Separator();
-        DrawWhatHappensControls(scene, selected);
+        _owner.DrawWhatHappensControls(scene, selected);
 
         ImGui.Separator();
         ImGui.Text("Change this object");
-        if (ImGui.RadioButton("Move", _transformTool == TransformTool.Move))
-            _transformTool = TransformTool.Move;
+        if (ImGui.RadioButton("Move", _owner._transformTool == TransformTool.Move))
+            _owner._transformTool = TransformTool.Move;
         ImGui.SameLine();
-        if (ImGui.RadioButton("Turn", _transformTool == TransformTool.Turn))
-            _transformTool = TransformTool.Turn;
+        if (ImGui.RadioButton("Turn", _owner._transformTool == TransformTool.Turn))
+            _owner._transformTool = TransformTool.Turn;
         ImGui.SameLine();
-        if (ImGui.RadioButton("Size", _transformTool == TransformTool.Size))
-            _transformTool = TransformTool.Size;
-        DrawTransformToolActions(scene, selected);
+        if (ImGui.RadioButton("Size", _owner._transformTool == TransformTool.Size))
+            _owner._transformTool = TransformTool.Size;
+        _owner.DrawTransformToolActions(scene, selected);
         if (ImGui.TreeNode("Why?"))
         {
             ImGui.TextWrapped("A transform combines position, rotation and scale to place an object in the scene. It changes this scene object, not the source model, so several objects can reuse one model with different placements.");
@@ -171,19 +182,19 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.Text("Position");
             ImGui.SetNextItemWidth(-1f);
             var positionChanged = ImGui.InputFloat3("##position", ref position);
-            TrackTransformInput(scene, selected.Id, transform, positionChanged, () =>
+            _owner.TrackTransformInput(scene, selected.Id, transform, positionChanged, () =>
             {
-                if (IsFinite(position))
+                if (CharacterStudioEditorUi.IsFinite(position))
                     transform.Position = new Microsoft.Xna.Framework.Vector3(position.X, position.Y, position.Z);
             });
 
-            var euler = ToEulerDegrees(transform.Rotation);
+            var euler = CharacterStudioEditorUi.ToEulerDegrees(transform.Rotation);
             ImGui.Text("Rotation XYZ (degrees)");
             ImGui.SetNextItemWidth(-1f);
             var rotationChanged = ImGui.InputFloat3("##rotation", ref euler);
-            TrackTransformInput(scene, selected.Id, transform, rotationChanged, () =>
+            _owner.TrackTransformInput(scene, selected.Id, transform, rotationChanged, () =>
             {
-                if (IsFinite(euler))
+                if (CharacterStudioEditorUi.IsFinite(euler))
                 {
                     var radians = MathF.PI / 180f;
                     transform.Rotation = Microsoft.Xna.Framework.Quaternion.Normalize(
@@ -196,17 +207,17 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.Text("Scale");
             ImGui.SetNextItemWidth(-1f);
             var scaleChanged = ImGui.InputFloat3("##scale", ref scale);
-            TrackTransformInput(scene, selected.Id, transform, scaleChanged, () =>
+            _owner.TrackTransformInput(scene, selected.Id, transform, scaleChanged, () =>
             {
-                if (IsFinite(scale))
+                if (CharacterStudioEditorUi.IsFinite(scale))
                     transform.Scale = new Microsoft.Xna.Framework.Vector3(scale.X, scale.Y, scale.Z);
             });
             ImGui.TreePop();
         }
 
-        DrawBoxColliderControls(scene, selected);
-        DrawCharacterControls(selected);
-        DrawLightingControls();
+        _owner.DrawBoxColliderControls(scene, selected);
+        _owner.DrawCharacterControls(selected);
+        _owner.DrawLightingControls();
         ImGui.End();
     }
 
@@ -229,11 +240,11 @@ internal sealed partial class CharacterStudioEditorUi
     {
         var hasChildren = childrenByParent.TryGetValue(item.Id, out var children) && children.Length > 0;
         var flags = ImGuiTreeNodeFlags.SpanAvailWidth | ImGuiTreeNodeFlags.OpenOnArrow;
-        if (_selectedObjectId == item.Id) flags |= ImGuiTreeNodeFlags.Selected;
+        if (_owner._selectedObjectId == item.Id) flags |= ImGuiTreeNodeFlags.Selected;
         if (hasChildren && isRoot) flags |= ImGuiTreeNodeFlags.DefaultOpen;
         if (!hasChildren) flags |= ImGuiTreeNodeFlags.Leaf | ImGuiTreeNodeFlags.NoTreePushOnOpen;
         var isOpen = ImGui.TreeNodeEx($"{item.Name}##{item.Id:N}", flags);
-        if (ImGui.IsItemClicked()) _selectedObjectId = item.Id;
+        if (ImGui.IsItemClicked()) _owner._selectedObjectId = item.Id;
         if (!hasChildren || !isOpen) return;
         foreach (var child in children!) DrawSceneHierarchyNode(child, childrenByParent, isRoot: false);
         ImGui.TreePop();
@@ -271,13 +282,13 @@ internal sealed partial class CharacterStudioEditorUi
     {
         try
         {
-            _history.Execute(scene, new ReparentSceneObjectCommand(selected.Id, parentId));
-            _afterStructureChange();
-            _projectWorkspaceStatus = "Parent changed. Undo restores the previous relationship and placement.";
+            _owner._history.Execute(scene, new ReparentSceneObjectCommand(selected.Id, parentId));
+            _owner._afterStructureChange();
+            _owner._projectWorkspaceStatus = "Parent changed. Undo restores the previous relationship and placement.";
         }
         catch (Exception exception)
         {
-            _projectWorkspaceStatus = $"Could not change parent: {exception.Message}";
+            _owner._projectWorkspaceStatus = $"Could not change parent: {exception.Message}";
         }
     }
 
@@ -294,7 +305,7 @@ internal sealed partial class CharacterStudioEditorUi
 
     private void DrawWorkspaceFailure()
     {
-        var status = _projectWorkspaceStatus;
+        var status = _owner._projectWorkspaceStatus;
         if (!status.StartsWith("Could not", StringComparison.OrdinalIgnoreCase)) return;
 
         ImGui.Separator();
@@ -315,8 +326,10 @@ internal sealed partial class CharacterStudioEditorUi
 
         ImGui.TextWrapped(nextStep);
         if (ImGui.Button("Dismiss message"))
-            _projectWorkspaceStatus = string.Empty;
+            _owner._projectWorkspaceStatus = string.Empty;
         ImGui.Separator();
     }
 
+
+    }
 }

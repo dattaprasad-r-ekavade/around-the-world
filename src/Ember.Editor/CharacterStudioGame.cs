@@ -129,7 +129,7 @@ public sealed partial class CharacterStudioGame : EngineHost
     private Effect? _shadowEffect;
     private string? _blockedSaveReason;
     private string _reimportStatus = "P: play on clone | R: reimport GLBs | S: save scene";
-    private readonly CharacterStudioPlayController _playController = new();
+    private readonly CharacterStudioPlayController _playController;
     private ScenePlaySession? _playSession
     {
         get => _playController.Session;
@@ -219,6 +219,7 @@ public sealed partial class CharacterStudioGame : EngineHost
     public CharacterStudioGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: "Ember Character Studio")
     {
+        _playController = new CharacterStudioPlayController(this);
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _savePath = ParseOption(args, "--save");
         _lifecycleSmokeRequested = HasArgument(args, "--lifecycle-smoke");
