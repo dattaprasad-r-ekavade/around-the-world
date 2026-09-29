@@ -9,6 +9,40 @@ namespace Ember.Engine.Tests;
 public sealed class SceneCommandHistoryTests
 {
     [Fact]
+    public void DirtyStateTracksSavedPositionAcrossUndoRedoAndNewBranches()
+    {
+        var scene = new SceneGraph();
+        var history = new SceneCommandHistory();
+        Assert.False(history.IsDirty);
+
+        var first = new SceneObject(Guid.NewGuid(), "First");
+        history.Execute(scene, new CreateSceneObjectCommand(first));
+        Assert.True(history.IsDirty);
+        history.MarkSaved();
+        Assert.False(history.IsDirty);
+
+        var second = new SceneObject(Guid.NewGuid(), "Second");
+        history.Execute(scene, new CreateSceneObjectCommand(second));
+        Assert.True(history.IsDirty);
+        Assert.True(history.Undo(scene));
+        Assert.False(history.IsDirty);
+        Assert.True(history.Redo(scene));
+        Assert.True(history.IsDirty);
+
+        Assert.True(history.Undo(scene));
+        var replacement = new SceneObject(Guid.NewGuid(), "Replacement");
+        history.Execute(scene, new CreateSceneObjectCommand(replacement));
+        Assert.False(history.CanRedo);
+        Assert.True(history.IsDirty);
+        history.MarkSaved();
+        Assert.False(history.IsDirty);
+        Assert.True(history.Undo(scene));
+        Assert.True(history.IsDirty);
+        Assert.True(history.Redo(scene));
+        Assert.False(history.IsDirty);
+    }
+
+    [Fact]
     public void TransformEditUndoesAndRedoesAndNewEditClearsRedo()
     {
         var id = Guid.NewGuid();
@@ -41,6 +75,61 @@ public sealed class SceneCommandHistoryTests
         Assert.False(history.CanRedo);
         Assert.False(history.Redo(scene));
         Assert.Equal(replacement.Position, item.Transform.Position);
+    }
+
+    [Fact]
+    public void CharacterPlaybackEditUndoesAndRedoesWithoutSharingMutableSettings()
+    {
+        var scene = new SceneGraph();
+        var item = new SceneObject(Guid.NewGuid(), "Animated object")
+        {
+            CharacterSettings = new GltfCharacterSettings
+            {
+                ClipName = "Idle",
+                Time = 0.25f,
+                Speed = 1f,
+                IsPlaying = false
+            }
+        };
+        var attachmentId = Guid.NewGuid();
+        item.CharacterSettings!.Attachments.Add(new GltfBoneAttachmentReference(
+            attachmentId, "Hand", Matrix.CreateTranslation(1f, 2f, 3f)));
+        scene.Add(item);
+        var before = new GltfCharacterSettings
+        {
+            ClipName = "Idle",
+            Time = 0.25f,
+            Speed = 1f
+        };
+        before.Attachments.Add(new GltfBoneAttachmentReference(
+            attachmentId, "Hand", Matrix.CreateTranslation(1f, 2f, 3f)));
+        var after = new GltfCharacterSettings
+        {
+            ClipName = "Run",
+            Time = 0.6f,
+            Speed = 1f,
+            IsPlaying = true
+        };
+        after.Attachments.Add(new GltfBoneAttachmentReference(
+            attachmentId, "Hand", Matrix.CreateTranslation(1f, 2f, 3f)));
+        var history = new SceneCommandHistory();
+
+        history.Execute(scene, new EditCharacterSettingsCommand(item.Id, before, after));
+        after.ClipName = "Mutated after execute";
+
+        Assert.True(history.IsDirty);
+        Assert.Equal("Run", item.CharacterSettings!.ClipName);
+        Assert.Equal(0.6f, item.CharacterSettings.Time);
+        Assert.Equal(attachmentId, Assert.Single(item.CharacterSettings.Attachments).Id);
+        Assert.True(history.Undo(scene));
+        Assert.Equal("Idle", item.CharacterSettings!.ClipName);
+        Assert.Equal(0.25f, item.CharacterSettings.Time);
+        Assert.False(item.CharacterSettings.IsPlaying);
+        Assert.Equal(attachmentId, Assert.Single(item.CharacterSettings.Attachments).Id);
+        Assert.True(history.Redo(scene));
+        Assert.Equal("Run", item.CharacterSettings!.ClipName);
+        Assert.Equal(0.6f, item.CharacterSettings.Time);
+        Assert.True(item.CharacterSettings.IsPlaying);
     }
 
     [Fact]

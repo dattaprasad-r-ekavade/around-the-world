@@ -53,6 +53,43 @@ internal static class CharacterStudioFilePickers
             : null;
     }
 
+    public static string? PickSceneTemplateFile(string? initialDirectory, IntPtr ownerHandle)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Locate a scene-template source",
+            Filter = "Scene templates (*.embertemplate.json)|*.embertemplate.json|JSON files (*.json)|*.json",
+            FilterIndex = 1,
+            CheckFileExists = true,
+            Multiselect = false,
+            RestoreDirectory = true,
+            InitialDirectory = ExistingDirectoryOrDocuments(initialDirectory)
+        };
+        return dialog.ShowDialog(new WindowOwner(ownerHandle)) == DialogResult.OK
+            ? dialog.FileName
+            : null;
+    }
+
+    public static string? PickSceneSaveFile(string? initialDirectory, string suggestedFileName,
+        IntPtr ownerHandle)
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save the current scene",
+            Filter = "Ember scene (*.json)|*.json",
+            FilterIndex = 1,
+            AddExtension = true,
+            DefaultExt = "json",
+            FileName = string.IsNullOrWhiteSpace(suggestedFileName) ? "Scene.json" : suggestedFileName,
+            OverwritePrompt = true,
+            RestoreDirectory = true,
+            InitialDirectory = ExistingDirectoryOrDocuments(initialDirectory)
+        };
+        return dialog.ShowDialog(new WindowOwner(ownerHandle)) == DialogResult.OK
+            ? dialog.FileName
+            : null;
+    }
+
     private static string ExistingDirectoryOrDocuments(string? path) =>
         !string.IsNullOrWhiteSpace(path) && Directory.Exists(path)
             ? Path.GetFullPath(path)

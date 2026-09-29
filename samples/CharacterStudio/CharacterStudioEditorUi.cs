@@ -143,6 +143,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _showSequenceTools;
     private bool _showWorldTools;
     private bool _showRpgTools;
+    private bool _showSceneTemplateTools;
     private bool _showDiagnostics;
     private bool _showFirstCreationLesson;
     private bool _showLessonWhy;
@@ -199,7 +200,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Action refreshProjectAssetReferences,
         Func<GltfAssetReference, string> previewProjectAsset,
         Func<GltfAssetReference, string> reloadProjectAsset,
-        Func<IReadOnlyList<string>> getRecentProjectPaths, Action<bool> setDiagnosticsVisible)
+        Func<IReadOnlyList<string>> getRecentProjectPaths, Action<bool> setDiagnosticsVisible,
+        Action confirmExit)
     {
         _logicalWidth = Math.Max(1, logicalWidth);
         _logicalHeight = Math.Max(1, logicalHeight);
@@ -254,6 +256,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             ?? throw new ArgumentNullException(nameof(reloadProjectAsset));
         _getRecentProjectPaths = getRecentProjectPaths ?? throw new ArgumentNullException(nameof(getRecentProjectPaths));
         _setDiagnosticsVisible = setDiagnosticsVisible ?? throw new ArgumentNullException(nameof(setDiagnosticsVisible));
+        _confirmExit = confirmExit ?? throw new ArgumentNullException(nameof(confirmExit));
         _showHome = _getCurrentProjectPath() is null && _getCurrentScenePath() is null;
         _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         LoadRpgPlacementContent();
@@ -456,9 +459,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                     if (_showSequenceTools) DrawSequencePanel();
                     if (_showWorldTools) DrawWorldCellPanel(scene);
                     if (_showRpgTools) DrawRpgAuthoringPanel(scene);
+                    if (_showSceneTemplateTools) DrawSceneTemplatePanel(scene);
                 }
             }
         }
+        DrawUnsavedChangesDialog(scene);
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
@@ -480,6 +485,12 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         var windowPosition = ImGui.GetWindowPos();
         background.AddRectFilled(windowPosition, windowPosition + ImGui.GetWindowSize(),
             ImGui.GetColorU32(new NumericsVector4(0.025f, 0.035f, 0.05f, 1f)));
+        if (_history.IsDirty)
+        {
+            ImGui.TextColored(new NumericsVector4(1f, 0.76f, 0.30f, 1f),
+                "Unsaved scene changes · save before opening another project.");
+            ImGui.Separator();
+        }
 
         var panelWidth = Math.Min(800f, Math.Max(360f, _logicalWidth - 48f));
         var panelHeight = Math.Min(510f, Math.Max(360f, _logicalHeight - 48f));
@@ -611,6 +622,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void CreateProjectFromHome(bool isFilm)
     {
+        RequestSaveBeforeContinue("creating a project", () => CreateProjectFromHomeNow(isFilm));
+    }
+
+    private void CreateProjectFromHomeNow(bool isFilm)
+    {
         try
         {
             var projectName = _projectName.Trim();
@@ -624,6 +640,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _projectWorkspaceStatus = _createProject(projectDirectory, isFilm);
             _projectName = projectName;
             _showSequenceTools = false;
+            _showWorldTools = false;
+            _showRpgTools = false;
+            _showSceneTemplateTools = false;
             _startLessonAfterProjectCreate = _guideNewProject;
             _showHome = false;
         }
@@ -635,10 +654,19 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void OpenProjectFromHome(string path)
     {
+        RequestSaveBeforeContinue("opening another project", () => OpenProjectFromHomeNow(path));
+    }
+
+    private void OpenProjectFromHomeNow(string path)
+    {
         try
         {
             _projectWorkspaceStatus = _openProject(path);
             _lessonProjectOpenCheck = path;
+            _showSequenceTools = false;
+            _showWorldTools = false;
+            _showRpgTools = false;
+            _showSceneTemplateTools = false;
             _showHome = false;
         }
         catch (Exception exception)
@@ -728,23 +756,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         }
         ImGui.SameLine();
         var scenePath = _getCurrentScenePath();
-        var canSave = scenePath is not null && !_isPlaying();
+        var canSave = !_isPlaying();
         if (!canSave) ImGui.BeginDisabled();
-        if (ImGui.Button("Save") && scenePath is not null)
-        {
-            try
-            {
-                _saveSceneAs(scenePath);
-                if (_firstCreationLesson is { } lesson
-                    && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
-                    lesson.ObserveSaved(_getCurrentProjectPath()!, scenePath, scene);
-                _projectWorkspaceStatus = $"Saved {Path.GetFileName(scenePath)}.";
-            }
-            catch (Exception exception)
-            {
-                _projectWorkspaceStatus = $"Could not save the scene: {exception.Message}";
-            }
-        }
+        if (ImGui.Button(scenePath is null ? "Save as…" : "Save")) SaveSceneFromUi(scene);
         if (!canSave) ImGui.EndDisabled();
         ImGui.SameLine();
         if (!_history.CanUndo) ImGui.BeginDisabled();
@@ -792,6 +806,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _showSequenceTools = true;
             _showWorldTools = false;
             _showRpgTools = false;
+            _showSceneTemplateTools = false;
             if (_getSequenceInfo() is null)
                 _projectWorkspaceStatus = "Add an animated character to this scene to create a film sequence.";
         }
@@ -802,6 +817,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _showSequenceTools = true;
             _showWorldTools = false;
             _showRpgTools = false;
+            _showSceneTemplateTools = false;
             if (_getSequenceInfo() is null)
                 _projectWorkspaceStatus = "A film sequence is needed before frames can be exported.";
         }
@@ -812,7 +828,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         {
             _showToolMenu = !_showToolMenu;
             if (_showToolMenu)
-                _showSequenceTools = _showWorldTools = _showRpgTools = false;
+                _showSequenceTools = _showWorldTools = _showRpgTools = _showSceneTemplateTools = false;
         }
 
         var currentProject = _getCurrentProjectPath();
@@ -821,6 +837,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             ImGui.SameLine();
             ImGui.TextDisabled(Path.GetFileName(Path.GetDirectoryName(currentProject)));
         }
+        ImGui.SameLine();
+        if (_history.IsDirty)
+            ImGui.TextColored(new NumericsVector4(1f, 0.76f, 0.30f, 1f), "Unsaved changes");
+        else
+            ImGui.TextDisabled("Saved");
         ImGui.End();
     }
 
@@ -828,7 +849,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         if (!_showToolMenu) return false;
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 48f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(220f, _logicalWidth), 196f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(230f, _logicalWidth), 236f));
         if (!ImGui.Begin("More tools", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -839,21 +860,28 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (ImGui.Checkbox("Animate and Finish", ref showSequenceTools))
         {
             _showSequenceTools = showSequenceTools;
-            if (showSequenceTools) _showWorldTools = _showRpgTools = false;
+            if (showSequenceTools) _showWorldTools = _showRpgTools = _showSceneTemplateTools = false;
             _showToolMenu = false;
         }
         var showWorldTools = _showWorldTools;
         if (ImGui.Checkbox("World Cells", ref showWorldTools))
         {
             _showWorldTools = showWorldTools;
-            if (showWorldTools) _showSequenceTools = _showRpgTools = false;
+            if (showWorldTools) _showSequenceTools = _showRpgTools = _showSceneTemplateTools = false;
             _showToolMenu = false;
         }
         var showRpgTools = _showRpgTools;
         if (ImGui.Checkbox("RPG authoring", ref showRpgTools))
         {
             _showRpgTools = showRpgTools;
-            if (showRpgTools) _showSequenceTools = _showWorldTools = false;
+            if (showRpgTools) _showSequenceTools = _showWorldTools = _showSceneTemplateTools = false;
+            _showToolMenu = false;
+        }
+        var showSceneTemplateTools = _showSceneTemplateTools;
+        if (ImGui.Checkbox("Scene templates", ref showSceneTemplateTools))
+        {
+            _showSceneTemplateTools = showSceneTemplateTools;
+            if (showSceneTemplateTools) _showSequenceTools = _showWorldTools = _showRpgTools = false;
             _showToolMenu = false;
         }
         if (ImGui.Checkbox("Performance details", ref _showDiagnostics))
@@ -866,6 +894,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _showSequenceTools = false;
             _showWorldTools = false;
             _showRpgTools = false;
+            _showSceneTemplateTools = false;
             _showDiagnostics = false;
             _setDiagnosticsVisible(false);
         }

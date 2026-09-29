@@ -52,7 +52,7 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1–M1.3 and UX.1–UX.4 are **In progress**; M1.4, UX.5–UX.6
+M0.1 through M0.3 have passed; M0.4, M1.1–M1.4 and UX.1–UX.4 are **In progress**; UX.5–UX.6
 and M2 onward remain **Not started** against their new acceptance criteria. Existing components are
 reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
@@ -154,7 +154,16 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 | M1.1 | Project create/open, recent projects, asset browser and import/reimport. | Create a project outside the checkout, import static and animated GLBs, relocate and reopen it. Invalid reimport preserves the prior valid asset and explains the error. Complete these actions through Browse/visual controls; typed-path service tests alone do not pass the gate. | **In progress** |
 | M1.2 | Viewport picking, transform gizmos, hierarchy, snapping and inspector. | Place, parent, duplicate, delete and transform objects visually; undo/redo then save/reopen preserves IDs, hierarchy and appearance. All authored edits use the command history. Selection and Move/Turn/Size work in the viewport; numeric transforms are optional details. | **In progress** |
 | M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | **In progress** |
-| M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | Not started |
+| M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | **In progress** |
+
+M1.4 now tracks saved positions in scene command history, shows unsaved scene changes, offers Save As
+for untitled scenes, prompts before project changes, and intercepts window close with save/close/cancel
+choices. Project switching rejects a dirty untitled scene unless the user saves it first. These
+controls are covered by history tests and clean-start captures, but close-cancel, Save As and project
+switch interactions still need manual verification. Character animation preview currently writes
+clip/time/playing values into scene settings outside command history, so dirty tracking does not yet
+cover those edits. Sequence and path dirty state, interrupted-work recovery after validation, and
+editor service boundaries also remain open.
 
 ### M1.3 template update and broken-reference policy
 
@@ -184,8 +193,11 @@ orphan IDs and the target world cell. Explicit updates preserve stable mappings 
 synchronize source component and attachment additions/removals, retain edited component content,
 add and remove source objects, track uncertain removed content as orphans, and support undo/redo.
 Version-12 and version-13 baselines without newer source mappings load conservatively and upgrade on
-update. Visible orphan warnings, the editor placement/update workflow and source relinking remain
-open.
+update. The optional Scene Templates tool now saves and revises project-local templates, places
+instances, updates a selected instance explicitly, shows retained-object warnings, and relinks a
+missing source only after matching its stable ID. This code is built and covered by library/API
+tests, but its visible controls have not been exercised interactively. Manual acceptance, novice
+observation, and the M0/UX workflow gates remain open.
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.

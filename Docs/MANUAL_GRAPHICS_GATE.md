@@ -73,6 +73,32 @@ These are planned acceptance checks, not passes for the current UI. Record novic
 observations separately under UX.5; screenshots and developer automation cannot close
 that gate. The optional designer mission must use the same saved project as free editing.
 
+## Scene-template workflow acceptance
+
+Use a project with a parent object and at least two children. Open **More tools → Scene templates**.
+
+1. Save the selected hierarchy as a template, place two instances, and confirm both appear as
+   separate hierarchies. Save and reopen the scene; confirm both instances and their object IDs
+   remain stable.
+2. Change the original source hierarchy and save a new template revision. Edit one placed instance
+   locally, then update only that instance. Confirm its local edit remains, the second instance
+   stays on its prior revision, and Undo/Redo restores the expected state.
+3. Remove an edited or referenced source child, save another revision, and update an instance.
+   Confirm the retained child is visible in the orphan warning and remains editable. Unmodified
+   removed content may be deleted.
+4. Move the matching template file out of the project's `Templates` folder while CharacterStudio
+   is closed. Reopen the project, select an instance, and confirm the editor reports the missing
+   source while keeping the expanded scene usable. Locate the matching file and relink it; a file
+   with a different template ID must be rejected with an actionable message.
+5. Record the project, scene, template file, screenshots and console output. These checks do not
+   replace the UX.5 novice observation or the generic resize/save/reopen/play-stop gate above.
+6. Make an edit, click **Home**, and confirm the unsaved state remains visible. Choose another
+   project: cancel the unsaved prompt once, then save and continue. For a scene without a path,
+   confirm Save As opens and the selected file is written before switching. Make another edit and
+   close the window; cancel once, then reopen the close prompt, save and close, and verify the saved
+   edit after reopening. Also verify **Close without saving** is explicit and returns to the OS only
+   after that choice.
+
 For learning flows, also check that Why?/hints are optional and work offline, lesson
 completion follows actual edits/play outcomes, demonstrations are explicit and undoable,
 and no tool is locked behind lesson progress. Observe an unguided variation and ask the

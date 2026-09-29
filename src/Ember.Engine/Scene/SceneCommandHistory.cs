@@ -17,19 +17,32 @@ public interface ISceneCommand
 /// <summary>Bounded undo/redo history for authoring commands.</summary>
 public sealed class SceneCommandHistory
 {
+    private sealed record HistoryEntry(ISceneCommand Command, object BeforeState, object AfterState);
+
     private const int MaximumCommands = 128;
-    private readonly Stack<ISceneCommand> _undo = new();
-    private readonly Stack<ISceneCommand> _redo = new();
+    private readonly Stack<HistoryEntry> _undo = new();
+    private readonly Stack<HistoryEntry> _redo = new();
+    private object _currentState = new();
+    private object _savedState;
+
+    public SceneCommandHistory() => _savedState = _currentState;
 
     public bool CanUndo => _undo.Count > 0;
     public bool CanRedo => _redo.Count > 0;
+    public bool IsDirty => !ReferenceEquals(_currentState, _savedState);
+
+    /// <summary>Marks the current authored state as successfully written to its scene file.</summary>
+    public void MarkSaved() => _savedState = _currentState;
 
     public void Execute(SceneGraph scene, ISceneCommand command)
     {
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(command);
+        var beforeState = _currentState;
         command.Apply(scene);
-        _undo.Push(command);
+        var afterState = new object();
+        _undo.Push(new HistoryEntry(command, beforeState, afterState));
+        _currentState = afterState;
         _redo.Clear();
         if (_undo.Count > MaximumCommands)
         {
@@ -42,20 +55,22 @@ public sealed class SceneCommandHistory
     public bool Undo(SceneGraph scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (!_undo.TryPeek(out var command)) return false;
-        command.Revert(scene);
+        if (!_undo.TryPeek(out var entry)) return false;
+        entry.Command.Revert(scene);
         _undo.Pop();
-        _redo.Push(command);
+        _redo.Push(entry);
+        _currentState = entry.BeforeState;
         return true;
     }
 
     public bool Redo(SceneGraph scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (!_redo.TryPeek(out var command)) return false;
-        command.Apply(scene);
+        if (!_redo.TryPeek(out var entry)) return false;
+        entry.Command.Apply(scene);
         _redo.Pop();
-        _undo.Push(command);
+        _undo.Push(entry);
+        _currentState = entry.AfterState;
         return true;
     }
 }
@@ -79,6 +94,32 @@ public sealed class TransformEditCommand : ISceneCommand
 
     public void Apply(SceneGraph scene) => Require(scene, _objectId).Transform = SceneObjectCopy.CopyTransform(_after);
     public void Revert(SceneGraph scene) => Require(scene, _objectId).Transform = SceneObjectCopy.CopyTransform(_before);
+
+    private static SceneObject Require(SceneGraph scene, Guid id) =>
+        scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
+}
+
+/// <summary>Changes persisted playback settings for one animated scene object.</summary>
+public sealed class EditCharacterSettingsCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly GltfCharacterSettings? _before;
+    private readonly GltfCharacterSettings? _after;
+
+    public EditCharacterSettingsCommand(Guid objectId, GltfCharacterSettings? before,
+        GltfCharacterSettings? after)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        _objectId = objectId;
+        _before = SceneObjectCopy.CopyCharacterSettings(before);
+        _after = SceneObjectCopy.CopyCharacterSettings(after);
+    }
+
+    public void Apply(SceneGraph scene) =>
+        Require(scene, _objectId).CharacterSettings = SceneObjectCopy.CopyCharacterSettings(_after);
+
+    public void Revert(SceneGraph scene) =>
+        Require(scene, _objectId).CharacterSettings = SceneObjectCopy.CopyCharacterSettings(_before);
 
     private static SceneObject Require(SceneGraph scene, Guid id) =>
         scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
@@ -431,7 +472,7 @@ internal static class SceneObjectCopy
             Transform = CopyTransform(source.Transform),
             GltfAsset = source.GltfAsset,
             StaticMeshLod = source.StaticMeshLod,
-            CharacterSettings = CopySettings(source.CharacterSettings),
+            CharacterSettings = CopyCharacterSettings(source.CharacterSettings),
             Door = source.Door,
             ResetPolicy = source.ResetPolicy,
             WorldEntity = source.WorldEntity is null
@@ -456,7 +497,7 @@ internal static class SceneObjectCopy
         Scale = source.Scale
     };
 
-    private static GltfCharacterSettings? CopySettings(GltfCharacterSettings? source)
+    public static GltfCharacterSettings? CopyCharacterSettings(GltfCharacterSettings? source)
     {
         if (source is null) return null;
         var copy = new GltfCharacterSettings

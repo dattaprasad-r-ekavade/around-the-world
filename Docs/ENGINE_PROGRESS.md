@@ -2524,3 +2524,70 @@ source relinking remain open. The manual graphics gate remains a separate accept
 
 Next: implement the template workflow in CharacterStudio and continue the M0.4/UX manual evidence
 when desktop input is available.
+
+## M1.3 project-local template library and editor controls — 29 September 2026
+
+- CharacterStudio's optional **More tools → Scene templates** panel now lists project templates,
+  saves a selected hierarchy as a new template, advances a source revision without changing its
+  identity, places independent instances, and applies explicit updates to the selected instance.
+- The panel reports retained older objects, missing/unreadable sources, and update errors. Relinking
+  opens a scene-template picker, verifies the expected stable ID, and atomically copies the valid
+  source into the project's `Templates` folder so it remains available after project relocation.
+- The `SceneTemplateLibrary` authoring service keeps damaged files visible beside usable templates,
+  creates unique sanitized filenames, and prevents overwriting an existing template when saving a
+  new one. Tests cover revision identity/root validation, damaged-file reporting, and ID-checked
+  relinking.
+- The manual scene-template acceptance steps are recorded in `MANUAL_GRAPHICS_GATE.md`. The
+  `mcp__cua_repl` desktop helper failed to initialize again with
+  `failed to write kernel assets: The system cannot find the path specified (os error 3)`, so the
+  button-driven save/place/update/orphan/relink flow is still unverified.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release` | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` Release run | PASS — 331 passed, 0 failed |
+| Focused template-library, template-instance and template-file tests | PASS — 21 passed, 0 failed |
+| Release Home and starter-scene captures | PASS — both exited 0; stderr empty; 1280×720 images under `%TEMP%/Ember/ManualGraphicsGate/99b3a823bb3748e983f93eb9cfff0126/` |
+| Template control mouse/keyboard walkthrough | NOT RUN — desktop helper initialization failed |
+
+M1.3 remains **In progress** until the controls are exercised and the complete UX/M1 acceptance
+gate passes. M0.4, UX.1–UX.5, M1.1, M1.2 and M1.4 also retain their recorded open checks.
+
+Next: complete the manual scene-template flow when desktop input works, then continue the ordered
+UX.1–UX.5 and M1.1/M1.2 workflow checks.
+
+## M1.4 saved scene state and loss-prevention prompts — 29 September 2026
+
+- `SceneCommandHistory` now identifies each authored state and can mark a state saved. Execute,
+  Undo, Redo and a new branch correctly move between saved and unsaved states, independent of the
+  bounded command-stack length.
+- CharacterStudio shows a Saved/Unsaved changes indicator, provides a native Save As picker for
+  scenes without a path, and asks to save before opening or creating another project. A dirty scene
+  with no path is rejected by the project-switch service unless it has been saved first.
+- The Windows close event is canceled while the scene is dirty. The editor then offers Save and
+  close, Close without saving, or Cancel. Successful atomic scene writes mark the exact current
+  history position saved; failed writes leave it dirty.
+- Full Release captures still exit cleanly and show the Saved indicator. This verifies that the new
+  close guard does not trap clean headless capture runs; it does not verify cancel/save behavior in
+  the live window. The desktop interaction helper failed again before initialization with the same
+  missing-kernel-assets error.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `SceneCommandHistoryTests` | PASS — 10 passed, including saved-position undo/redo and branching |
+| `dotnet build Ember.sln --configuration Release` | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` Release run | PASS — 332 passed, 0 failed |
+| Home and starter-scene Release captures | PASS — both exited 0, stderr empty; `dda16c8f1b1741db865b8b624092f3ba/` under `%TEMP%/Ember/ManualGraphicsGate/` |
+| Save As, project-switch prompt and close confirmation | NOT RUN — interactive desktop input unavailable |
+
+M1.4 remains **In progress**. Dirty tracking currently covers scene command history only. Character
+animation preview controls still write clip, time and playing values into scene settings outside that
+history, so those changes are not reliably reflected by the unsaved indicator yet. Sequence and path
+editing need the same save policy, and recovery/service-boundary acceptance remains open.
+
+Next: exercise the loss-prevention dialogs in CharacterStudio, then extend saved-state handling to
+sequence/path data without allowing Play to mutate authored state.

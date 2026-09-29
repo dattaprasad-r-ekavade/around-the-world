@@ -151,6 +151,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly Stopwatch _referenceFrameClock = new();
     private bool _referenceFirstFrame = true;
     private bool _showDiagnostics;
+    private bool _allowExitAfterConfirmation;
     private double _referenceNextModeSwitchSeconds = 60d;
     private double _referenceNextMemorySampleSeconds = 1d;
     private string? _referenceMarkdownPath;
@@ -300,6 +301,8 @@ public sealed class CharacterStudioGame : EngineHost
         if (saveTargetsFailedSource)
             _blockedSaveReason = "Invalid source preserved; choose a different --save path.";
 
+        Exiting += OnGameExiting;
+
     }
 
     protected override void LoadContent()
@@ -325,7 +328,8 @@ public sealed class CharacterStudioGame : EngineHost
                 () => _project?.FilePath,
                 GetProjectAssetReferencesForEditor, InvalidateProjectAssetCatalog,
                 PreviewProjectAssetForEditor, ReloadProjectAssetForEditor,
-                LoadRecentProjectPaths, visible => _showDiagnostics = visible);
+                LoadRecentProjectPaths, visible => _showDiagnostics = visible,
+                ConfirmExitAfterSaveOrDiscard);
             _moveGizmoEffect = _sceneResources.Own(new BasicEffect(GraphicsDevice)
             {
                 LightingEnabled = false,
@@ -2284,6 +2288,7 @@ public sealed class CharacterStudioGame : EngineHost
         {
             CaptureCharacterSettings();
             SceneFile.SaveAtomic(_sceneData, _sceneSavePath);
+            _editorHistory.MarkSaved();
             _reimportStatus = $"Scene saved to {Path.GetFileName(_sceneSavePath)}.";
             Console.WriteLine($"Saved scene to {Path.GetFullPath(_sceneSavePath)}");
             return true;
@@ -2294,6 +2299,19 @@ public sealed class CharacterStudioGame : EngineHost
             Console.WriteLine($"CharacterStudio scene save failed: {exception.Message}");
             return false;
         }
+    }
+
+    private void OnGameExiting(object? sender, ExitingEventArgs args)
+    {
+        if (_allowExitAfterConfirmation || !_editorHistory.IsDirty || _editorUi is null) return;
+        args.Cancel = true;
+        _editorUi.RequestCloseConfirmation();
+    }
+
+    private void ConfirmExitAfterSaveOrDiscard()
+    {
+        _allowExitAfterConfirmation = true;
+        Exit();
     }
 
     private void SaveSceneAs(string path)
@@ -2308,6 +2326,7 @@ public sealed class CharacterStudioGame : EngineHost
         var fullPath = Path.GetFullPath(path);
         SceneFile.SaveAtomic(_sceneData, fullPath);
         _sceneSavePath = fullPath;
+        _editorHistory.MarkSaved();
         _reimportStatus = $"Scene saved to {Path.GetFileName(fullPath)}.";
         Console.WriteLine($"Saved scene to {fullPath}");
     }
@@ -2380,8 +2399,13 @@ public sealed class CharacterStudioGame : EngineHost
 
             _editorUi?.CompletePendingEdit(_sceneData);
             CaptureCharacterSettings();
-            if (_sceneSavePath is not null && !SaveScene())
-                throw new IOException($"The current scene could not be saved; project switch cancelled. {_reimportStatus}");
+            if (_editorHistory.IsDirty)
+            {
+                if (_sceneSavePath is null)
+                    throw new IOException("The current scene has unsaved edits. Save it before switching projects.");
+                if (!SaveScene())
+                    throw new IOException($"The current scene could not be saved; project switch cancelled. {_reimportStatus}");
+            }
             if (_preview is null)
                 throw new InvalidOperationException("The editor preview is not ready to switch projects.");
 
