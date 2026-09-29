@@ -47,7 +47,7 @@ class keeps thin forwarding methods. The largest C# file under `src/Ember.Editor
 | Home, Film starter and Release A showcase captures | PASS — each exited 0 at 1280×720; stderr files empty; Home and starter are byte-identical to prior captures, and showcase is visually unchanged |
 | After artifacts | `%TEMP%/Ember/ManualGraphicsGate/after-e2-all-panels-ba869fdaa9fd4a868a5fe22775db5bb1/` (`home.png`, `starter-scene.png`, `showcase-scene.png`, logs) |
 | Max editor source file | PASS — 790 lines (`CharacterStudioEditorUi.WorldPanel.cs`) |
-| Hosted Windows CI | PASS — [run 36584401989](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36584401989) for `6c98dc5` |
+| Hosted Windows CI | PASS — [run 36590746893](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36590746893) for `c0f0536` |
 
 E.2 is **Passed**: the panels and Play controller now own their feature behavior, all editor source
 files are within the size target, and build, tests and captures pass. The live desktop interaction
