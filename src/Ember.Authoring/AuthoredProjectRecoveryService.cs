@@ -60,16 +60,8 @@ public static class AuthoredProjectRecoveryService
         }
         AddFile(fullContentPath, currentRpgContentJson);
 
-        var pathDirectory = Path.Combine(world.RootDirectory, "Paths");
-        if (Directory.Exists(pathDirectory))
-        {
-            foreach (var path in Directory.EnumerateFiles(pathDirectory, "*.paths.json", SearchOption.TopDirectoryOnly)
-                         .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
-                AddFile(path);
-
-            var worldPathsPath = Path.Combine(pathDirectory, "world-paths.json");
-            if (File.Exists(worldPathsPath)) AddFile(worldPathsPath);
-        }
+        foreach (var path in EnumerateAuthoredPathFiles(world.RootDirectory))
+            AddFile(path);
 
         return AuthoredContentRecoveryStore.SaveLatest(projectRoot, recoveryDirectory, files.Values, capturedUtc);
 
@@ -160,14 +152,8 @@ public static class AuthoredProjectRecoveryService
         foreach (var cell in world.Cells)
             expected.Add(RelativeToRoot(stagingRoot, world.ResolveScenePath(cell.Id)));
 
-        var pathDirectory = Path.Combine(world.RootDirectory, "Paths");
-        if (Directory.Exists(pathDirectory))
-        {
-            foreach (var path in Directory.EnumerateFiles(pathDirectory, "*.paths.json", SearchOption.TopDirectoryOnly))
-                expected.Add(RelativeToRoot(stagingRoot, path));
-            var worldPathsPath = Path.Combine(pathDirectory, "world-paths.json");
-            if (File.Exists(worldPathsPath)) expected.Add(RelativeToRoot(stagingRoot, worldPathsPath));
-        }
+        foreach (var path in EnumerateAuthoredPathFiles(world.RootDirectory))
+            expected.Add(RelativeToRoot(stagingRoot, path));
 
         var stagedFiles = staging.RestoredFiles.Select(Path.GetFullPath).ToArray();
         if (stagedFiles.Length == 0 || stagedFiles.Distinct(StringComparer.OrdinalIgnoreCase).Count() != stagedFiles.Length)
@@ -274,6 +260,22 @@ public static class AuthoredProjectRecoveryService
         if (Path.IsPathRooted(relative) || relative == ".." || relative.StartsWith("../", StringComparison.Ordinal))
             throw new InvalidDataException("Authored file path is outside the project root.");
         return relative;
+    }
+
+    private static IEnumerable<string> EnumerateAuthoredPathFiles(string worldRoot)
+    {
+        var files = new List<string>();
+        foreach (var directoryName in new[] { "Paths", "Navigation" })
+        {
+            var pathDirectory = Path.Combine(worldRoot, directoryName);
+            if (!Directory.Exists(pathDirectory)) continue;
+            files.AddRange(Directory.EnumerateFiles(pathDirectory, "*.paths.json", SearchOption.TopDirectoryOnly));
+            var worldPathsPath = Path.Combine(pathDirectory, "world-paths.json");
+            if (File.Exists(worldPathsPath)) files.Add(worldPathsPath);
+        }
+
+        return files.Distinct(StringComparer.OrdinalIgnoreCase)
+            .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
     }
 
     private static bool IsWithinOrSame(string root, string candidate)

@@ -22,6 +22,7 @@ public sealed class AuthoredProjectRecoveryServiceTests
             var worldDirectory = Path.Combine(projectRoot, "World");
             var sceneDirectory = Path.Combine(worldDirectory, "Scenes");
             var pathDirectory = Path.Combine(worldDirectory, "Paths");
+            var navigationDirectory = Path.Combine(worldDirectory, "Navigation");
             var contentDirectory = Path.Combine(projectRoot, "Assets");
             var recoveryDirectory = Path.Combine(directory, "Local", "Ember", "CharacterStudio", "AuthoringRecovery");
             var playerSavePath = Path.Combine(directory, "Local", "Ember", "RpgSlice", "world-save.json");
@@ -73,6 +74,13 @@ public sealed class AuthoredProjectRecoveryServiceTests
             CellPathGraphFile.SaveAtomic(Path.Combine(pathDirectory, "Exterior.paths.json"), graph);
             WorldPathNetworkFile.SaveAtomic(Path.Combine(pathDirectory, "world-paths.json"),
                 new WorldPathNetwork { Cells = [graph] });
+            var editorGraph = new CellPathGraph
+            {
+                CellId = interiorCell,
+                Kind = WorldCellKind.Interior,
+                Nodes = [new CellPathNode(Id("cccccccc-cccc-cccc-cccc-cccccccccccc"), new NavigationPoint(4, 1, 6))]
+            };
+            CellPathGraphFile.SaveAtomic(Path.Combine(navigationDirectory, $"{interiorCell:N}.paths.json"), editorGraph);
 
             var contentPath = Path.Combine(contentDirectory, "RpgContent.json");
             RpgContentJson.SaveAtomic(contentPath, new RpgContentSet());
@@ -94,15 +102,19 @@ public sealed class AuthoredProjectRecoveryServiceTests
             var restored = AuthoredProjectRecoveryService.RestoreLatestToStaging(
                 manifestPath, contentPath, recoveryDirectory);
 
-            Assert.Equal(6, snapshot.Files.Count);
+            Assert.Equal(7, snapshot.Files.Count);
             Assert.Equal(snapshot.SnapshotId, restored.SnapshotId);
             Assert.True(File.Exists(restored.WorldManifestPath));
             Assert.True(File.Exists(restored.RpgContentPath));
-            Assert.Equal(6, restored.RestoredFiles.Count);
+            Assert.Equal(7, restored.RestoredFiles.Count);
             Assert.False(IsWithin(projectRoot, restored.StagingRoot));
             Assert.Empty(AuthoredProjectValidator.Validate(restored.WorldManifestPath, restored.RpgContentPath).Diagnostics);
             var stagedScene = SceneFile.Load(Path.Combine(restored.StagingRoot, Path.GetRelativePath(projectRoot, exteriorPath)));
             Assert.Contains(stagedScene.Objects, sceneObject => sceneObject.Name == "UnsavedEditorObject");
+            var stagedEditorGraph = CellPathGraphFile.Load(Path.Combine(restored.StagingRoot,
+                Path.GetRelativePath(projectRoot, Path.Combine(navigationDirectory, $"{interiorCell:N}.paths.json"))));
+            Assert.Equal(interiorCell, stagedEditorGraph.CellId);
+            Assert.Equal(1, Assert.Single(stagedEditorGraph.Nodes).Position.Y);
             Assert.Empty(RpgContentJson.ParseForValidation(File.ReadAllText(restored.RpgContentPath)).Diagnostics);
 
             var snapshotOnDisk = AuthoredContentRecoveryStore.LoadLatest(projectRoot, recoveryDirectory);

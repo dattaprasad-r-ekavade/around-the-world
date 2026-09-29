@@ -2621,8 +2621,39 @@ sequence/path data without allowing Play to mutate authored state.
 | Release starter-scene capture | PASS — exit 0, 1280×720, stderr empty; visually reviewed at `%TEMP%/Ember/ManualGraphicsGate/75274e4d40fa44228a1785b3b4a35418/starter-scene.png` |
 | Interactive clip/scrub/undo/save/reopen workflow | NOT RUN — desktop control helper failed before initialization |
 
-M1.4 remains **In progress**. Manual acceptance, sequence/path dirty state, interrupted-work recovery
-after validation, and editor service boundaries remain open.
+M1.4 remains **In progress**. Manual acceptance, recovery staging review/apply, and editor service
+boundaries remain open. Sequence timeline editing is not present; M3.1 must add edits through command
+history before the sequence dirty-state gate can pass.
 
 Next: extend M1.4's dirty-state policy to sequence and path authoring, then close the interactive
 loss-prevention and animation workflow checks when desktop input is available.
+
+## M1.4 path-graph recovery and validation — 29 September 2026
+
+- CharacterStudio stores cell navigation graphs in `World/Navigation/<cell-id>.paths.json`, while
+  legacy path tools store graphs and world networks in `World/Paths`. Recovery previously captured
+  and allowlisted only `Paths`, so CharacterStudio-authored graphs would be omitted from recovery and
+  excluded from validated apply.
+- `AuthoredProjectRecoveryService` now captures and stages path graphs and world networks from both
+  directories, using the same bounded top-level file rules for capture and apply. `WorldProjectValidator`
+  now validates cell graphs and world networks from both locations; duplicate or malformed content
+  reports through the existing diagnostics path.
+- Regression coverage includes a graph in each directory, successful staged recovery/apply, and
+  project validation of both path locations. Path editor changes already save each completed action
+  atomically, so there is no unsaved path buffer to prompt for.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Recovery and world-project-validator focused tests | PASS — 3 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 336 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Interactive recovery and path-editor walkthrough | NOT RUN — desktop control helper failed before initialization |
+
+Sequence controls remain preview-only, with no timeline authoring UI; sequence dirty-state handling
+must join M3.1. M1.4 remains **In progress** pending manual acceptance, reviewed recovery apply,
+sequence authoring integration, and editor service-boundary checks.
+
+Next: carry path assets into runtime packaging and wire sequence timeline edits through undoable
+commands; keep the manual editor and recovery acceptance gates open.

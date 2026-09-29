@@ -112,11 +112,7 @@ public static class WorldProjectValidator
         List<WorldProjectDiagnostic> diagnostics)
     {
         var result = new Dictionary<Guid, CellPathGraph>();
-        var pathDirectory = Path.Combine(world.RootDirectory, "Paths");
-        if (!Directory.Exists(pathDirectory)) return result;
-
-        foreach (var path in Directory.EnumerateFiles(pathDirectory, "*.paths.json", SearchOption.TopDirectoryOnly)
-                     .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+        foreach (var path in EnumeratePathGraphFiles(world.RootDirectory))
         {
             CellPathGraph graph;
             try
@@ -154,16 +150,38 @@ public static class WorldProjectValidator
     private static void ValidateWorldPathNetwork(string worldRoot,
         IEnumerable<CellPathGraph> pathGraphs, List<WorldProjectDiagnostic> diagnostics)
     {
-        var path = Path.Combine(worldRoot, "Paths", "world-paths.json");
-        if (!File.Exists(path)) return;
-        try
+        foreach (var path in EnumerateWorldPathNetworkFiles(worldRoot))
         {
-            _ = WorldPathNetworkFile.Load(path, pathGraphs.ToArray());
+            try
+            {
+                _ = WorldPathNetworkFile.Load(path, pathGraphs.ToArray());
+            }
+            catch (Exception exception)
+            {
+                diagnostics.Add(new WorldProjectDiagnostic(path,
+                    IdentifyPathRecord(exception.Message, "world path connections"), exception.Message));
+            }
         }
-        catch (Exception exception)
+    }
+
+    private static IEnumerable<string> EnumeratePathGraphFiles(string worldRoot)
+    {
+        foreach (var directoryName in new[] { "Paths", "Navigation" })
         {
-            diagnostics.Add(new WorldProjectDiagnostic(path,
-                IdentifyPathRecord(exception.Message, "world path connections"), exception.Message));
+            var directory = Path.Combine(worldRoot, directoryName);
+            if (!Directory.Exists(directory)) continue;
+            foreach (var path in Directory.EnumerateFiles(directory, "*.paths.json", SearchOption.TopDirectoryOnly)
+                         .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+                yield return path;
+        }
+    }
+
+    private static IEnumerable<string> EnumerateWorldPathNetworkFiles(string worldRoot)
+    {
+        foreach (var directoryName in new[] { "Paths", "Navigation" })
+        {
+            var path = Path.Combine(worldRoot, directoryName, "world-paths.json");
+            if (File.Exists(path)) yield return path;
         }
     }
 

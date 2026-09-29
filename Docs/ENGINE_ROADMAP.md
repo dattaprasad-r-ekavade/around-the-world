@@ -163,8 +163,12 @@ controls are covered by history tests and clean-start captures, but close-cancel
 switch interactions still need manual verification. Character clip selection and completed time
 scrubs now go through command history. Preview playback uses a deep copy of character settings, so
 clock advancement and the **Preview playing** control do not change authored scene data. Sequence and
-path dirty state, interrupted-work recovery after validation, and editor service boundaries remain
-open. Closing during Play restores the authored preview before asking about unsaved authored edits.
+path graphs are validated and included in recovery from both `Paths` and CharacterStudio's `Navigation`
+folder. Path edits currently save atomically as each action completes, so they have no pending dirty
+state. Sequence controls are preview-only today; sequence timeline editing does not exist yet and must
+join command history before M3.1 authoring. Closing during Play restores the authored preview before
+asking about unsaved authored edits. Manual loss-prevention, interrupted-work recovery, and editor
+service-boundary acceptance remain open.
 
 ### M1.3 template update and broken-reference policy
 

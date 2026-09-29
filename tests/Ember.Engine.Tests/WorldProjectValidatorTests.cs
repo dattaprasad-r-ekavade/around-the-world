@@ -59,7 +59,7 @@ public sealed class WorldProjectValidatorTests
                 Cell(missingSceneCell, WorldCellKind.Exterior, "Scenes/Missing.json", new ExteriorCellCoordinate(2, 0))
             ]);
 
-            var pathDirectory = Path.Combine(directory, "Paths");
+            var pathDirectory = Path.Combine(directory, "Navigation");
             Directory.CreateDirectory(pathDirectory);
             var pathGraphPath = Path.Combine(pathDirectory, "Exterior_A.paths.json");
             File.WriteAllText(pathGraphPath, $$"""
