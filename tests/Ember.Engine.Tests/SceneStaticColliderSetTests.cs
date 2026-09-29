@@ -9,7 +9,7 @@ namespace Ember.Engine.Tests;
 public sealed class SceneStaticColliderSetTests
 {
     [Fact]
-    public void BuildsScaledHierarchyCollidersSkipsTriggersAndDisabledObjectsAndRemovesItsSnapshot()
+    public void BuildsScaledHierarchyCollidersAndRemovesItsSnapshot()
     {
         var scene = new SceneGraph();
         var parent = new SceneObject(Guid.NewGuid(), "Scaled room")
@@ -45,8 +45,8 @@ public sealed class SceneStaticColliderSetTests
 
         var colliders = new SceneStaticColliderSet(scene, physics);
 
-        Assert.Equal(1, colliders.Count);
-        Assert.Equal(1, colliders.SkippedTriggerCount);
+        Assert.Equal(2, colliders.Count);
+        Assert.Equal(1, colliders.TriggerCount);
         Assert.NotNull(physics.Raycast(new Vector3(5.5f, 5f, 0f), -Vector3.Up, 10f));
         Assert.Null(physics.Raycast(new Vector3(6.1f, 5f, 0f), -Vector3.Up, 10f));
 
@@ -55,6 +55,45 @@ public sealed class SceneStaticColliderSetTests
 
         Assert.True(colliders.IsDisposed);
         Assert.Null(physics.Raycast(new Vector3(5.5f, 5f, 0f), -Vector3.Up, 10f));
+    }
+
+    [Fact]
+    public void TriggerReportsEnterAndExitWithoutBlockingTheCharacter()
+    {
+        var triggerSceneObjectId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(triggerSceneObjectId, "Goal trigger")
+        {
+            BoxCollider = new SceneBoxColliderComponent(
+                Vector3.Zero, new Vector3(2f, 2f, 2f), isTrigger: true),
+            Transform = new Transform { Position = new Vector3(0f, 1f, 0f) }
+        });
+        using var physics = new PhysicsWorld(Vector3.Zero);
+        using var colliders = new SceneStaticColliderSet(scene, physics);
+        using var player = new PhysicsCharacterController(physics, new Vector3(-3.5f, 1f, 0f));
+        var observedEvents = new System.Collections.Generic.List<SceneTriggerEvent>();
+        player.SetMoveInput(Vector3.Right);
+
+        for (var step = 0; step < 72; step++)
+        {
+            physics.Step(1f / 60f);
+            observedEvents.AddRange(colliders.TriggerEvents);
+        }
+
+        Assert.True(player.Pose.Position.X > 1f);
+        Assert.Collection(observedEvents,
+            entered =>
+            {
+                Assert.Equal(triggerSceneObjectId, entered.TriggerSceneObjectId);
+                Assert.Equal(player.PhysicsBodyId, entered.OtherPhysicsObjectId);
+                Assert.Equal(PhysicsTriggerTransition.Entered, entered.Transition);
+            },
+            exited =>
+            {
+                Assert.Equal(triggerSceneObjectId, exited.TriggerSceneObjectId);
+                Assert.Equal(player.PhysicsBodyId, exited.OtherPhysicsObjectId);
+                Assert.Equal(PhysicsTriggerTransition.Exited, exited.Transition);
+            });
     }
 
     [Fact]

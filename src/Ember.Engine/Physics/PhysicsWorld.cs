@@ -7,6 +7,7 @@ using BepuUtilities;
 using BepuUtilities.Memory;
 using Microsoft.Xna.Framework;
 using System;
+using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Numerics;
 using XnaQuaternion = Microsoft.Xna.Framework.Quaternion;
@@ -27,6 +28,11 @@ public sealed class PhysicsWorld : IDisposable
     private readonly Dictionary<PhysicsObjectId, TypedIndex> _staticShapes = new();
     private readonly Dictionary<PhysicsObjectId, PhysicsPoseHistory> _poseHistory = new();
     private readonly Dictionary<CollidableReference, PhysicsObjectId> _objectIds = new();
+    private readonly HashSet<CollidableReference> _triggerCollidables = new();
+    private readonly HashSet<PhysicsObjectId> _triggerObjects = new();
+    private readonly TriggerOverlapBuffer _triggerOverlapBuffer = new();
+    private HashSet<TriggerOverlapPair> _previousTriggerOverlaps = new();
+    private IReadOnlyList<PhysicsTriggerEvent> _triggerEvents = Array.Empty<PhysicsTriggerEvent>();
     private readonly List<PhysicsCharacterController> _characters = new();
     private Simulation? _simulation;
     private int _nextObjectId = 1;
@@ -39,7 +45,7 @@ public sealed class PhysicsWorld : IDisposable
         {
             _simulation = Simulation.Create(
                 _bufferPool,
-                new NarrowPhaseCallbacks(_filters),
+                new NarrowPhaseCallbacks(_filters, _triggerCollidables, _triggerOverlapBuffer),
                 new GravityPoseIntegratorCallbacks(PhysicsConversions.ToNumerics(gravity ?? new XnaVector3(0f, -9.81f, 0f))),
                 new SolveDescription(8, 1));
         }
@@ -53,12 +59,27 @@ public sealed class PhysicsWorld : IDisposable
 
     public bool IsDisposed => _disposed;
 
+    /// <summary>Trigger enter/exit transitions produced by the most recent physics step.</summary>
+    public IReadOnlyList<PhysicsTriggerEvent> TriggerEvents => _triggerEvents;
+
     public PhysicsObjectId AddStaticBox(XnaVector3 center, XnaVector3 size,
         PhysicsCollisionFilter? filter = null)
-        => AddStaticBox(center, size, XnaQuaternion.Identity, filter);
+        => AddStaticBoxCore(center, size, XnaQuaternion.Identity, filter, isTrigger: false);
 
     public PhysicsObjectId AddStaticBox(XnaVector3 center, XnaVector3 size,
         XnaQuaternion orientation, PhysicsCollisionFilter? filter = null)
+        => AddStaticBoxCore(center, size, orientation, filter, isTrigger: false);
+
+    public PhysicsObjectId AddStaticTriggerBox(XnaVector3 center, XnaVector3 size,
+        PhysicsCollisionFilter? filter = null)
+        => AddStaticBoxCore(center, size, XnaQuaternion.Identity, filter, isTrigger: true);
+
+    public PhysicsObjectId AddStaticTriggerBox(XnaVector3 center, XnaVector3 size,
+        XnaQuaternion orientation, PhysicsCollisionFilter? filter = null)
+        => AddStaticBoxCore(center, size, orientation, filter, isTrigger: true);
+
+    private PhysicsObjectId AddStaticBoxCore(XnaVector3 center, XnaVector3 size,
+        XnaQuaternion orientation, PhysicsCollisionFilter? filter, bool isTrigger)
     {
         ThrowIfDisposed();
         ValidateBox(size, nameof(size));
@@ -73,10 +94,18 @@ public sealed class PhysicsWorld : IDisposable
             PhysicsConversions.ToNumerics(center),
             PhysicsConversions.ToNumerics(XnaQuaternion.Normalize(orientation)), shapeIndex));
         var id = NextId();
-        _filters.Allocate(handle) = filter ?? PhysicsCollisionFilter.DefaultWorld;
-        _objectIds.Add(new CollidableReference(handle), id);
+        _filters.Allocate(handle) = filter ?? (isTrigger
+            ? PhysicsCollisionFilter.DefaultTrigger
+            : PhysicsCollisionFilter.DefaultWorld);
+        var collidable = new CollidableReference(handle);
+        _objectIds.Add(collidable, id);
         _staticBodies.Add(id, handle);
         _staticShapes.Add(id, shapeIndex);
+        if (isTrigger)
+        {
+            _triggerCollidables.Add(collidable);
+            _triggerObjects.Add(id);
+        }
         return id;
     }
 
@@ -166,7 +195,10 @@ public sealed class PhysicsWorld : IDisposable
         if (!_staticBodies.Remove(id, out var handle))
             throw new KeyNotFoundException($"Physics object {id.Value} is not a removable static body.");
 
-        _objectIds.Remove(new CollidableReference(handle));
+        var collidable = new CollidableReference(handle);
+        _objectIds.Remove(collidable);
+        _triggerCollidables.Remove(collidable);
+        _triggerObjects.Remove(id);
         Simulation.Statics.Remove(handle);
         if (_staticShapes.Remove(id, out var shapeIndex))
             Simulation.Shapes.RemoveAndDispose(shapeIndex, _bufferPool);
@@ -220,7 +252,8 @@ public sealed class PhysicsWorld : IDisposable
         _dynamicBodies.Add(id, handle);
         _dynamicShapes.Add(id, shapeIndex);
         _filters.Allocate(handle) = filter ?? new PhysicsCollisionFilter(
-            PhysicsCollisionLayer.Player, PhysicsCollisionLayer.World | PhysicsCollisionLayer.Dynamic);
+            PhysicsCollisionLayer.Player,
+            PhysicsCollisionLayer.World | PhysicsCollisionLayer.Dynamic | PhysicsCollisionLayer.Trigger);
         var collidable = Simulation.Bodies[handle].CollidableReference;
         _objectIds.Add(collidable, id);
 
@@ -284,7 +317,9 @@ public sealed class PhysicsWorld : IDisposable
             _poseHistory[id] = history;
         }
 
+        _triggerOverlapBuffer.Clear();
         Simulation.Timestep(seconds);
+        UpdateTriggerEvents();
 
         foreach (var (id, handle) in _dynamicBodies)
         {
@@ -370,6 +405,10 @@ public sealed class PhysicsWorld : IDisposable
                     _staticShapes.Clear();
                     _poseHistory.Clear();
                     _objectIds.Clear();
+                    _triggerCollidables.Clear();
+                    _triggerObjects.Clear();
+                    _previousTriggerOverlaps.Clear();
+                    _triggerEvents = Array.Empty<PhysicsTriggerEvent>();
                 }
             }
         }
@@ -383,6 +422,38 @@ public sealed class PhysicsWorld : IDisposable
     private void ThrowIfDisposed()
     {
         if (_disposed) throw new ObjectDisposedException(nameof(PhysicsWorld));
+    }
+
+    private void UpdateTriggerEvents()
+    {
+        var current = new HashSet<TriggerOverlapPair>();
+        while (_triggerOverlapBuffer.TryRead(out var collidables))
+        {
+            if (!_objectIds.TryGetValue(collidables.A, out var firstId)
+                || !_objectIds.TryGetValue(collidables.B, out var secondId))
+                continue;
+            if (_triggerObjects.Contains(firstId)) current.Add(new TriggerOverlapPair(firstId, secondId));
+            if (_triggerObjects.Contains(secondId)) current.Add(new TriggerOverlapPair(secondId, firstId));
+        }
+
+        var events = new List<PhysicsTriggerEvent>();
+        foreach (var overlap in current)
+            if (!_previousTriggerOverlaps.Contains(overlap))
+                events.Add(new PhysicsTriggerEvent(
+                    overlap.TriggerObjectId, overlap.OtherObjectId, PhysicsTriggerTransition.Entered));
+        foreach (var overlap in _previousTriggerOverlaps)
+            if (!current.Contains(overlap))
+                events.Add(new PhysicsTriggerEvent(
+                    overlap.TriggerObjectId, overlap.OtherObjectId, PhysicsTriggerTransition.Exited));
+        events.Sort(static (left, right) =>
+        {
+            var triggerOrder = left.TriggerObjectId.Value.CompareTo(right.TriggerObjectId.Value);
+            if (triggerOrder != 0) return triggerOrder;
+            var otherOrder = left.OtherObjectId.Value.CompareTo(right.OtherObjectId.Value);
+            return otherOrder != 0 ? otherOrder : left.Transition.CompareTo(right.Transition);
+        });
+        _previousTriggerOverlaps = current;
+        _triggerEvents = events;
     }
 
     private static void ValidateBox(XnaVector3 size, string parameterName)
@@ -426,11 +497,37 @@ public sealed class PhysicsWorld : IDisposable
         public PhysicsPose Current;
     }
 
+    private readonly record struct TriggerOverlapPair(
+        PhysicsObjectId TriggerObjectId, PhysicsObjectId OtherObjectId);
+
+    private sealed class TriggerOverlapBuffer
+    {
+        private readonly ConcurrentQueue<(CollidableReference A, CollidableReference B)> _pairs = new();
+
+        public void Record(CollidableReference a, CollidableReference b) => _pairs.Enqueue((a, b));
+
+        public void Clear()
+        {
+            while (_pairs.TryDequeue(out _)) { }
+        }
+
+        public bool TryRead(out (CollidableReference A, CollidableReference B) pair) =>
+            _pairs.TryDequeue(out pair);
+    }
+
     private struct NarrowPhaseCallbacks : INarrowPhaseCallbacks
     {
         private readonly CollidableProperty<PhysicsCollisionFilter> _filters;
+        private readonly HashSet<CollidableReference> _triggerCollidables;
+        private readonly TriggerOverlapBuffer _triggerOverlapBuffer;
 
-        public NarrowPhaseCallbacks(CollidableProperty<PhysicsCollisionFilter> filters) => _filters = filters;
+        public NarrowPhaseCallbacks(CollidableProperty<PhysicsCollisionFilter> filters,
+            HashSet<CollidableReference> triggerCollidables, TriggerOverlapBuffer triggerOverlapBuffer)
+        {
+            _filters = filters;
+            _triggerCollidables = triggerCollidables;
+            _triggerOverlapBuffer = triggerOverlapBuffer;
+        }
 
         public void Initialize(Simulation simulation) => _filters.Initialize(simulation);
 
@@ -448,6 +545,13 @@ public sealed class PhysicsWorld : IDisposable
             ref TManifold manifold, out PairMaterialProperties pairMaterial)
             where TManifold : unmanaged, IContactManifold<TManifold>
         {
+            if (_triggerCollidables.Contains(pair.A) || _triggerCollidables.Contains(pair.B))
+            {
+                _triggerOverlapBuffer.Record(pair.A, pair.B);
+                pairMaterial = default;
+                return false;
+            }
+
             pairMaterial.FrictionCoefficient = 0.8f;
             pairMaterial.MaximumRecoveryVelocity = 2f;
             pairMaterial.SpringSettings = new SpringSettings(30f, 1f);

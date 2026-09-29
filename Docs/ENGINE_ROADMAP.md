@@ -228,8 +228,8 @@ M2.1 now has its first data and authoring-command slice: scene version 15 stores
 box colliders with trigger flags, and older scenes load without colliders. Template baselines preserve
 collider defaults and local overrides across explicit updates; undo/redo, duplication and Play-mode
 cloning retain the component. `SceneStaticColliderSet` builds removable static PhysicsWorld boxes
-from enabled scene objects and their world transforms; it reports sheared transforms and skips
-trigger volumes pending overlap support. Runtime trigger evaluation, player/camera settings, input
+from enabled scene objects and their world transforms; it reports sheared transforms and maps
+nonblocking trigger enter/exit events back to scene-object IDs. Player/camera settings, input
 actions, behavior assignments and the beginner What happens? presets remain open. The existing
 Inspector now has optional box-collider add/remove and center/size/trigger controls; live editor
 interaction and viewport collider visualization still need verification and implementation.

@@ -2828,5 +2828,29 @@ events without treating skipped triggers as functional interactions.
 | CharacterStudio Release build | PASS — 0 warnings, 0 errors |
 | Interactive Inspector edit, undo and save/reopen | NOT RUN — desktop computer-use runtime is unavailable in this environment |
 
-Next: add collider viewport feedback and verify Inspector edits through visible controls; continue
-with trigger overlap, then player/camera settings, input actions and behavior assignments.
+Next: connect trigger transitions to authored interaction actions, then continue with player/camera
+settings, input actions and behavior assignments.
+
+## M2.1 runtime trigger overlap events — 29 September 2026
+
+- Static trigger boxes use a dedicated collision layer and report `Entered` and `Exited` transitions
+  for overlapping player/dynamic objects. Trigger contacts do not produce collision response, so a
+  character can pass through the volume.
+- `SceneStaticColliderSet` includes enabled trigger boxes in its removable snapshot and maps each
+  physics trigger ID back to its owning scene-object ID. Removing the snapshot unregisters mappings
+  and colliders.
+- M2.1 remains **In progress**. This adds overlap events, not gameplay action execution: player/camera
+  settings, input actions, behavior assignment diagnostics, beginner action presets, collider viewport
+  visualization and live Inspector interaction checks remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused `SceneStaticColliderSetTests` Release run | PASS — 3 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 350 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+
+Next: verify the complete physics and scene test suites, then connect trigger transitions to authored
+interaction actions while preserving the unfinished M2.1 acceptance criteria.

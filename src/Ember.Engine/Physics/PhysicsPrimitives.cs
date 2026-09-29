@@ -11,6 +11,16 @@ public readonly record struct PhysicsObjectId(int Value);
 /// <summary>One physics pose expressed in the engine's MonoGame math types.</summary>
 public readonly record struct PhysicsPose(XnaVector3 Position, XnaQuaternion Orientation);
 
+public enum PhysicsTriggerTransition
+{
+    Entered,
+    Exited
+}
+
+/// <summary>A dynamic physics object began or ended overlap with a static trigger.</summary>
+public readonly record struct PhysicsTriggerEvent(
+    PhysicsObjectId TriggerObjectId, PhysicsObjectId OtherObjectId, PhysicsTriggerTransition Transition);
+
 [Flags]
 public enum PhysicsCollisionLayer : uint
 {
@@ -19,6 +29,7 @@ public enum PhysicsCollisionLayer : uint
     Dynamic = 1u << 1,
     Player = 1u << 2,
     Interaction = 1u << 3,
+    Trigger = 1u << 4,
     All = uint.MaxValue
 }
 
@@ -29,6 +40,8 @@ public readonly record struct PhysicsCollisionFilter(
 {
     public static PhysicsCollisionFilter DefaultWorld => new(PhysicsCollisionLayer.World, PhysicsCollisionLayer.All);
     public static PhysicsCollisionFilter DefaultDynamic => new(PhysicsCollisionLayer.Dynamic, PhysicsCollisionLayer.All);
+    public static PhysicsCollisionFilter DefaultTrigger => new(
+        PhysicsCollisionLayer.Trigger, PhysicsCollisionLayer.Player | PhysicsCollisionLayer.Dynamic);
 
     public bool IsIncludedIn(PhysicsCollisionLayer mask) => (BelongsTo & mask) != 0;
 

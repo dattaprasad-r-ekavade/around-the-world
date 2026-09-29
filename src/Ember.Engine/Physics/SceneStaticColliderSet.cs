@@ -6,13 +6,14 @@ using Microsoft.Xna.Framework;
 namespace Ember.Physics;
 
 /// <summary>
-/// Builds a removable snapshot of enabled, non-trigger scene box colliders in one physics world.
+/// Builds a removable snapshot of enabled scene box colliders in one physics world.
 /// Rebuild this set after changing scene transforms or collider components.
 /// </summary>
 public sealed class SceneStaticColliderSet : IDisposable
 {
     private readonly PhysicsWorld _physicsWorld;
     private readonly List<PhysicsObjectId> _colliderIds = new();
+    private readonly Dictionary<PhysicsObjectId, Guid> _sceneTriggerObjectIds = new();
     private bool _disposed;
 
     public SceneStaticColliderSet(SceneGraph scene, PhysicsWorld physicsWorld)
@@ -26,16 +27,15 @@ public sealed class SceneStaticColliderSet : IDisposable
             {
                 if (sceneObject.BoxCollider is not { } collider || !IsEffectivelyEnabled(scene, sceneObject))
                     continue;
-                if (collider.IsTrigger)
-                {
-                    SkippedTriggerCount++;
-                    continue;
-                }
 
                 try
                 {
                     var (center, size, orientation) = ResolveWorldBox(scene, sceneObject, collider);
-                    _colliderIds.Add(_physicsWorld.AddStaticBox(center, size, orientation));
+                    var physicsObjectId = collider.IsTrigger
+                        ? _physicsWorld.AddStaticTriggerBox(center, size, orientation)
+                        : _physicsWorld.AddStaticBox(center, size, orientation);
+                    _colliderIds.Add(physicsObjectId);
+                    if (collider.IsTrigger) _sceneTriggerObjectIds.Add(physicsObjectId, sceneObject.Id);
                 }
                 catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
                 {
@@ -54,8 +54,22 @@ public sealed class SceneStaticColliderSet : IDisposable
 
     public int Count => _colliderIds.Count;
 
-    /// <summary>Number of trigger components skipped because trigger overlaps are not wired yet.</summary>
-    public int SkippedTriggerCount { get; }
+    public int TriggerCount => _sceneTriggerObjectIds.Count;
+
+    /// <summary>Trigger transitions from the latest physics step, mapped back to scene-object IDs.</summary>
+    public IReadOnlyList<SceneTriggerEvent> TriggerEvents
+    {
+        get
+        {
+            if (_disposed || _physicsWorld.IsDisposed) return Array.Empty<SceneTriggerEvent>();
+            var events = new List<SceneTriggerEvent>();
+            foreach (var triggerEvent in _physicsWorld.TriggerEvents)
+                if (_sceneTriggerObjectIds.TryGetValue(triggerEvent.TriggerObjectId, out var sceneObjectId))
+                    events.Add(new SceneTriggerEvent(sceneObjectId,
+                        triggerEvent.OtherObjectId, triggerEvent.Transition));
+            return events;
+        }
+    }
 
     public bool IsDisposed => _disposed;
 
@@ -66,6 +80,7 @@ public sealed class SceneStaticColliderSet : IDisposable
         if (_physicsWorld.IsDisposed)
         {
             _colliderIds.Clear();
+            _sceneTriggerObjectIds.Clear();
             return;
         }
         RemoveCreatedColliders();
@@ -87,6 +102,7 @@ public sealed class SceneStaticColliderSet : IDisposable
             }
         }
         _colliderIds.Clear();
+        _sceneTriggerObjectIds.Clear();
         if (failures is not null)
             throw new AggregateException("One or more scene colliders could not be removed from the physics world.", failures);
     }
@@ -153,3 +169,6 @@ public sealed class SceneStaticColliderSet : IDisposable
     private static bool Near(float left, float right) =>
         MathF.Abs(left - right) <= 1e-4f * MathF.Max(1f, MathF.Max(MathF.Abs(left), MathF.Abs(right)));
 }
+
+public readonly record struct SceneTriggerEvent(
+    Guid TriggerSceneObjectId, PhysicsObjectId OtherPhysicsObjectId, PhysicsTriggerTransition Transition);

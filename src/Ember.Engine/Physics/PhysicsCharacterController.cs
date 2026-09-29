@@ -54,7 +54,7 @@ public sealed class PhysicsCharacterController : IDisposable
             _settings.Mass,
             new PhysicsCollisionFilter(
                 PhysicsCollisionLayer.Player,
-                PhysicsCollisionLayer.World | PhysicsCollisionLayer.Dynamic));
+                PhysicsCollisionLayer.World | PhysicsCollisionLayer.Dynamic | PhysicsCollisionLayer.Trigger));
         try
         {
             _world.RegisterCharacter(this);
