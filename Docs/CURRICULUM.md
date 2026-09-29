@@ -3,7 +3,8 @@
 Draft, 29 September 2026. This file plans what Ember teaches and how it is presented.
 Task IDs, status and gates are in the [active roadmap](ENGINE_ROADMAP.md), under the L
 (learning foundation) and C (career mode) tracks. The teaching loop, plain-language rules
-and usability acceptance are in [CREATOR_EXPERIENCE.md](CREATOR_EXPERIENCE.md). Nothing in
+and usability acceptance are in [CREATOR_EXPERIENCE.md](CREATOR_EXPERIENCE.md). Pacing,
+inspirations and ease-of-use proposals are in [CAREER_PACING.md](CAREER_PACING.md). Nothing in
 this file exists unless its status says so.
 
 ## Pitch

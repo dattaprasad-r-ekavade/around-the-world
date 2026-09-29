@@ -24,6 +24,8 @@ Each stage explains its basics, then adds new tools and people. Free Create expo
 finished tool without progression. [CURRICULUM.md](CURRICULUM.md) defines the stages,
 missions and transfer checks. The L track below builds the shared learning foundation
 (lesson data, visual rules, C# behaviours); the C track builds each career stage.
+[CAREER_PACING.md](CAREER_PACING.md) covers pacing and ease of use, and
+[DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md) orders all tracks into phases P0–P11.
 
 Build a compact Windows 3D creation tool in which one person can create or generate a
 scene, refine it visually, and use that same scene in a playable game or a cutscene.
