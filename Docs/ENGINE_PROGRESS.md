@@ -2740,6 +2740,10 @@ desktop computer-use runtime is available.
 - CharacterStudio now uses the shared resolver both for `--project` startup and for Open Project. The
   project model already allowed world-only files, but both editor paths previously called
   `ResolveStartupScenePath` directly and failed before showing the authored world.
+- The Release CharacterStudio executable was launched with a temporary world-only project and
+  `--screenshot ... --warmup 1`. It exited 0 and rendered the selected exterior cell with both
+  project-root GLBs at 1280×720; the reviewed capture is
+  `%TEMP%/Ember-WorldOnly-d7bff6ae93164eb293769692afa5c59e/world-only.png`.
 - M1.1 remains **In progress**. The API regression proves the world-only scene choice; editor picker,
   preview, import and reopen interactions still require the live UI gate.
 
@@ -2751,6 +2755,7 @@ desktop computer-use runtime is available.
 | Full `Ember.Engine.Tests` Release run | PASS — 343 passed, 0 failed |
 | Release solution build | PASS — 0 warnings, 0 errors |
 | RPG content save/load check | PASS — `[OK] save then load equals original` |
+| CharacterStudio world-only project capture | PASS — Release process exited 0; 1280×720 capture rendered the exterior scene and its two project-root GLBs |
 | Interactive project-open and world-cell walkthrough | NOT RUN — computer-use runtime failed to initialize with missing kernel assets |
 
 Next: verify project opening and cell switching in the editor when desktop input is available; keep
