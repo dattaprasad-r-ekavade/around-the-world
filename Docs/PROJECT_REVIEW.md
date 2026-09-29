@@ -1,3 +1,38 @@
+# Project reviews
+
+Reviews are dated snapshots. The newest is first. Task status is only in
+[ENGINE_ROADMAP.md](ENGINE_ROADMAP.md); a review may be out of date.
+
+# Product direction review — 29 September 2026
+
+Reviewed revision: `ee306c0`. Source inspection and document review only; no build, test or
+live run was made in this review.
+
+**Overall: 5/10 against the teaching-product goal.**
+
+| Area | Rating | Finding |
+| --- | ---: | --- |
+| Runtime foundation | 7 | About 21,000 lines of runtime with physics, animation, audio, streaming and packaging; about 285 CPU tests; Windows CI; atomic saves and recovery; measured budgets. |
+| Honesty and process | 8 | Evidence-based gates and no completion percentages. |
+| Teaching product | 3 | One code-based lesson, no novice observation yet, no path from presets to code. |
+| Editor usability | 4 | Home and scene-first workspace exist, but nearly every UX and M1 task waits for manual verification. |
+| Architecture for growth | 4 | The editor lives in `samples/CharacterStudio`, with two files of about 3,500 and 2,900 lines; `Ember.Authoring` references `Ember.Rpg`. |
+| Focus | 4 | About twelve tasks are In progress and none has passed since M0.3. |
+
+Resulting changes:
+
+- Career mode and the curriculum ([CURRICULUM.md](CURRICULUM.md)), pacing research
+  ([CAREER_PACING.md](CAREER_PACING.md)) and the phase plan ([DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)).
+- New roadmap tracks: E (editor extraction), L (lesson data, visual rules, C# behaviours),
+  C (career stages), EA (early access) and M0.5 (evidence split, now passed).
+- Documentation cleanup: [AGENTS.md](../AGENTS.md), a documentation index, a status table in
+  the roadmap, and per-milestone evidence files.
+
+Main recommendation: close gates before starting new features. Finish M0.4, extract the
+editor (E.1–E.3), complete the manual UX/M1 checks, and run UX.5 with three novices.
+
+---
+
 # Latest progress and creator-experience review — 28 September 2026
 
 Reviewed revision: `3c9620e`. The 27 September assessment below is historical; its

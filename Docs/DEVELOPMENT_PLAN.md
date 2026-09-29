@@ -15,7 +15,7 @@ and neither does this plan. Items marked *(new)* are proposals not yet in the ro
    exit criteria before the next phase starts, except the parallel work listed per phase.
 2. **Test with people at every phase end.** Each phase that changes what learners see
    ends with at least one novice session, using the UX.5 method. Record results in
-   ENGINE_PROGRESS.md.
+   the matching evidence file in `progress/`.
 3. **Real work stays real.** Simulation is added around real building, never instead of it.
 4. **Free Create is never gated.** Every phase keeps the same project opening in both modes.
 5. **Prototype before content.** Every career stage gets a playable paper or rough
@@ -44,7 +44,7 @@ Goal: a trusted starting point before structural changes.
 
 - Finish M0.4 interactive checks: resize, save/reopen, Play/Stop, recovery cancel/apply/close.
 - Rerun Windows CI on the current commit.
-- M0.5: split ENGINE_PROGRESS.md into per-milestone evidence files so the log stays readable.
+- M0.5 (done 29 September 2026): progress evidence split into per-milestone files under `progress/`.
 
 Exit: M0.4 and M0.5 **Passed** with recorded evidence. CI green.
 

@@ -1,3 +1,5 @@
+> Reference decision (27 September 2026), still in force: regional RPG expansion is not approved. Current work is in ENGINE_ROADMAP.md.
+
 # Expansion status: limited baseline, further scaling unproven
 
 Updated 27 September 2026. This replaces the previous approval, preserved in

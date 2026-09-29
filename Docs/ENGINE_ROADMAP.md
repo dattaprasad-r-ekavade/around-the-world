@@ -1,10 +1,18 @@
-# Ember roadmap: lightweight 3D engine and scene generator
+# Ember roadmap: teaching game engine and career game
 
-Updated: 29 September 2026. This is the sole active roadmap. It supersedes the
-[RPG implementation plan](archive/ENGINE_ROADMAP_RPG_2026-09-27.md), including its
-next-task instructions and expansion tasks 145–152. Completed implementation history
-remains in [ENGINE_PROGRESS.md](ENGINE_PROGRESS.md); historical completion percentages
-are not product readiness. See [PROJECT_REVIEW.md](PROJECT_REVIEW.md) for the baseline.
+Updated: 29 September 2026. This is the **only active roadmap** and the only place where task
+status is kept. Read [AGENTS.md](../AGENTS.md) first for how to work in this repository.
+
+How to use this file:
+
+1. Check **Current status** and **Next actions** to find the task to work on.
+2. Read that task's row in its milestone table. The Acceptance column is the definition of done.
+3. Read the linked evidence file in [`progress/`](progress/) to see what already exists.
+4. When you finish work, append evidence (format in [ENGINE_PROGRESS.md](ENGINE_PROGRESS.md))
+   and update the task's status here in the same change.
+
+The archived [RPG roadmap](archive/ENGINE_ROADMAP_RPG_2026-09-27.md) and its tasks 01–144
+are history, not current work.
 
 ## Product objective
 
@@ -63,56 +71,55 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.1, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
-M0.5, E.1–E.3, M2.2, L.1–L.5, C.1–C.9, EA.1–EA.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
-components are reusable foundations, not a reason to repeat their implementation.
-Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
-M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
-passes on the pulled baseline; interactive resize/save/reopen/play-stop evidence remains
-incomplete. Recovery now has failure-injection coverage proving a locked snapshot replacement
-preserves the prior snapshot, a failed multi-file apply rolls back earlier writes, and impossible
-file/directory path collisions are rejected before staging. The reviewed activation-queue test now
-allows valid partial-budget steps and the full local CPU suite passes. M1.1 services and native
-project/model pickers exist but the
-visible button-driven workflow is unproven. Selected-model reload builds a replacement preview before swapping it in, and the asset-ownership test confirms a corrupt GLB leaves the prior asset active. Verify that recovery through visible editor controls before closing the gate. UX.1 has a first local Home and scene-first
-workspace implementation; resize and DPI checks remain. UX.2 has starter thumbnails, atomic
-Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view
-selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
-verification remains open. The Add library model list now has a case-insensitive path/name search
-and a no-match message. Windows CI for `ababa01` exposed a time-budget-sensitive
-cell-queue test; commit `361078f` separates wall-clock scheduling from the cost/cell fairness check,
-with elapsed-budget behavior covered by a controllable clock. Hosted run #6 passed on `145c892`.
-UX.3 also has an optional Inspector explanation for transforms and shared model assets, plus direct
-next actions for an empty scene and an empty model list. The Inspector now identifies a model being
-previewed instead of describing the scene as empty, and editor failures remain visible in the
-Inspector with a recovery hint. The native graphics interaction gate remains open.
-UX.1's optional tools menu and its tool panels now have exclusive draw states to prevent their
-shared-position windows from overlapping during a selection change.
-UX.4 now has an optional action-driven first-creation lesson, replayable from the workspace, with
-per-step Why? explanations, two levels of offline hints, action-based completion checks, and a
-project-local completion record. Its button-driven walkthrough and UX.5 novice observations remain
-unverified.
-UX.1 Home now paints an opaque workspace background; the latest Release capture confirms the
-Game/Film/Open choices without the preview scene showing through. Resize, DPI and button-driven
-verification remain open.
-M1.2 now has a nested selectable object hierarchy, command-based world-preserving reparenting, and
-viewport Move/Turn/Size gizmos. Move is world-aligned with parent-aware placement; Turn and Size use
-the selected object's local axes. Optional position-grid, angle and scale snapping are implemented.
-Live drag verification, undo/redo interaction, and save/reopen evidence remain open.
-Preserve completed reliability work.
+Status values: **Not started**, **In progress**, **Blocked**, **Passed**. A task is **Passed** only
+when its full Acceptance is met and its evidence file records the commit, command or exact UI
+steps, fixture, configuration, hardware where relevant, result and artifact location.
 
-Execution order: complete M0.4's interactive verification, then move the editor into its own
-project (E.1–E.3) before the remaining UX.1–UX.4 and M1 interactive verification, so manual
-evidence is recorded against the final editor structure. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
-gives the full phase order. Do not add more default panels while this work is pending. UX.5 novice
-observation is required for the M1 gate; UX.6 follows the first M2 interaction. Work may proceed while
-manual evidence is pending, but do not call dependent release gates Passed.
+- Name the kind of evidence: code inspection, CPU test, live integration, visual/audio review,
+  or relocated distribution check. A unit test cannot close a UI gate.
+- Novice-observation gates (UX.5 and later) need real first-time users. With no participants,
+  the gate stays pending; a developer walkthrough is not a pass.
+- Do not compute a product-completion percentage from checked rows.
+- Existing components are reusable foundations. Inspect them before adding new ones.
 
-Use Not started / In progress / Blocked / Passed. A Passed task records commit, command
-or exact UI steps, fixture, configuration, hardware where relevant, result, and artifact
-location in ENGINE_PROGRESS.md. Distinguish code inspection, CPU tests, live integration,
-visual/audio review, and relocated distribution checks. A unit test cannot close a UI gate.
-Do not compute a product-completion percentage from checked implementation rows.
+## Current status
+
+Passed: M0.1, M0.2, M0.3, M0.5. Every task not listed here or in the table is **Not started**.
+
+| Task | Status | Exists now | Remaining to pass | Evidence |
+| --- | --- | --- | --- | --- |
+| M0.4 | In progress | Windows CI (hosted run #6 passed on `145c892`); atomic writes; failure injection for locked snapshot replacement, multi-file apply rollback and path collisions; cancellable recovery staging with a review UI | Interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen; CI rerun on the current commit | [M0](progress/M0.md) |
+| UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
+| UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
+| UX.3 | In progress | Inspector explanations; next actions for an empty scene and an empty model list; pending-preview state; error recovery hints | Live check of messages, keyboard focus, scaling and non-color states | [UX](progress/UX.md) |
+| UX.4 | In progress | Optional action-driven first-creation lesson (`FirstCreationLesson`) with Why?, two hint levels, replay and a project-local completion record | Button-driven walkthrough through the final reopen and replay | [UX](progress/UX.md) |
+| M1.1 | In progress | Project create/open/recent; GLB import with rollback; stable asset catalog; project GLBs in the Add library; reload with replacement validation; world-only projects open | Browse → preview → Add/Cancel, a valid reload and a corrupt reload through visible controls; relocate and reopen through the UI | [M1](progress/M1.md) |
+| M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
+| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink (scene version 15); Scene Templates tool | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
+| M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery | Manual close-cancel, Save As and project switch; interrupted-work recovery; service boundaries (see E.3) | [M1](progress/M1.md) |
+| M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; controllable Play character; saved Play settings (scene version 17) | Saved player choice; Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
+| M2.3 | In progress | World validation before packaging; path data packaged; relocation tests reopen packaged worlds | Asset/audio/sequence closure; build panel; relocated playable game | [M2](progress/M2.md) |
+
+## Next actions
+
+Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
+new default editor panels until the M1 gate passes.
+
+1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
+   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. Rerun Windows CI.
+2. **E.1–E.3:** move the editor into `src/Ember.Editor`, split the two large files, and remove
+   the Authoring → Rpg reference. Record tests and Release captures before and after each step.
+3. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
+   - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
+     prior preview stays active and the message explains the next action);
+   - empty-scene actions; More tools switching; scene-view picking; layout reset; resize; DPI;
+   - Move/Turn/Size with hover and drag, snapping, parent selection and reparenting; one-step
+     undo/redo; save/reopen keeps transforms, IDs, hierarchy and appearance;
+   - Scene Templates: two instances, one override, reload;
+   - close-cancel, Save As and project-switch prompts;
+   - the first-creation lesson through its final reopen and replay.
+4. **UX.5:** run three novice sessions. Fix blockers and repeat the affected task.
+5. Then continue the remaining M2.1 work, M2.2 and M2.3 (phase P4).
 
 ## M0 — Establish a trustworthy baseline
 
@@ -124,12 +131,7 @@ Dependency: none. Prioritize this before adding features.
 | M0.2 | Run live lifecycle coverage. | At least 50 transitions spanning two interiors and exterior boundaries, plus repeated scene reload and play/stop; compare like-for-like resource counts after warmup. Exercise delayed/failed loads and retry, save/restart, and unique identities. No unexplained growth or swallowed errors. Keep this separate from a longer timed soak. | **Passed** |
 | M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | **Passed** |
 | M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add [Windows build/CPU-test CI](../.github/workflows/windows-engine.yml) and a documented [graphics/manual gate](MANUAL_GRAPHICS_GATE.md); keep RPG checks separate. | **In progress** |
-| M0.5 | Split progress evidence by milestone. | Move ENGINE_PROGRESS.md evidence into one file per milestone under `Docs/progress/`, keeping every record, commit reference and artifact path. ENGINE_PROGRESS.md becomes a short index. New evidence goes into the matching milestone file. | Not started |
-
-Recovery staging has a cancellable asynchronous API with file progress and cleanup. CharacterStudio's
-recovery review now runs staging and validation off the render loop, displays progress, and offers
-Cancel. It cancels when a project changes, verifies project identity before enabling Apply, and removes
-unreviewed staging when the editor closes. Visible cancel/apply/close/reopen interaction remains open.
+| M0.5 | Split progress evidence by milestone. | Move ENGINE_PROGRESS.md evidence into one file per milestone under `Docs/progress/`, keeping every record, commit reference and artifact path. ENGINE_PROGRESS.md becomes a short index. New evidence goes into the matching milestone file. | **Passed** |
 
 M0.3 reference budgets apply only to CharacterStudio's paired-Fox scene on the named
 reference PC (Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, 1280x720). They are
@@ -194,24 +196,6 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 | M1.3 | Reusable scene templates and overrides. | Save a reusable hierarchy; place two instances, edit one override, reload and verify stable independent instances. Define update and broken-reference behavior before implementation. | **In progress** |
 | M1.4 | Dirty state, recovery and editor service boundaries. | Open/reload/close cannot silently discard edits; recover interrupted work after validation. Paths and sequences follow the same policy. Generic startup works without RPG data; play/stop cannot mutate authored state. | **In progress** |
 
-Project opening now resolves the initial scene consistently: an explicit startup scene takes
-priority, while a project with only a world manifest opens its first declared cell. CharacterStudio's
-command-line and Open Project paths use this resolver; button-driven verification remains open.
-
-M1.4 now tracks saved positions in scene command history, shows unsaved scene changes, offers Save As
-for untitled scenes, prompts before project changes, and intercepts window close with save/close/cancel
-choices. Project switching rejects a dirty untitled scene unless the user saves it first. These
-controls are covered by history tests and clean-start captures, but close-cancel, Save As and project
-switch interactions still need manual verification. Character clip selection and completed time
-scrubs now go through command history. Preview playback uses a deep copy of character settings, so
-clock advancement and the **Preview playing** control do not change authored scene data. Sequence and
-path graphs are validated and included in recovery from both `Paths` and CharacterStudio's `Navigation`
-folder. Path edits currently save atomically as each action completes, so they have no pending dirty
-state. Sequence controls are preview-only today; sequence timeline editing does not exist yet and must
-join command history before M3.1 authoring. Closing during Play restores the authored preview before
-asking about unsaved authored edits. Manual loss-prevention, interrupted-work recovery, and editor
-service-boundary acceptance remain open.
-
 ### M1.3 template update and broken-reference policy
 
 - A template is a project-relative, versioned snapshot of one selected root and its descendants.
@@ -232,20 +216,6 @@ service-boundary acceptance remain open.
   Updating stays unavailable until the source is repaired or relinked. A missing GLB used by an
   instance follows the normal project asset recovery flow.
 
-The M1.3 API saves atomic, versioned hierarchy snapshots, places expanded instances with remapped
-IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene version 15
-stores source name/transform, enabled-state, reset-policy, shared GLB asset, static-mesh LOD,
-character playback and attachment baselines, door/spawn/world-entity and box-collider component baselines, plus
-orphan IDs and the target world cell. Explicit updates preserve stable mappings and local overrides,
-synchronize source component and attachment additions/removals, retain edited component content,
-add and remove source objects, track uncertain removed content as orphans, and support undo/redo.
-Version-12 and version-13 baselines without newer source mappings load conservatively and upgrade on
-update. The optional Scene Templates tool now saves and revises project-local templates, places
-instances, updates a selected instance explicitly, shows retained-object warnings, and relinks a
-missing source only after matching its stable ID. This code is built and covered by library/API
-tests, but its visible controls have not been exercised interactively. Manual acceptance, novice
-observation, and the M0/UX workflow gates remain open.
-
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.
 
@@ -258,33 +228,6 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 | M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. | **In progress** |
 | M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. | Not started |
 | M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. | **In progress** |
-
-M2.1 now has persisted scene trigger actions in scene version 16. Trigger owners can run the built-in
-Collect or ReachGoal action on entry; Collect disables its play-session object, and ReachGoal records
-completion once per goal object. The runtime raises a typed action event with the trigger and stable
-scene-character IDs. Physics characters are bound to scene identity through `ScenePlaySession`, while
-unbound physics bodies remain available by physics ID. Actions require a trigger box collider, execute
-only while their owner is enabled, and invalid assignments name their owner. Save/load, template
-baselines and updates, duplication, undo/redo and Play-mode cloning preserve the assignment. The
-Inspector's What happens? panel offers Nothing, Collect and Reach goal, and can add a trigger collider
-or convert an existing box. Play-mode path-following characters share the scene collider snapshot,
-bind their physics bodies to scene IDs, and dispatch resulting trigger events to saved actions; the
-editor reports the resulting action. Play also gives the selected or first authored character
-controllable movement, jumping and orbit-camera follow over the same collision and trigger world.
-Scene version 17 persists capsule dimensions, move/jump speed, camera target offset/distance/orbit
-sensitivity, and primary plus alternate keyboard bindings for the standard move/jump actions. The
-Inspector's collapsed Play setup controls edit these values through undoable commands, and Play
-consumes the saved values.
-Scene-character collider IDs are excluded from the static snapshot to avoid duplicate static/dynamic
-bodies. M2.1 remains **In progress**: an explicit saved player choice, Open and custom
-code-behaviour registration remain open, collider visualization needs implementation, and editor
-interaction needs manual verification. The Inspector also has optional box-collider add/remove and
-center/size/trigger controls.
-
-M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
-files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.
-Relocation tests reopen the packaged world and validate its graphs; asset/audio/sequence closure, the
-user-facing build panel and a relocated playable game remain open.
 
 Gate: an editor-authored 3–5 minute interaction demo starts, plays, saves/reloads its
 small state, and exits from a relocated package. No sample-specific source wiring is
@@ -391,15 +334,16 @@ Release definition: one local tool supports create/import/generate → edit → 
 workflow need and a measured capacity experiment. No calendar estimate is committed
 until M0 identifies the reliability work and M1 establishes editor integration cost.
 
-## Working rules and next handoff
+## Working rules
 
-1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks, then complete E.1–E.3 before the manual UX/M1 checks below. Finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls. Selected-model reload and invalid-replacement preservation are already implemented and have an asset-ownership test; exercise a valid reload and a corrupt replacement through visible editor controls, confirming the prior scene preview stays active and the recovery message explains the next action. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 has Move/Turn/Size viewport gizmos and optional position, angle and scale snapping. Exercise all three tools, parent selection and reparenting through visible controls; verify hover/drag, one-step undo/redo, and save/reopen preserve transforms, IDs, hierarchy and appearance. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
-3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
-4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
-   when the acceptance requires them. Record limitations and failed checks honestly.
-5. Append evidence to ENGINE_PROGRESS.md (to the matching milestone file once M0.5 is done) and update only the current milestone status.
-6. Preserve user content; do not commit, push or publish unless requested.
+1. Read [AGENTS.md](../AGENTS.md), this roadmap and [BUILDING_BLOCKS.md](BUILDING_BLOCKS.md).
+   Inspect existing implementations before adding one.
+2. Keep scope tied to the current milestone gate. Do not resume archived RPG expansion.
+3. Split large tasks into independently verifiable changes before coding.
+4. Run the relevant tests and the solution build for code changes, plus UI, graphics or audio
+   checks when the acceptance requires them. Record limitations and failed checks honestly.
+5. Append evidence to the matching file in `progress/` and update the status here.
+6. Preserve user content. Do not commit, push or publish unless the owner asks.
 
 ## After the first release — career expansion
 

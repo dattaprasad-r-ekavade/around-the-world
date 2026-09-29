@@ -1,3 +1,5 @@
+> Historical reference (29 September 2026): this benchmark belongs to the archived RPG roadmap (tasks 119 and 127). It is not a current gate. Current budgets are in ENGINE_ROADMAP.md under M0.
+
 # Outdoor benchmark baseline
 
 This is the fixed baseline for roadmap tasks 119 and 127. The budgets below are targets for later
