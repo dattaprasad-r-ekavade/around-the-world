@@ -2884,8 +2884,8 @@ identity before exposing the beginner What happens? action cards.
   removes the incomplete staging tree; a cleanup failure is reported together with the original error.
 - A deterministic test cancels immediately after the first file is staged and verifies that no partial
   staging files remain. The existing synchronous API remains available and delegates to the same path.
-- M0.4 stays **In progress**. CharacterStudio's Review recovery control still uses the synchronous
-  wrapper, so visible progress/cancel controls and the manual recovery walkthrough remain open.
+- M0.4 stayed **In progress** at this point. CharacterStudio's Review recovery control still used the
+  synchronous wrapper, so visible progress/cancel controls and the manual recovery walkthrough were open.
 
 ### Verification evidence
 
@@ -2924,3 +2924,24 @@ Next: verify cancel, review, apply and close/reopen behavior through the visible
 
 Next: complete the recovery-panel interaction and project-switch checks when desktop input is available;
 continue the still-open UX.1–UX.4 and M1.1 authoring workflow work in parallel.
+
+## UX.2 searchable Add library — 29 September 2026
+
+- The existing Add library now filters model assets by a case-insensitive match against their
+  project-relative path/name. Selection follows the filtered results, and an empty match shows a
+  clear retry hint. This stays inside the existing panel.
+- The Release starter-scene capture shows the search field without obscuring the scene. The actual
+  typing/filter/selection workflow remains unverified because the desktop helper could not initialize.
+  UX.2 remains **In progress**.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| CharacterStudio Release build | PASS — 0 warnings, 0 errors |
+| CharacterStudio Home and starter-scene captures | PASS — both exited 0 at 1280×720; stderr files were empty |
+| Capture artifacts | `%TEMP%/EmberAssetSearch/0fd96abf81cf4ca18e494cbc17406bda/home.png` and `starter-scene.png`; logs are in the same directory |
+| Interactive search, selection and preview | NOT RUN — desktop helper initialization failed with missing kernel assets |
+
+Next: verify the Add library search and project model preview/import workflow through the visible editor;
+continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as interactive evidence.

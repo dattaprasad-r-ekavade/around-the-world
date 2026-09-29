@@ -138,6 +138,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _sequenceExportEndTimeInitialized;
     private Guid? _selectedObjectId;
     private Guid? _selectedAssetId;
+    private string _assetSearchQuery = string.Empty;
     private Guid? _activeTransformObjectId;
     private Transform? _activeTransformStart;
     private Guid? _activeBoxColliderObjectId;
@@ -970,6 +971,15 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         var availableAssets = GetAvailableAssets(scene);
         if (_selectedAssetId is null || availableAssets.All(asset => asset.AssetId != _selectedAssetId))
             _selectedAssetId = availableAssets.FirstOrDefault()?.AssetId;
+        ImGui.SetNextItemWidth(-1f);
+        ImGui.InputTextWithHint("##assetSearch", "Search models", ref _assetSearchQuery, 128);
+        var searchQuery = _assetSearchQuery.Trim();
+        var matchingAssets = string.IsNullOrEmpty(searchQuery)
+            ? availableAssets
+            : availableAssets.Where(asset => asset.SourcePath.Contains(searchQuery, StringComparison.OrdinalIgnoreCase)
+                || Path.GetFileName(asset.SourcePath).Contains(searchQuery, StringComparison.OrdinalIgnoreCase)).ToArray();
+        if (matchingAssets.All(asset => asset.AssetId != _selectedAssetId))
+            _selectedAssetId = matchingAssets.FirstOrDefault()?.AssetId;
         var lessonVisibleForProject = _showFirstCreationLesson
             && _firstCreationLesson is { } activeLesson
             && IsSamePath(activeLesson.ProjectFilePath, _getCurrentProjectPath());
@@ -982,10 +992,14 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             else
                 ImGui.TextWrapped("No models are in this project yet. Browse above to import one.");
         }
+        else if (matchingAssets.Length == 0)
+        {
+            ImGui.TextWrapped($"No models match ‘{searchQuery}’. Try another search.");
+        }
         var sceneAssetPaths = GetSceneAssets(scene)
             .Select(asset => asset.SourcePath)
             .ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var asset in availableAssets)
+        foreach (var asset in matchingAssets)
         {
             var usage = sceneAssetPaths.Contains(asset.SourcePath) ? " · In scene" : " · In project";
             var label = $"{Path.GetFileName(asset.SourcePath)}{usage}##asset-{asset.AssetId:N}";
@@ -993,7 +1007,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 _selectedAssetId = asset.AssetId;
         }
         ImGui.EndChild();
-        var selectedAsset = availableAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
+        var selectedAsset = matchingAssets.FirstOrDefault(asset => asset.AssetId == _selectedAssetId);
         var canPreviewSelectedAsset = selectedAsset is not null && _getCurrentProjectPath() is not null;
         if (!canPreviewSelectedAsset) ImGui.BeginDisabled();
         if (ImGui.Button("Preview selected model", new NumericsVector2(-1f, 34f))

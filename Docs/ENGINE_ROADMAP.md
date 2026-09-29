@@ -67,7 +67,8 @@ visible button-driven workflow is unproven. Selected-model reload builds a repla
 workspace implementation; resize and DPI checks remain. UX.2 has starter thumbnails, atomic
 Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view
 selection code, plus a temporary model preview with explicit Add and Cancel actions. Interactive
-verification of these controls remains open. Windows CI for `ababa01` exposed a time-budget-sensitive
+verification remains open. The Add library model list now has a case-insensitive path/name search
+and a no-match message. Windows CI for `ababa01` exposed a time-budget-sensitive
 cell-queue test; commit `361078f` separates wall-clock scheduling from the cost/cell fairness check,
 with elapsed-budget behavior covered by a controllable clock. Hosted run #6 passed on `145c892`.
 UX.3 also has an optional Inspector explanation for transforms and shared model assets, plus direct
