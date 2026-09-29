@@ -98,6 +98,14 @@ Use a project with a parent object and at least two children. Open **More tools 
    close the window; cancel once, then reopen the close prompt, save and close, and verify the saved
    edit after reopening. Also verify **Close without saving** is explicit and returns to the OS only
    after that choice.
+7. On an animated character, select a clip and scrub its time. Confirm each deliberate change turns
+   the scene to Unsaved and can be undone/redone. Start **Preview playing**, let it advance, then stop
+   or save; preview clock movement alone must not change the Saved status or the saved clip/time.
+   Save a clip selection and scrub, reopen the scene, and confirm those authored values persist while
+   preview playback starts paused unless the scene explicitly stored a playing default.
+8. Make an authored edit, start **Play on clone**, then close the window. Confirm CharacterStudio
+   stops the play clone and still prompts for the authored edit. Save and close, reopen, and verify
+   that the authored edit persisted and the transient play-session changes did not.
 
 For learning flows, also check that Why?/hints are optional and work offline, lesson
 completion follows actual edits/play outcomes, demonstrations are explicit and undoable,

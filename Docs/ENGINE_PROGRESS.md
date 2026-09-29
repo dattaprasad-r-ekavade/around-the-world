@@ -2584,10 +2584,45 @@ UX.1–UX.5 and M1.1/M1.2 workflow checks.
 | Home and starter-scene Release captures | PASS — both exited 0, stderr empty; `dda16c8f1b1741db865b8b624092f3ba/` under `%TEMP%/Ember/ManualGraphicsGate/` |
 | Save As, project-switch prompt and close confirmation | NOT RUN — interactive desktop input unavailable |
 
-M1.4 remains **In progress**. Dirty tracking currently covers scene command history only. Character
-animation preview controls still write clip, time and playing values into scene settings outside that
-history, so those changes are not reliably reflected by the unsaved indicator yet. Sequence and path
-editing need the same save policy, and recovery/service-boundary acceptance remains open.
+M1.4 remains **In progress**. Scene command history now covers deliberate character clip selection
+and completed time scrubs. Character preview playback runs against deep-copied settings, so preview
+clock advancement and the **Preview playing** control do not mutate authored scene data. Sequence
+and path editing still need the same save policy, and recovery/service-boundary acceptance remains
+open.
 
 Next: exercise the loss-prevention dialogs in CharacterStudio, then extend saved-state handling to
 sequence/path data without allowing Play to mutate authored state.
+
+## M1.4 transient character preview state — 29 September 2026
+
+- Character preview instances now own deep copies of `GltfCharacterSettings`; preview ticks,
+  scrubbing, and play/pause controls no longer write directly into the saved scene. The inspector
+  labels the toggle **Preview playing** to distinguish it from a saved edit.
+- Selecting a clip and completing a time scrub create `EditCharacterSettingsCommand` entries.
+  Undo/redo, save, project switching, and window-close handling flush a pending scrub before reading
+  the scene's dirty state. Saving preserves the last authored clip/time, not the transient preview
+  clock. Play-session scene clones remain disposable.
+- `GltfCharacterSettings.DeepCopy()` centralizes the independent copy of both playback values and
+  attachment references; history commands and play-session scene cloning share it. Regression
+  coverage verifies playback values and the mutable attachment list are independent, play-clone
+  mutations leave authored settings intact, and undo/redo returns to a saved animation edit.
+- Closing while Play is active first restores the authored scene. If it has unsaved edits, the close
+  prompt now inspects the authored history instead of the disposable play-session history.
+- Interactive dirty/undo/reopen verification remains open. `mcp__cua_repl` again failed before
+  initializing with `failed to write kernel assets: The system cannot find the path specified
+  (os error 3)`.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore` | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` Release run | PASS — 336 passed, 0 failed |
+| Release starter-scene capture | PASS — exit 0, 1280×720, stderr empty; visually reviewed at `%TEMP%/Ember/ManualGraphicsGate/75274e4d40fa44228a1785b3b4a35418/starter-scene.png` |
+| Interactive clip/scrub/undo/save/reopen workflow | NOT RUN — desktop control helper failed before initialization |
+
+M1.4 remains **In progress**. Manual acceptance, sequence/path dirty state, interrupted-work recovery
+after validation, and editor service boundaries remain open.
+
+Next: extend M1.4's dirty-state policy to sequence and path authoring, then close the interactive
+loss-prevention and animation workflow checks when desktop input is available.

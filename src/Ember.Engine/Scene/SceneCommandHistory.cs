@@ -497,24 +497,8 @@ internal static class SceneObjectCopy
         Scale = source.Scale
     };
 
-    public static GltfCharacterSettings? CopyCharacterSettings(GltfCharacterSettings? source)
-    {
-        if (source is null) return null;
-        var copy = new GltfCharacterSettings
-        {
-            ClipName = source.ClipName,
-            Time = source.Time,
-            Speed = source.Speed,
-            Loop = source.Loop,
-            IsPlaying = source.IsPlaying,
-            CrossfadeClipName = source.CrossfadeClipName,
-            BlendAmount = source.BlendAmount
-        };
-        foreach (var attachment in source.Attachments)
-            copy.Attachments.Add(new GltfBoneAttachmentReference(
-                attachment.Id, attachment.BoneName, attachment.LocalOffset));
-        return copy;
-    }
+    public static GltfCharacterSettings? CopyCharacterSettings(GltfCharacterSettings? source) =>
+        source?.DeepCopy();
 
     public static string UniqueName(string sourceName, IEnumerable<string> names)
     {

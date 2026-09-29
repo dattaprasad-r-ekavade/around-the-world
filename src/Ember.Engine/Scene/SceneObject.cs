@@ -361,6 +361,25 @@ public sealed class GltfCharacterSettings
     public string? CrossfadeClipName { get; set; }
     public float BlendAmount { get; set; } = 0.5f;
     public List<GltfBoneAttachmentReference> Attachments { get; } = new();
+
+    /// <summary>Creates an independent copy, including the mutable attachment list.</summary>
+    public GltfCharacterSettings DeepCopy()
+    {
+        var copy = new GltfCharacterSettings
+        {
+            ClipName = ClipName,
+            Time = Time,
+            Speed = Speed,
+            Loop = Loop,
+            IsPlaying = IsPlaying,
+            CrossfadeClipName = CrossfadeClipName,
+            BlendAmount = BlendAmount
+        };
+        foreach (var attachment in Attachments)
+            copy.Attachments.Add(new GltfBoneAttachmentReference(
+                attachment.Id, attachment.BoneName, attachment.LocalOffset));
+        return copy;
+    }
 }
 
 /// <summary>Stable scene reference to a character joint and a prop's joint-local transform.</summary>

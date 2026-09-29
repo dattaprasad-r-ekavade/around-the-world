@@ -46,11 +46,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly ImGuiIOPtr _io;
     private readonly ImGuiMonoGameRenderer _renderer;
     private SceneCommandHistory _history;
-    private readonly Action _beforeStructureChange;
     private readonly Action _afterStructureChange;
     private readonly Func<Guid, CharacterEditorInfo?> _getCharacterInfo;
     private readonly Action<Guid, string> _selectCharacterClip;
     private readonly Action<Guid, float> _seekCharacter;
+    private readonly Action<Guid, float, float> _commitCharacterTimeEdit;
     private readonly Action<Guid, bool> _setCharacterPlaying;
     private readonly SceneLighting _lighting;
     private readonly Func<bool> _isPlaying;
@@ -129,6 +129,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private Guid? _selectedAssetId;
     private Guid? _activeTransformObjectId;
     private Transform? _activeTransformStart;
+    private Guid? _activeCharacterTimeObjectId;
+    private float _activeCharacterTimeStart;
+    private float _activeCharacterTimeCurrent;
     private TransformTool _transformTool = TransformTool.Move;
     private bool _initialSelectionSet;
     private bool _showHome;
@@ -178,9 +181,10 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private const float RecoveryAutosaveIntervalSeconds = 60f;
 
     public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight,
-        SceneCommandHistory history, Action beforeStructureChange, Action afterStructureChange,
+        SceneCommandHistory history, Action afterStructureChange,
         Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
-        Action<Guid, float> seekCharacter, Action<Guid, bool> setCharacterPlaying, SceneLighting lighting,
+        Action<Guid, float> seekCharacter, Action<Guid, float, float> commitCharacterTimeEdit,
+        Action<Guid, bool> setCharacterPlaying, SceneLighting lighting,
         Func<bool> isPlaying, Action startPlay, Action stopPlay, Action interact,
         Func<float> getInteractionVolume, Action<float> setInteractionVolume,
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
@@ -207,11 +211,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _logicalHeight = Math.Max(1, logicalHeight);
         _windowHandle = device.PresentationParameters.DeviceWindowHandle;
         _history = history ?? throw new ArgumentNullException(nameof(history));
-        _beforeStructureChange = beforeStructureChange ?? throw new ArgumentNullException(nameof(beforeStructureChange));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
         _getCharacterInfo = getCharacterInfo ?? throw new ArgumentNullException(nameof(getCharacterInfo));
         _selectCharacterClip = selectCharacterClip ?? throw new ArgumentNullException(nameof(selectCharacterClip));
         _seekCharacter = seekCharacter ?? throw new ArgumentNullException(nameof(seekCharacter));
+        _commitCharacterTimeEdit = commitCharacterTimeEdit ?? throw new ArgumentNullException(nameof(commitCharacterTimeEdit));
         _setCharacterPlaying = setCharacterPlaying ?? throw new ArgumentNullException(nameof(setCharacterPlaying));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         _isPlaying = isPlaying ?? throw new ArgumentNullException(nameof(isPlaying));
@@ -1977,7 +1981,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         try
         {
-            _beforeStructureChange();
             _history.Execute(scene, new ReparentSceneObjectCommand(selected.Id, parentId));
             _afterStructureChange();
             _projectWorkspaceStatus = "Parent changed. Undo restores the previous relationship and placement.";
@@ -2249,6 +2252,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void DrawCharacterControls(SceneObject selected)
     {
+        if (_activeCharacterTimeObjectId is { } editingObjectId && editingObjectId != selected.Id)
+            CommitActiveCharacterTimeEdit();
+
         var character = _getCharacterInfo(selected.Id);
         ImGui.Separator();
         ImGui.Text("Character animation");
@@ -2274,12 +2280,28 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         {
             var time = Math.Clamp(character.Time, 0f, character.Duration);
             ImGui.SetNextItemWidth(-1f);
-            if (ImGui.SliderFloat("Time (seconds)", ref time, 0f, character.Duration, "%.2f"))
+            var changed = ImGui.SliderFloat("Time (seconds)", ref time, 0f, character.Duration, "%.2f");
+            if (ImGui.IsItemActivated())
+            {
+                _activeCharacterTimeObjectId = selected.Id;
+                _activeCharacterTimeStart = character.Time;
+                _activeCharacterTimeCurrent = character.Time;
+            }
+            if (changed)
+            {
+                if (_activeCharacterTimeObjectId != selected.Id)
+                {
+                    _activeCharacterTimeObjectId = selected.Id;
+                    _activeCharacterTimeStart = character.Time;
+                }
+                _activeCharacterTimeCurrent = time;
                 _seekCharacter(selected.Id, time);
+            }
+            if (ImGui.IsItemDeactivatedAfterEdit()) CommitActiveCharacterTimeEdit();
         }
 
         var playing = character.IsPlaying;
-        if (ImGui.Checkbox("Playing", ref playing)) _setCharacterPlaying(selected.Id, playing);
+        if (ImGui.Checkbox("Preview playing", ref playing)) _setCharacterPlaying(selected.Id, playing);
     }
 
     private void DrawLightingControls()
@@ -2324,6 +2346,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void CommitActiveTransformEdit(SceneGraph scene)
     {
+        CommitActiveCharacterTimeEdit();
         if (_activeTransformObjectId is not { } objectId || _activeTransformStart is not { } before)
         {
             _activeTransformObjectId = null;
@@ -2340,10 +2363,21 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _history.Execute(scene, new TransformEditCommand(objectId, before, after));
     }
 
+    private void CommitActiveCharacterTimeEdit()
+    {
+        if (_activeCharacterTimeObjectId is not { } objectId) return;
+        var before = _activeCharacterTimeStart;
+        var after = _activeCharacterTimeCurrent;
+        _activeCharacterTimeObjectId = null;
+        _activeCharacterTimeStart = 0f;
+        _activeCharacterTimeCurrent = 0f;
+        if (MathF.Abs(before - after) > 0.0001f)
+            _commitCharacterTimeEdit(objectId, before, after);
+    }
+
     private void RunHistoryAction(SceneGraph scene, bool undo)
     {
         CommitActiveTransformEdit(scene);
-        _beforeStructureChange();
         var changed = undo ? _history.Undo(scene) : _history.Redo(scene);
         if (undo && changed && _firstCreationLesson is { } lesson
             && IsSamePath(lesson.ProjectFilePath, _getCurrentProjectPath()))
@@ -2366,7 +2400,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private void Duplicate(SceneGraph scene, SceneObject selected)
     {
         CommitActiveTransformEdit(scene);
-        _beforeStructureChange();
         var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, selected.Id);
         _history.Execute(scene, new CreateSceneObjectCommand(duplicate));
         _afterStructureChange();
@@ -2382,7 +2415,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private void RunStructureChange(SceneGraph scene, Action action)
     {
-        _beforeStructureChange();
         action();
         _afterStructureChange();
     }

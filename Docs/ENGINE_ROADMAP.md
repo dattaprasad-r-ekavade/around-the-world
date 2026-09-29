@@ -160,10 +160,11 @@ M1.4 now tracks saved positions in scene command history, shows unsaved scene ch
 for untitled scenes, prompts before project changes, and intercepts window close with save/close/cancel
 choices. Project switching rejects a dirty untitled scene unless the user saves it first. These
 controls are covered by history tests and clean-start captures, but close-cancel, Save As and project
-switch interactions still need manual verification. Character animation preview currently writes
-clip/time/playing values into scene settings outside command history, so dirty tracking does not yet
-cover those edits. Sequence and path dirty state, interrupted-work recovery after validation, and
-editor service boundaries also remain open.
+switch interactions still need manual verification. Character clip selection and completed time
+scrubs now go through command history. Preview playback uses a deep copy of character settings, so
+clock advancement and the **Preview playing** control do not change authored scene data. Sequence and
+path dirty state, interrupted-work recovery after validation, and editor service boundaries remain
+open. Closing during Play restores the authored preview before asking about unsaved authored edits.
 
 ### M1.3 template update and broken-reference policy
 

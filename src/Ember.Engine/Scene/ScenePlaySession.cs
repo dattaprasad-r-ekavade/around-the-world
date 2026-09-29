@@ -57,7 +57,7 @@ public static class SceneGraphCloner
                 },
                 GltfAsset = item.GltfAsset,
                 StaticMeshLod = item.StaticMeshLod,
-                CharacterSettings = CopyCharacterSettings(item.CharacterSettings),
+                CharacterSettings = item.CharacterSettings?.DeepCopy(),
                 Door = item.Door,
                 SpawnPoint = item.SpawnPoint,
                 WorldEntity = item.WorldEntity,
@@ -72,23 +72,6 @@ public static class SceneGraphCloner
         return clone;
     }
 
-    private static GltfCharacterSettings? CopyCharacterSettings(GltfCharacterSettings? source)
-    {
-        if (source is null) return null;
-        var copy = new GltfCharacterSettings
-        {
-            ClipName = source.ClipName,
-            Time = source.Time,
-            Speed = source.Speed,
-            Loop = source.Loop,
-            IsPlaying = source.IsPlaying,
-            CrossfadeClipName = source.CrossfadeClipName,
-            BlendAmount = source.BlendAmount
-        };
-        foreach (var attachment in source.Attachments)
-            copy.Attachments.Add(new GltfBoneAttachmentReference(attachment.Id, attachment.BoneName, attachment.LocalOffset));
-        return copy;
-    }
 }
 
 /// <summary>A single gameplay interaction sent to a scene object's compiled behaviour.</summary>

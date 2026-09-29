@@ -43,6 +43,68 @@ public sealed class SceneCommandHistoryTests
     }
 
     [Fact]
+    public void CharacterSettingsDeepCopyOwnsMutablePlaybackAndAttachmentData()
+    {
+        var settings = new GltfCharacterSettings
+        {
+            ClipName = "Idle",
+            Time = 0.25f,
+            Speed = 1.5f,
+            Loop = false,
+            IsPlaying = true,
+            CrossfadeClipName = "Walk",
+            BlendAmount = 0.4f
+        };
+        var attachmentId = Guid.NewGuid();
+        settings.Attachments.Add(new GltfBoneAttachmentReference(
+            attachmentId, "Hand", Matrix.CreateTranslation(1f, 2f, 3f)));
+
+        var copy = settings.DeepCopy();
+        copy.Time = 2f;
+        copy.Attachments.Clear();
+
+        Assert.Equal("Idle", settings.ClipName);
+        Assert.Equal(0.25f, settings.Time);
+        Assert.Equal(1.5f, settings.Speed);
+        Assert.False(settings.Loop);
+        Assert.True(settings.IsPlaying);
+        Assert.Equal("Walk", settings.CrossfadeClipName);
+        Assert.Equal(0.4f, settings.BlendAmount);
+        Assert.Equal(attachmentId, Assert.Single(settings.Attachments).Id);
+    }
+
+    [Fact]
+    public void CharacterSettingEditsRestoreTheSavedDirtyPositionAcrossUndoRedo()
+    {
+        var item = new SceneObject(Guid.NewGuid(), "Animated object")
+        {
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Idle", Time = 0.25f }
+        };
+        var scene = new SceneGraph();
+        scene.Add(item);
+        var history = new SceneCommandHistory();
+        var original = item.CharacterSettings!.DeepCopy();
+        var saved = original.DeepCopy();
+        saved.ClipName = "Run";
+        saved.Time = 0.5f;
+        history.Execute(scene, new EditCharacterSettingsCommand(item.Id, original, saved));
+        history.MarkSaved();
+
+        var later = saved.DeepCopy();
+        later.Time = 0.75f;
+        history.Execute(scene, new EditCharacterSettingsCommand(item.Id, saved, later));
+
+        Assert.True(history.IsDirty);
+        Assert.True(history.Undo(scene));
+        Assert.False(history.IsDirty);
+        Assert.Equal("Run", item.CharacterSettings!.ClipName);
+        Assert.Equal(0.5f, item.CharacterSettings.Time);
+        Assert.True(history.Redo(scene));
+        Assert.True(history.IsDirty);
+        Assert.Equal(0.75f, item.CharacterSettings!.Time);
+    }
+
+    [Fact]
     public void TransformEditUndoesAndRedoesAndNewEditClearsRedo()
     {
         var id = Guid.NewGuid();

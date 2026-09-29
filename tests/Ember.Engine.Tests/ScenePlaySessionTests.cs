@@ -112,6 +112,38 @@ public sealed class ScenePlaySessionTests
     }
 
     [Fact]
+    public void CharacterPlaybackStateInPlayCloneCannotMutateAuthoredSettings()
+    {
+        var objectId = Guid.NewGuid();
+        var attachmentId = Guid.NewGuid();
+        var authored = new SceneGraph();
+        authored.Add(new SceneObject(objectId, "Animated character")
+        {
+            CharacterSettings = new GltfCharacterSettings
+            {
+                ClipName = "Walk",
+                Time = 0.25f,
+                IsPlaying = false
+            }
+        });
+        authored.Find(objectId)!.CharacterSettings!.Attachments.Add(
+            new GltfBoneAttachmentReference(attachmentId, "Hand", Matrix.CreateTranslation(1f, 2f, 3f)));
+
+        using var session = new ScenePlaySession(authored);
+        var runtimeSettings = session.RuntimeScene.Find(objectId)!.CharacterSettings!;
+        runtimeSettings.ClipName = "Run";
+        runtimeSettings.Time = 4f;
+        runtimeSettings.IsPlaying = true;
+        runtimeSettings.Attachments.Clear();
+
+        var authoredSettings = authored.Find(objectId)!.CharacterSettings!;
+        Assert.Equal("Walk", authoredSettings.ClipName);
+        Assert.Equal(0.25f, authoredSettings.Time);
+        Assert.False(authoredSettings.IsPlaying);
+        Assert.Equal(attachmentId, Assert.Single(authoredSettings.Attachments).Id);
+    }
+
+    [Fact]
     public void PlayCloneKeepsTravelAndRpgIdentityComponents()
     {
         var objectId = Guid.NewGuid();

@@ -314,8 +314,9 @@ public sealed class CharacterStudioGame : EngineHost
             Window.TextInput += HandleTextInput;
             AttachCanvas();
             _editorUi = new CharacterStudioEditorUi(GraphicsDevice, LogicalWidth, LogicalHeight,
-                _editorHistory, BeforeSceneStructureChange, AfterSceneStructureChange,
-                GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, SetCharacterPlaying, _sceneLighting,
+                _editorHistory, AfterSceneStructureChange,
+                GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, CommitCharacterTimeEdit,
+                SetCharacterPlaying, _sceneLighting,
                 () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
@@ -945,12 +946,58 @@ public sealed class CharacterStudioGame : EngineHost
     private void SelectCharacterClip(Guid objectId, string clipName)
     {
         if (!TryGetCharacterState(objectId, out var character, out var state)) return;
-        state.SelectClip(character, clipName);
+        if (_playSession is not null)
+        {
+            state.SelectClip(character, clipName);
+            return;
+        }
+
+        var sceneObject = _sceneData.Find(objectId);
+        if (sceneObject is null) return;
+        var clip = character.Animations.FirstOrDefault(candidate =>
+            string.Equals(candidate.Name, clipName, StringComparison.OrdinalIgnoreCase));
+        if (clip is null) return;
+
+        var before = sceneObject.CharacterSettings?.DeepCopy();
+        if (string.Equals(before?.ClipName, clip.Name, StringComparison.OrdinalIgnoreCase)
+            && MathF.Abs(before?.Time ?? 0f) <= 0.0001f
+            && before?.CrossfadeClipName is null)
+            return;
+        var after = before?.DeepCopy() ?? new GltfCharacterSettings();
+        after.ClipName = clip.Name;
+        after.Time = 0f;
+        after.CrossfadeClipName = null;
+        after.IsPlaying = before?.IsPlaying ?? false;
+        var wasPreviewPlaying = state.Playback?.IsPlaying ?? false;
+        _editorHistory.Execute(_sceneData,
+            new EditCharacterSettingsCommand(objectId, before, after));
+        AfterSceneStructureChange();
+        if (wasPreviewPlaying && TryGetCharacterState(objectId, out _, out var updatedState))
+            updatedState.SetPlaying(true);
     }
 
     private void SeekCharacter(Guid objectId, float time)
     {
         if (TryGetCharacterState(objectId, out _, out var state)) state.Seek(time);
+    }
+
+    private void CommitCharacterTimeEdit(Guid objectId, float beforeTime, float afterTime)
+    {
+        if (_playSession is not null || !float.IsFinite(afterTime)
+            || MathF.Abs(beforeTime - afterTime) <= 0.0001f) return;
+        var sceneObject = _sceneData.Find(objectId);
+        if (sceneObject is null || !TryGetCharacterState(objectId, out _, out var state)) return;
+
+        var before = sceneObject.CharacterSettings?.DeepCopy();
+        var after = before?.DeepCopy() ?? new GltfCharacterSettings();
+        after.ClipName = state.Playback?.Clip.Name ?? after.ClipName;
+        after.Time = Math.Max(0f, afterTime);
+        var wasPreviewPlaying = state.Playback?.IsPlaying ?? false;
+        _editorHistory.Execute(_sceneData,
+            new EditCharacterSettingsCommand(objectId, before, after));
+        AfterSceneStructureChange();
+        if (wasPreviewPlaying && TryGetCharacterState(objectId, out _, out var updatedState))
+            updatedState.SetPlaying(true);
     }
 
     private void SetCharacterPlaying(Guid objectId, bool playing)
@@ -1469,19 +1516,6 @@ public sealed class CharacterStudioGame : EngineHost
         }
     }
 
-    private void CaptureCharacterSettings()
-    {
-        if (_preview is null) return;
-        foreach (var (objectId, state) in _preview.Current.CharacterInstances)
-        {
-            var sceneObject = CurrentScene.Find(objectId)
-                ?? throw new InvalidOperationException($"Scene object '{objectId}' disappeared while saving character settings.");
-            state.StoreSettings(sceneObject.CharacterSettings ??= new GltfCharacterSettings());
-        }
-    }
-
-    private void BeforeSceneStructureChange() => CaptureCharacterSettings();
-
     private void AfterSceneStructureChange() => _preview?.Current.RebuildCharacterInstances(CurrentScene);
 
     private void RunLifecycleSmoke()
@@ -1829,7 +1863,6 @@ public sealed class CharacterStudioGame : EngineHost
         try
         {
             _editorUi?.CompletePendingEdit(_sceneData);
-            CaptureCharacterSettings();
             candidate = new ScenePlaySession(_sceneData, (runtimeScene, behaviours) =>
             {
                 if (runtimeScene.Objects.Count == 0)
@@ -2284,9 +2317,9 @@ public sealed class CharacterStudioGame : EngineHost
             return false;
         }
 
+        _editorUi?.CompletePendingEdit(_sceneData);
         try
         {
-            CaptureCharacterSettings();
             SceneFile.SaveAtomic(_sceneData, _sceneSavePath);
             _editorHistory.MarkSaved();
             _reimportStatus = $"Scene saved to {Path.GetFileName(_sceneSavePath)}.";
@@ -2303,7 +2336,19 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void OnGameExiting(object? sender, ExitingEventArgs args)
     {
-        if (_allowExitAfterConfirmation || !_editorHistory.IsDirty || _editorUi is null) return;
+        if (_allowExitAfterConfirmation || _editorUi is null) return;
+        if (_playSession is not null)
+        {
+            StopPlaySession();
+            if (_playSession is not null)
+            {
+                args.Cancel = true;
+                return;
+            }
+        }
+
+        _editorUi.CompletePendingEdit(_sceneData);
+        if (!_editorHistory.IsDirty) return;
         args.Cancel = true;
         _editorUi.RequestCloseConfirmation();
     }
@@ -2322,7 +2367,6 @@ public sealed class CharacterStudioGame : EngineHost
             throw new ArgumentException("A scene save path is required.", nameof(path));
 
         _editorUi?.CompletePendingEdit(_sceneData);
-        CaptureCharacterSettings();
         var fullPath = Path.GetFullPath(path);
         SceneFile.SaveAtomic(_sceneData, fullPath);
         _sceneSavePath = fullPath;
@@ -2398,7 +2442,6 @@ public sealed class CharacterStudioGame : EngineHost
             candidatePreview = loadedPreview;
 
             _editorUi?.CompletePendingEdit(_sceneData);
-            CaptureCharacterSettings();
             if (_editorHistory.IsDirty)
             {
                 if (_sceneSavePath is null)
@@ -2560,7 +2603,6 @@ public sealed class CharacterStudioGame : EngineHost
             throw new InvalidOperationException("The editor preview is not ready to reload a model.");
 
         _editorUi?.CompletePendingEdit(_sceneData);
-        CaptureCharacterSettings();
         var candidateScene = SceneGraphCloner.Clone(_sceneData);
         if (!EnumerateProjectSceneAssetReferences(_sceneData)
             .Any(asset => asset.AssetId == reference.AssetId))
@@ -2673,7 +2715,6 @@ public sealed class CharacterStudioGame : EngineHost
             throw new InvalidOperationException("Wait for sequence export to finish before adding a model.");
 
         _editorUi?.CompletePendingEdit(_sceneData);
-        CaptureCharacterSettings();
         var candidateScene = SceneGraphCloner.Clone(_sceneData);
         var item = SceneObjectFactory.CreateAssetInstance(candidateScene, pending.Reference,
             pending.Item.Transform.Position);
@@ -2693,7 +2734,6 @@ public sealed class CharacterStudioGame : EngineHost
 
             pending.Import?.Commit();
             _projectAssetCatalogLoaded = false;
-            BeforeSceneStructureChange();
             _editorHistory.Execute(_sceneData, new CreateSceneObjectCommand(item));
             var cleanupError = _preview.Reload(() => loadedPreview);
             candidatePreview = null;
@@ -2740,7 +2780,6 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null) return "Character preview is not ready.";
 
         _editorUi?.CompletePendingEdit(_sceneData);
-        CaptureCharacterSettings();
         if (!SaveScene()) return _reimportStatus;
 
         PreviewResources? replacement = null;
@@ -2805,7 +2844,6 @@ public sealed class CharacterStudioGame : EngineHost
             throw new InvalidOperationException("Save the active scene in the world manifest before capturing recovery.");
 
         _editorUi?.CompletePendingEdit(scene);
-        CaptureCharacterSettings();
         var recoveryDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
             worldManifestPath, rpgContentPath);
         var sceneJson = Encoding.UTF8.GetBytes(SceneFile.ToJson(scene));
@@ -2914,7 +2952,6 @@ public sealed class CharacterStudioGame : EngineHost
         if (_preview is null || _playSession is not null) return;
         try
         {
-            CaptureCharacterSettings();
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(_sceneData), _sceneData));
             BuildSequencePreview();
@@ -2986,7 +3023,6 @@ public sealed class CharacterStudioGame : EngineHost
             Playback?.Advance(elapsedSeconds);
             CrossfadePlayback?.Advance(elapsedSeconds);
             Evaluate();
-            StoreSettings(Settings);
         }
 
         public void SelectClip(GltfSkinnedCharacterData character, string clipName)
@@ -3005,7 +3041,6 @@ public sealed class CharacterStudioGame : EngineHost
             Settings.Time = 0f;
             Settings.IsPlaying = wasPlaying;
             Evaluate();
-            StoreSettings(Settings);
         }
 
         public void Seek(float time)
@@ -3014,7 +3049,6 @@ public sealed class CharacterStudioGame : EngineHost
             Playback.Seek(time);
             CrossfadePlayback?.Seek(time);
             Evaluate();
-            StoreSettings(Settings);
         }
 
         public void SetPlaying(bool playing)
@@ -3031,34 +3065,12 @@ public sealed class CharacterStudioGame : EngineHost
                 CrossfadePlayback?.Pause();
             }
             Evaluate();
-            StoreSettings(Settings);
-        }
-
-        public void StoreSettings(GltfCharacterSettings settings)
-        {
-            if (Playback is null)
-            {
-                settings.Time = 0f;
-                settings.IsPlaying = false;
-                return;
-            }
-
-            settings.ClipName = Playback.Clip.Name;
-            settings.Time = Playback.Time;
-            settings.Speed = Playback.Speed;
-            settings.Loop = Playback.Loop;
-            settings.IsPlaying = Playback.IsPlaying;
-            if (CrossfadePlayback is not null)
-            {
-                settings.CrossfadeClipName = CrossfadePlayback.Clip.Name;
-                settings.BlendAmount = BlendAmount;
-            }
         }
 
         public static CharacterInstanceState Create(GltfSkinnedCharacterData character,
             SceneObject sceneObject, string? primaryClipName, bool isSecondCharacter)
         {
-            var settings = sceneObject.CharacterSettings ??= new GltfCharacterSettings();
+            var settings = sceneObject.CharacterSettings?.DeepCopy() ?? new GltfCharacterSettings();
             if (isSecondCharacter && settings.ClipName is null && primaryClipName is not null)
                 settings.ClipName = ChooseOtherClip(character, primaryClipName);
 
