@@ -59,9 +59,10 @@ Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded 
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
 passes on the pulled baseline; interactive resize/save/reopen/play-stop evidence remains
 incomplete. Recovery now has failure-injection coverage proving a locked snapshot replacement
-preserves the prior snapshot and a failed multi-file apply rolls back earlier writes. The reviewed
-activation-queue test now allows valid partial-budget steps and the full local CPU suite passes.
-M1.1 services and native project/model pickers exist but the
+preserves the prior snapshot, a failed multi-file apply rolls back earlier writes, and impossible
+file/directory path collisions are rejected before staging. The reviewed activation-queue test now
+allows valid partial-budget steps and the full local CPU suite passes. M1.1 services and native
+project/model pickers exist but the
 visible button-driven workflow is unproven. Selected-model reload builds a replacement preview before swapping it in, and the asset-ownership test confirms a corrupt GLB leaves the prior asset active. Verify that recovery through visible editor controls before closing the gate. UX.1 has a first local Home and scene-first
 workspace implementation; resize and DPI checks remain. UX.2 has starter thumbnails, atomic
 Game/Film project starters, native pickers, visible undoable Move/Turn/Size actions and scene-view

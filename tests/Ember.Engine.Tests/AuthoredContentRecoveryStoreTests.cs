@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json.Nodes;
 using Ember.Authoring;
@@ -136,6 +137,68 @@ public sealed class AuthoredContentRecoveryStoreTests
             var loaded = AuthoredContentRecoveryStore.LoadLatest(projectRoot, recoveryDirectory);
             Assert.Equal(original.SnapshotId, loaded.SnapshotId);
             Assert.Equal(originalContent, Assert.Single(loaded.Files).Content);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("World", "World/world.json")]
+    [InlineData("World/world.json", "World")]
+    public void SnapshotRejectsFileAndDirectoryPathCollisionsBeforeWriting(string firstPath, string secondPath)
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(directory, "project");
+            var recoveryDirectory = Path.Combine(directory, "recovery");
+            Directory.CreateDirectory(projectRoot);
+
+            var error = Assert.Throws<ArgumentException>(() => AuthoredContentRecoveryStore.SaveLatest(
+                projectRoot, recoveryDirectory,
+                [
+                    new AuthoredRecoveryFile(firstPath, [1]),
+                    new AuthoredRecoveryFile(secondPath, [2])
+                ]));
+
+            Assert.Contains("overlap as a file and directory", error.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(recoveryDirectory));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void SnapshotLoadRejectsConflictingPathsEvenWhenChecksumsAreValid()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(directory, "project");
+            var recoveryDirectory = Path.Combine(directory, "recovery");
+            Directory.CreateDirectory(projectRoot);
+            AuthoredContentRecoveryStore.SaveLatest(projectRoot, recoveryDirectory,
+                [new AuthoredRecoveryFile("World/Scenes/Start.json", Encoding.UTF8.GetBytes("scene"))]);
+            var snapshotPath = Path.Combine(recoveryDirectory, AuthoredContentRecoveryStore.SnapshotFileName);
+            var document = JsonNode.Parse(File.ReadAllText(snapshotPath))!;
+            var conflictingContent = Encoding.UTF8.GetBytes("conflicting file");
+            document["files"]!.AsArray().Add(new JsonObject
+            {
+                ["relativePath"] = "World",
+                ["sha256"] = Convert.ToHexString(SHA256.HashData(conflictingContent)),
+                ["contentBase64"] = Convert.ToBase64String(conflictingContent)
+            });
+            File.WriteAllText(snapshotPath, document.ToJsonString());
+
+            var error = Assert.Throws<InvalidDataException>(() =>
+                AuthoredContentRecoveryStore.LoadLatest(projectRoot, recoveryDirectory));
+
+            Assert.Contains("overlap as a file and directory", error.Message, StringComparison.Ordinal);
+            Assert.Contains("World/Scenes/Start.json", error.Message, StringComparison.Ordinal);
         }
         finally
         {

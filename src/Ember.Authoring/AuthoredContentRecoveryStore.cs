@@ -56,14 +56,22 @@ public static class AuthoredContentRecoveryStore
         var snapshotFiles = new List<AuthoredRecoveryFile>();
         var entries = new List<SnapshotFileDocument>();
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var firstDescendantByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var file in files)
         {
             if (file is null) throw new ArgumentException("Snapshot file cannot be null.", nameof(files));
             if (file.Content is null) throw new ArgumentException("Snapshot file content cannot be null.", nameof(files));
             var relativePath = NormalizeRelativePath(file.RelativePath);
             ValidateProjectRelativePath(root, relativePath);
-            if (!seenPaths.Add(relativePath))
+            if (seenPaths.Contains(relativePath))
                 throw new ArgumentException($"Snapshot repeats authored file '{relativePath}'.", nameof(files));
+            var conflict = FindPathConflict(relativePath, seenPaths, firstDescendantByPath);
+            if (conflict is not null)
+                throw new ArgumentException(
+                    $"Snapshot file paths '{relativePath}' and '{conflict}' overlap as a file and directory.",
+                    nameof(files));
+            seenPaths.Add(relativePath);
+            RegisterPathAncestors(relativePath, firstDescendantByPath);
 
             var content = (byte[])file.Content.Clone();
             snapshotFiles.Add(new AuthoredRecoveryFile(relativePath, content));
@@ -140,6 +148,7 @@ public static class AuthoredContentRecoveryStore
 
         var files = new List<AuthoredRecoveryFile>(document.Files.Count);
         var seenPaths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var firstDescendantByPath = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
         foreach (var entry in document.Files)
         {
             if (entry is null) throw new InvalidDataException("Authored recovery snapshot contains a null file entry.");
@@ -153,8 +162,12 @@ public static class AuthoredContentRecoveryStore
             {
                 throw new InvalidDataException("Authored recovery snapshot contains an unsafe file path.", exception);
             }
-            if (!seenPaths.Add(relativePath))
+            if (seenPaths.Contains(relativePath))
                 throw new InvalidDataException($"Authored recovery snapshot repeats file '{relativePath}'.");
+            var conflict = FindPathConflict(relativePath, seenPaths, firstDescendantByPath);
+            if (conflict is not null)
+                throw new InvalidDataException(
+                    $"Authored recovery snapshot file paths '{relativePath}' and '{conflict}' overlap as a file and directory.");
 
             byte[] content;
             byte[] expectedChecksum;
@@ -175,6 +188,8 @@ public static class AuthoredContentRecoveryStore
                 || !CryptographicOperations.FixedTimeEquals(expectedChecksum, actualChecksum))
                 throw new InvalidDataException($"Authored recovery snapshot checksum failed for '{relativePath}'.");
             files.Add(new AuthoredRecoveryFile(relativePath, content));
+            seenPaths.Add(relativePath);
+            RegisterPathAncestors(relativePath, firstDescendantByPath);
         }
 
         return new AuthoredRecoverySnapshot(document.SnapshotId, document.CapturedUtc.ToUniversalTime(),
@@ -213,6 +228,32 @@ public static class AuthoredContentRecoveryStore
             || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             || relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
             throw new ArgumentException("Authored file path escapes the project root.", nameof(relativePath));
+    }
+
+    private static string? FindPathConflict(string relativePath, ISet<string> seenPaths,
+        IReadOnlyDictionary<string, string> firstDescendantByPath)
+    {
+        var separator = relativePath.IndexOf('/');
+        while (separator >= 0)
+        {
+            var ancestor = relativePath[..separator];
+            if (seenPaths.Contains(ancestor)) return ancestor;
+            separator = relativePath.IndexOf('/', separator + 1);
+        }
+
+        return firstDescendantByPath.TryGetValue(relativePath, out var descendant)
+            ? descendant
+            : null;
+    }
+
+    private static void RegisterPathAncestors(string relativePath, IDictionary<string, string> firstDescendantByPath)
+    {
+        var separator = relativePath.IndexOf('/');
+        while (separator >= 0)
+        {
+            firstDescendantByPath.TryAdd(relativePath[..separator], relativePath);
+            separator = relativePath.IndexOf('/', separator + 1);
+        }
     }
 
     private sealed class SnapshotDocument

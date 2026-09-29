@@ -2710,3 +2710,24 @@ Next: inspect sequence/audio references and project metadata for automatic packa
 
 Next: use the editor's visible recovery review/apply flow when desktop input is available; continue
 M1.1/UX.1–UX.5 workflow verification without treating automated tests as UI evidence.
+
+## M0.4 recovery snapshot path schema — 29 September 2026
+
+- Snapshot capture now rejects path sets where one authored file would also need to be a directory,
+  in either input order, before creating the recovery folder or replacing the latest snapshot.
+- Snapshot loading enforces the same invariant after normalizing and validating project-relative paths,
+  so a validly checksummed but structurally impossible recovery file is rejected before staging.
+- M0.4 remains **In progress**; the live save/reopen/recovery walkthrough still requires desktop input.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `AuthoredContentRecoveryStoreTests` Release run | PASS — 7 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 342 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+| Interactive editor acceptance | NOT RUN — computer-use kernel failed to initialize after reset with missing kernel assets |
+
+Next: continue the ordered M1.1 and UX workflow implementation; keep manual acceptance open until the
+desktop computer-use runtime is available.
