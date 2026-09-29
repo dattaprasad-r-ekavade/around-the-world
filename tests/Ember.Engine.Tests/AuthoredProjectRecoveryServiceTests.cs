@@ -1,7 +1,10 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
+using System.Threading.Tasks;
 using Ember.Authoring;
 using Ember.Rpg;
 using Ember.Scene;
@@ -230,6 +233,61 @@ public sealed class AuthoredProjectRecoveryServiceTests
         }
     }
 
+    [Fact]
+    public async Task CancelledRecoveryRestoreRemovesPartiallyWrittenStagingFiles()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(directory, "Project");
+            var worldDirectory = Path.Combine(projectRoot, "World");
+            var scenesDirectory = Path.Combine(worldDirectory, "Scenes");
+            var contentDirectory = Path.Combine(projectRoot, "Content");
+            var recoveryDirectory = Path.Combine(directory, "Local", "Ember", "Recovery");
+            Directory.CreateDirectory(scenesDirectory);
+            Directory.CreateDirectory(contentDirectory);
+
+            var cellId = Guid.NewGuid();
+            var scenePath = Path.Combine(scenesDirectory, "Exterior.json");
+            SceneFile.SaveAtomic(new SceneGraph(), scenePath);
+            var manifestPath = Path.Combine(worldDirectory, "world.json");
+            WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition
+                {
+                    Id = cellId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(0, 0),
+                    ScenePath = "Scenes/Exterior.json"
+                }
+            ]);
+            var rpgContentPath = Path.Combine(contentDirectory, "RpgContent.json");
+            RpgContentJson.SaveAtomic(rpgContentPath, new RpgContentSet());
+            AuthoredProjectRecoveryService.Capture(manifestPath, rpgContentPath, recoveryDirectory);
+
+            using var cancellation = new CancellationTokenSource();
+            var progressReports = new List<AuthoredProjectRecoveryProgress>();
+            var progress = new InlineProgress<AuthoredProjectRecoveryProgress>(report =>
+            {
+                progressReports.Add(report);
+                if (report.CompletedFiles == 1) cancellation.Cancel();
+            });
+
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(() =>
+                AuthoredProjectRecoveryService.RestoreLatestToStagingAsync(
+                    manifestPath, rpgContentPath, recoveryDirectory, cancellation.Token, progress));
+
+            Assert.Equal(1, Assert.Single(progressReports).CompletedFiles);
+            var stagingParent = Path.Combine(recoveryDirectory, "staging");
+            Assert.Empty(Directory.GetDirectories(stagingParent));
+            Assert.Empty(Directory.GetFiles(stagingParent, "*", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static Guid Id(string value) => Guid.Parse(value);
 
     private static bool IsWithin(string root, string path)
@@ -245,5 +303,10 @@ public sealed class AuthoredProjectRecoveryServiceTests
         var directory = Path.Combine(Path.GetTempPath(), "ember-authored-project-recovery-" + Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(directory);
         return directory;
+    }
+
+    private sealed class InlineProgress<T>(Action<T> report) : IProgress<T>
+    {
+        public void Report(T value) => report(value);
     }
 }

@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using Ember.Rpg;
 using Ember.Scene;
 using Ember.World;
@@ -15,6 +17,8 @@ public sealed record AuthoredProjectRecoveryStaging(
     string RpgContentPath,
     IReadOnlyList<string> RestoredFiles,
     Guid SnapshotId);
+
+public sealed record AuthoredProjectRecoveryProgress(int CompletedFiles, int TotalFiles, string CurrentRelativePath);
 
 /// <summary>Captures authored project files and restores a complete snapshot into an isolated staging directory.</summary>
 public static class AuthoredProjectRecoveryService
@@ -79,10 +83,18 @@ public static class AuthoredProjectRecoveryService
 
     public static AuthoredProjectRecoveryStaging RestoreLatestToStaging(string worldManifestPath,
         string rpgContentPath, string recoveryDirectory)
+        => RestoreLatestToStagingAsync(worldManifestPath, rpgContentPath, recoveryDirectory)
+            .GetAwaiter().GetResult();
+
+    public static async Task<AuthoredProjectRecoveryStaging> RestoreLatestToStagingAsync(
+        string worldManifestPath, string rpgContentPath, string recoveryDirectory,
+        CancellationToken cancellationToken = default,
+        IProgress<AuthoredProjectRecoveryProgress>? progress = null)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(worldManifestPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(rpgContentPath);
         ArgumentException.ThrowIfNullOrWhiteSpace(recoveryDirectory);
+        cancellationToken.ThrowIfCancellationRequested();
 
         var fullManifestPath = Path.GetFullPath(worldManifestPath);
         var fullContentPath = Path.GetFullPath(rpgContentPath);
@@ -95,29 +107,47 @@ public static class AuthoredProjectRecoveryService
         if (!availablePaths.Contains(manifestRelativePath) || !availablePaths.Contains(contentRelativePath))
             throw new InvalidDataException("Authored recovery snapshot is missing the world manifest or RPG content file.");
 
+        cancellationToken.ThrowIfCancellationRequested();
         var stagingParent = Path.Combine(Path.GetFullPath(recoveryDirectory), "staging");
         Directory.CreateDirectory(stagingParent);
         var stagingRoot = Path.Combine(stagingParent,
             $"{snapshot.SnapshotId:N}-{Guid.NewGuid():N}");
-        Directory.CreateDirectory(stagingRoot);
         var restoredPaths = new List<string>(snapshot.Files.Count);
         try
         {
+            Directory.CreateDirectory(stagingRoot);
+            cancellationToken.ThrowIfCancellationRequested();
+            var completedFiles = 0;
             foreach (var file in snapshot.Files)
             {
+                cancellationToken.ThrowIfCancellationRequested();
                 var destination = Path.GetFullPath(Path.Combine(stagingRoot,
                     file.RelativePath.Replace('/', Path.DirectorySeparatorChar)));
                 EnsureWithin(stagingRoot, destination);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination)!);
-                using var stream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write, FileShare.None);
-                stream.Write(file.Content);
+                await using var stream = new FileStream(destination, FileMode.CreateNew, FileAccess.Write,
+                    FileShare.None, 4096, FileOptions.Asynchronous | FileOptions.WriteThrough);
+                await stream.WriteAsync(file.Content.AsMemory(), cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
                 stream.Flush(flushToDisk: true);
                 restoredPaths.Add(destination);
+                progress?.Report(new AuthoredProjectRecoveryProgress(
+                    ++completedFiles, snapshot.Files.Count, file.RelativePath));
             }
+            cancellationToken.ThrowIfCancellationRequested();
         }
-        catch
+        catch (Exception restoreError)
         {
-            Directory.Delete(stagingRoot, recursive: true);
+            try
+            {
+                if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true);
+            }
+            catch (Exception cleanupError)
+            {
+                throw new AggregateException(
+                    "Recovery staging failed and its incomplete files could not be removed.",
+                    restoreError, cleanupError);
+            }
             throw;
         }
 

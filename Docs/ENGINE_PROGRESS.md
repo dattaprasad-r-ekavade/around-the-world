@@ -2876,3 +2876,25 @@ interaction actions while preserving the unfinished M2.1 acceptance criteria.
 
 Next: add validated, persisted scene behaviour assignments and map runtime characters to stable scene
 identity before exposing the beginner What happens? action cards.
+
+## M0.4 cancellable recovery staging — 29 September 2026
+
+- `RestoreLatestToStagingAsync` writes recovery files asynchronously, reports completed-file progress,
+  and accepts cancellation between files and during file writes. Any cancellation or staging failure
+  removes the incomplete staging tree; a cleanup failure is reported together with the original error.
+- A deterministic test cancels immediately after the first file is staged and verifies that no partial
+  staging files remain. The existing synchronous API remains available and delegates to the same path.
+- M0.4 stays **In progress**. CharacterStudio's Review recovery control still uses the synchronous
+  wrapper, so visible progress/cancel controls and the manual recovery walkthrough remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused `AuthoredProjectRecoveryServiceTests` Release run | PASS — 3 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 352 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+
+Next: expose the async restore progress and cancel action in the recovery review UI, then verify cancel,
+review, apply and close/reopen behavior through the visible editor workflow.
