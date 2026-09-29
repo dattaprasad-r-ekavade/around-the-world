@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using Ember.Physics;
 using Ember.Scene;
 using Microsoft.Xna.Framework;
@@ -55,6 +56,29 @@ public sealed class SceneStaticColliderSetTests
 
         Assert.True(colliders.IsDisposed);
         Assert.Null(physics.Raycast(new Vector3(5.5f, 5f, 0f), -Vector3.Up, 10f));
+    }
+
+    [Fact]
+    public void CanExcludeSceneObjectsThatHaveDynamicCharacterBodies()
+    {
+        var actorId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(actorId, "Player body")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One)
+        });
+        scene.Add(new SceneObject(Guid.NewGuid(), "Wall")
+        {
+            Transform = new Transform { Position = new Vector3(5f, 0f, 0f) },
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One)
+        });
+        using var physics = new PhysicsWorld();
+
+        using var colliders = new SceneStaticColliderSet(scene, physics, new HashSet<Guid> { actorId });
+
+        Assert.Equal(1, colliders.Count);
+        Assert.Null(physics.Raycast(new Vector3(0f, 3f, 0f), -Vector3.Up, 5f));
+        Assert.NotNull(physics.Raycast(new Vector3(5f, 3f, 0f), -Vector3.Up, 5f));
     }
 
     [Fact]

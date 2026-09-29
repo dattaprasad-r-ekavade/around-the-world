@@ -16,7 +16,8 @@ public sealed class SceneStaticColliderSet : IDisposable
     private readonly Dictionary<PhysicsObjectId, Guid> _sceneTriggerObjectIds = new();
     private bool _disposed;
 
-    public SceneStaticColliderSet(SceneGraph scene, PhysicsWorld physicsWorld)
+    public SceneStaticColliderSet(SceneGraph scene, PhysicsWorld physicsWorld,
+        IReadOnlySet<Guid>? excludedSceneObjectIds = null)
     {
         ArgumentNullException.ThrowIfNull(scene);
         _physicsWorld = physicsWorld ?? throw new ArgumentNullException(nameof(physicsWorld));
@@ -25,6 +26,7 @@ public sealed class SceneStaticColliderSet : IDisposable
         {
             foreach (var sceneObject in scene.Objects)
             {
+                if (excludedSceneObjectIds?.Contains(sceneObject.Id) == true) continue;
                 if (sceneObject.BoxCollider is not { } collider || !IsEffectivelyEnabled(scene, sceneObject))
                     continue;
 

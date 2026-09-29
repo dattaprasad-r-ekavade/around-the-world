@@ -3004,3 +3004,29 @@ gate from source and test coverage.
 Next: add directly controllable Play-mode character movement and camera follow, then implement the
 Open action using a saved, validated door interaction. Verify the full editor workflow when desktop
 input is available.
+
+## M2.1 controllable Play character and camera follow — 29 September 2026
+
+- CharacterStudio now gives the selected authored actor, animated character, or first available model
+  a temporary physics capsule when Play starts. WASD or arrow keys move relative to the orbit camera;
+  Space requests a buffered jump. The object transform follows the interpolated physics pose, and the
+  orbit camera follows that character while remaining mouse-orbitable.
+- Static scene colliders and all Play path-following agents share one physics world. Character scene
+  objects are excluded from the static snapshot to avoid representing one actor as both a static box
+  and a moving capsule. Both keyboard and route-driven bodies bind to scene IDs, so their trigger
+  actions report the correct instigator. Stopping Play disposes the controllers, colliders and world.
+- Movement uses the engine's default WASD/arrow/Space action map; player selection, movement speed,
+  camera settings and input bindings are still temporary defaults, not saved scene settings. The
+  manual movement and trigger route were not exercised through desktop input.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Full `Ember.Engine.Tests` Release run | PASS — 359 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| CharacterStudio play/stop/reload lifecycle smoke | PASS — 3/3 cycles; 6 owned preview resources after each reload |
+| Manual keyboard movement, jump, camera follow and trigger workflow | NOT RUN — desktop input unavailable |
+
+Next: persist an explicit player assignment and movement/camera/input defaults, then add a saved Open
+action for doors. Keep the editor interaction gate open until keyboard and mouse controls are verified.

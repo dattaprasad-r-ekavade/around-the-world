@@ -131,6 +131,9 @@ public sealed class CharacterStudioGame : EngineHost
     private string? _blockedSaveReason;
     private string _reimportStatus = "P: play on clone | R: reimport GLBs | S: save scene";
     private ScenePlaySession? _playSession;
+    private readonly InputActionMap _playInputMap = new();
+    private PhysicsCharacterController? _playCharacterController;
+    private Guid? _playCharacterObjectId;
     private SceneCommandHistory _playHistory = new();
     private ImportedAudioClip? _playAudioClip;
     private float _interactionVolume = 0.65f;
@@ -457,6 +460,13 @@ public sealed class CharacterStudioGame : EngineHost
         ProcessViewportSelection(mouse, LogicalMouse(mouse), uiCapturesMouse);
 
         var sequenceExportRunning = _sequenceExportJob?.IsRunning == true;
+        var playInput = _playInputMap.Sample(_input.CurrentKeyboard, IsActive,
+            _playSession is null || uiCapturesKeyboard || sequenceExportRunning);
+        if (_playSession is not null && _playCharacterController is { } playCharacter)
+        {
+            playCharacter.SetMoveInput(ToOrbitCameraMovement(playInput.ReadMovement(), _camera.Yaw));
+            if (_playInputMap.ConsumePressed(GameplayActionNames.Jump)) playCharacter.RequestJump();
+        }
         if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard
             && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
         if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard
@@ -1887,6 +1897,7 @@ public sealed class CharacterStudioGame : EngineHost
                     _ => $"{actor} triggered {action.SceneObjectName}."
                 };
             };
+            InitializePlayPhysics(candidate);
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(candidate.RuntimeScene), candidate.RuntimeScene));
             _playSession = candidate;
@@ -1895,16 +1906,120 @@ public sealed class CharacterStudioGame : EngineHost
             _playHistory = new SceneCommandHistory();
             _editorUi?.SetHistory(_playHistory);
             BuildSequencePreview();
+            var controls = _playCharacterController is null
+                ? "Play clone started. Follow a path to move an actor; P stops and restores."
+                : "Play clone started. WASD/arrows move; Space jumps; E interacts; P stops and restores.";
             _reimportStatus = cleanupError is null
-                ? "Play clone started. E or Interact plays the scene sound; P stops and restores."
-                : $"Play clone started; previous preview cleanup failed: {cleanupError.Message}";
+                ? controls
+                : $"{controls} Previous preview cleanup failed: {cleanupError.Message}";
             if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
         }
         catch (Exception exception)
         {
-            candidate?.Dispose();
-            _reimportStatus = $"Play mode could not start: {exception.Message}";
+            if (candidate is not null)
+            {
+                DisposePathPhysics(candidate);
+                candidate.Dispose();
+                _reimportStatus = $"Play mode could not start: {exception.Message}";
+            }
+            else if (_playSession is not null)
+            {
+                StopPlaySession();
+                if (_playSession is null)
+                    _reimportStatus = $"Play mode could not start: {exception.Message}";
+                else
+                    _reimportStatus = $"Play mode startup failed: {exception.Message} Authored preview restoration also failed; stop Play mode to retry.";
+            }
+            else
+            {
+                _reimportStatus = $"Play mode could not start: {exception.Message}";
+            }
         }
+    }
+
+    private void InitializePlayPhysics(ScenePlaySession session)
+    {
+        var scene = session.RuntimeScene;
+        var playerObjectId = FindPlayCharacter(scene);
+        CreatePathPhysicsWorld(scene, playerObjectId);
+        if (playerObjectId is not { } objectId) return;
+
+        var physicsWorld = _pathPreviewWorld
+            ?? throw new InvalidOperationException("Play physics world could not be initialized.");
+        var worldPosition = scene.GetWorldMatrix(objectId).Translation;
+        var controller = new PhysicsCharacterController(physicsWorld,
+            worldPosition + new Vector3(0f, 0.9f, 0f), new PhysicsCharacterSettings { MoveSpeed = 3.5f });
+        try
+        {
+            session.BindPhysicsCharacter(controller.PhysicsBodyId, objectId);
+            _playCharacterController = controller;
+            _playCharacterObjectId = objectId;
+        }
+        catch
+        {
+            controller.Dispose();
+            throw;
+        }
+    }
+
+    private Guid? FindPlayCharacter(SceneGraph scene)
+    {
+        bool IsCharacter(SceneObject item) => item.Enabled && item.TriggerAction is null
+            && (item.CharacterSettings is not null
+                || item.WorldEntity?.Kind == WorldEntityKind.Actor
+                || item.GltfAsset is not null);
+
+        bool IsAuthoredActor(SceneObject item) => item.Enabled && item.TriggerAction is null
+            && (item.CharacterSettings is not null || item.WorldEntity?.Kind == WorldEntityKind.Actor);
+
+        if (_editorUi?.SelectedObjectId is { } selectedId
+            && scene.Find(selectedId) is { } selected && IsAuthoredActor(selected))
+            return selected.Id;
+
+        return scene.Objects.FirstOrDefault(item => item.Enabled
+                   && item.TriggerAction is null && item.WorldEntity?.Kind == WorldEntityKind.Actor)?.Id
+            ?? scene.Objects.FirstOrDefault(item => item.Enabled
+                && item.TriggerAction is null && item.CharacterSettings is not null)?.Id
+            ?? (_editorUi?.SelectedObjectId is { } fallbackId
+                && scene.Find(fallbackId) is { } fallback && IsCharacter(fallback)
+                    ? fallback.Id
+                    : scene.Objects.FirstOrDefault(IsCharacter)?.Id);
+    }
+
+    private void CreatePathPhysicsWorld(SceneGraph scene, Guid? dynamicCharacterId = null)
+    {
+        if (_pathPreviewWorld is not null) return;
+        _pathPreviewWorld = new PhysicsWorld();
+        try
+        {
+            _pathPreviewWorld.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(2000f, 1f, 2000f));
+            var dynamicCharacterIds = scene.Objects
+                .Where(item => item.CharacterSettings is not null || item.WorldEntity?.Kind == WorldEntityKind.Actor)
+                .Select(item => item.Id).ToHashSet();
+            if (dynamicCharacterId is { } actorId) dynamicCharacterIds.Add(actorId);
+            _playSceneColliders = new SceneStaticColliderSet(scene, _pathPreviewWorld, dynamicCharacterIds);
+            _pathPreviewStepper = new PhysicsFixedStepper();
+        }
+        catch
+        {
+            _playSceneColliders?.Dispose();
+            _playSceneColliders = null;
+            _pathPreviewWorld.Dispose();
+            _pathPreviewWorld = null;
+            _pathPreviewStepper = null;
+            throw;
+        }
+    }
+
+    private static Vector3 ToOrbitCameraMovement(Vector2 localMovement, float cameraYaw)
+    {
+        if (localMovement.LengthSquared() > 1f) localMovement.Normalize();
+        var rotation = Matrix.CreateRotationY(cameraYaw);
+        var right = Vector3.Transform(Vector3.Right, rotation);
+        var forward = Vector3.Transform(Vector3.Forward, rotation);
+        var movement = right * localMovement.X + forward * localMovement.Y;
+        movement.Y = 0f;
+        return movement.LengthSquared() > 1f ? Vector3.Normalize(movement) : movement;
     }
 
     private void StopPlaySession()
@@ -1956,20 +2071,19 @@ public sealed class CharacterStudioGame : EngineHost
         if (_playSession is null) return "Start play mode before following an authored route.";
         var actor = CurrentScene.Find(objectId);
         if (actor is null) return "The selected actor is not in the play scene.";
+        if (_playCharacterObjectId == objectId)
+            return "This is the keyboard-controlled player; choose another actor to follow a route.";
 
         StopPathFollow(objectId);
         try
         {
             if (_pathPreviewWorld is null)
-            {
-                _pathPreviewWorld = new PhysicsWorld();
-                _pathPreviewWorld.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(2000f, 1f, 2000f));
-                _playSceneColliders = new SceneStaticColliderSet(CurrentScene, _pathPreviewWorld);
-                _pathPreviewStepper = new PhysicsFixedStepper();
-            }
+                CreatePathPhysicsWorld(CurrentScene, objectId);
 
+            var physicsWorld = _pathPreviewWorld
+                ?? throw new InvalidOperationException("Play physics world could not be initialized.");
             var worldPosition = CurrentScene.GetWorldMatrix(objectId).Translation;
-            var controller = new PhysicsCharacterController(_pathPreviewWorld,
+            var controller = new PhysicsCharacterController(physicsWorld,
                 worldPosition + new Vector3(0f, 0.9f, 0f), new PhysicsCharacterSettings { MoveSpeed = 3.5f });
             try
             {
@@ -1987,7 +2101,7 @@ public sealed class CharacterStudioGame : EngineHost
         }
         catch (Exception exception)
         {
-            if (_pathPreviewAgents.Count == 0) DisposePathPhysics();
+            if (_pathPreviewAgents.Count == 0 && _playCharacterController is null) DisposePathPhysics();
             return $"Could not start route following: {exception.Message}";
         }
     }
@@ -2002,12 +2116,13 @@ public sealed class CharacterStudioGame : EngineHost
             _playSession?.UnbindPhysicsCharacter(agent.Controller.PhysicsBodyId);
             agent.Controller.Dispose();
         }
-        if (_pathPreviewAgents.Count == 0) DisposePathPhysics();
+        if (_pathPreviewAgents.Count == 0 && _playCharacterController is null) DisposePathPhysics();
     }
 
     private void UpdatePathFollowers(float elapsedSeconds)
     {
-        if (_pathPreviewWorld is null || _pathPreviewStepper is null || _pathPreviewAgents.Count == 0) return;
+        if (_pathPreviewWorld is null || _pathPreviewStepper is null
+            || (_pathPreviewAgents.Count == 0 && _playCharacterController is null)) return;
         var step = _pathPreviewStepper.Advance(elapsedSeconds, delta =>
         {
             foreach (var agent in _pathPreviewAgents.Values) agent.Follower.Advance(delta);
@@ -2024,18 +2139,49 @@ public sealed class CharacterStudioGame : EngineHost
             }
             var physicsPose = _pathPreviewWorld.GetInterpolatedPose(agent.Controller.PhysicsBodyId,
                 step.InterpolationAlpha);
-            actor.Transform.Position = physicsPose.Position - new Vector3(0f, 0.9f, 0f);
+            SetObjectWorldPosition(CurrentScene, actor,
+                physicsPose.Position - new Vector3(0f, 0.9f, 0f));
+        }
+        if (_playCharacterController is { } playerController
+            && _playCharacterObjectId is { } playerObjectId
+            && CurrentScene.Find(playerObjectId) is { } playerObject)
+        {
+            var position = _pathPreviewWorld.GetInterpolatedPose(playerController.PhysicsBodyId,
+                step.InterpolationAlpha).Position;
+            SetObjectWorldPosition(CurrentScene, playerObject,
+                position - new Vector3(0f, 0.9f, 0f));
+            _camera.Reset(position, _camera.Distance, _camera.Yaw, _camera.Pitch);
         }
     }
 
-    private void DisposePathPhysics()
+    private static void SetObjectWorldPosition(SceneGraph scene, SceneObject item, Vector3 worldPosition)
     {
+        if (item.ParentId is { } parentId)
+        {
+            var parentWorld = scene.GetWorldMatrix(parentId);
+            var determinant = parentWorld.Determinant();
+            if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 1e-8f) return;
+            worldPosition = Vector3.Transform(worldPosition, Matrix.Invert(parentWorld));
+        }
+        item.Transform.Position = worldPosition;
+    }
+
+    private void DisposePathPhysics(ScenePlaySession? bindingSession = null)
+    {
+        bindingSession ??= _playSession;
         foreach (var agent in _pathPreviewAgents.Values)
         {
-            _playSession?.UnbindPhysicsCharacter(agent.Controller.PhysicsBodyId);
+            bindingSession?.UnbindPhysicsCharacter(agent.Controller.PhysicsBodyId);
             agent.Controller.Dispose();
         }
         _pathPreviewAgents.Clear();
+        if (_playCharacterController is { } playerController)
+        {
+            bindingSession?.UnbindPhysicsCharacter(playerController.PhysicsBodyId);
+            playerController.Dispose();
+        }
+        _playCharacterController = null;
+        _playCharacterObjectId = null;
         _playSceneColliders?.Dispose();
         _playSceneColliders = null;
         _pathPreviewWorld?.Dispose();

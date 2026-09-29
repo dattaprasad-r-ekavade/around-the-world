@@ -240,10 +240,13 @@ baselines and updates, duplication, undo/redo and Play-mode cloning preserve the
 Inspector's What happens? panel offers Nothing, Collect and Reach goal, and can add a trigger collider
 or convert an existing box. Play-mode path-following characters share the scene collider snapshot,
 bind their physics bodies to scene IDs, and dispatch resulting trigger events to saved actions; the
-editor reports the resulting action. M2.1 remains **In progress**: directly controllable player
-movement and camera/input settings, Open, custom code-behaviour registration, collider visualization
-and manual interaction verification remain open. The Inspector also has optional box-collider
-add/remove and center/size/trigger controls.
+editor reports the resulting action. Play also gives the selected or first authored character default
+WASD/arrow movement, Space jump and orbit-camera follow over the same collision and trigger world.
+Scene-character collider IDs are excluded from the static snapshot to avoid duplicate static/dynamic
+bodies. M2.1 remains **In progress**: player choice, movement speed, camera and input bindings are not
+yet saved or configurable, Open and custom code-behaviour registration remain open, collider
+visualization needs implementation, and editor interaction needs manual verification. The Inspector
+also has optional box-collider add/remove and center/size/trigger controls.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.
