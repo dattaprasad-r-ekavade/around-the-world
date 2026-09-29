@@ -14,19 +14,28 @@ namespace Ember.Editor;
 
 internal sealed partial class CharacterStudioEditorUi
 {
-    private SceneTemplateLibrary? _sceneTemplateLibrary;
-    private IReadOnlyList<SceneTemplateLibraryEntry> _sceneTemplateEntries = Array.Empty<SceneTemplateLibraryEntry>();
-    private string? _sceneTemplateProjectPath;
-    private string _sceneTemplateNameDraft = "Room template";
-    private string _sceneTemplateStatus = "Save a selected hierarchy to reuse it in another scene.";
-    private Guid? _selectedSceneTemplateId;
-    private Guid? _sceneTemplateDraftObjectId;
+    private readonly SceneTemplatePanel _sceneTemplatePanel;
 
-    private void DrawSceneTemplatePanel(SceneGraph scene)
+    private void DrawSceneTemplatePanel(SceneGraph scene) => _sceneTemplatePanel.Draw(scene);
+
+    private sealed class SceneTemplatePanel
+    {
+        private readonly CharacterStudioEditorUi _owner;
+        private SceneTemplateLibrary? _sceneTemplateLibrary;
+        private IReadOnlyList<SceneTemplateLibraryEntry> _sceneTemplateEntries = Array.Empty<SceneTemplateLibraryEntry>();
+        private string? _sceneTemplateProjectPath;
+        private string _sceneTemplateNameDraft = "Room template";
+        private string _sceneTemplateStatus = "Save a selected hierarchy to reuse it in another scene.";
+        private Guid? _selectedSceneTemplateId;
+        private Guid? _sceneTemplateDraftObjectId;
+
+        public SceneTemplatePanel(CharacterStudioEditorUi owner) =>
+            _owner = owner ?? throw new ArgumentNullException(nameof(owner));
+        public void Draw(SceneGraph scene)
     {
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 56f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(430f, _logicalWidth),
-            Math.Max(220f, _logicalHeight - 64f)));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(430f, _owner._logicalWidth),
+            Math.Max(220f, _owner._logicalHeight - 64f)));
         if (!ImGui.Begin("Scene templates", ImGuiWindowFlags.NoCollapse
                 | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
@@ -34,7 +43,7 @@ internal sealed partial class CharacterStudioEditorUi
             return;
         }
 
-        var projectPath = _getCurrentProjectPath();
+        var projectPath = _owner._getCurrentProjectPath();
         if (projectPath is null)
         {
             _sceneTemplateLibrary = null;
@@ -55,7 +64,7 @@ internal sealed partial class CharacterStudioEditorUi
             return;
         }
 
-        var selected = _selectedObjectId is { } selectedId ? scene.Find(selectedId) : null;
+        var selected = _owner._selectedObjectId is { } selectedId ? scene.Find(selectedId) : null;
         var wrapper = selected is null ? null : FindSceneTemplateWrapper(scene, selected);
 
         ImGui.TextWrapped("A template is a reusable copy of a selected object and its children. Place instances independently, then update them only when you choose.");
@@ -64,7 +73,7 @@ internal sealed partial class CharacterStudioEditorUi
         ImGui.TextDisabled($"{_sceneTemplateEntries.Count(entry => entry.IsValid)} available");
 
         ImGui.BeginChild("Project scene templates", new NumericsVector2(0f,
-            Math.Max(78f, _logicalHeight * 0.19f)), ImGuiChildFlags.Borders);
+            Math.Max(78f, _owner._logicalHeight * 0.19f)), ImGuiChildFlags.Borders);
         foreach (var entry in _sceneTemplateEntries)
         {
             if (entry.Template is { } template)
@@ -93,7 +102,7 @@ internal sealed partial class CharacterStudioEditorUi
         if (chosenTemplate is not null)
         {
             ImGui.TextWrapped($"{chosenTemplate.Name} · {chosenTemplate.Scene.Objects.Count} objects · revision {chosenTemplate.Revision}");
-            var canPlace = !_isPlaying();
+            var canPlace = !_owner._isPlaying();
             if (!canPlace) ImGui.BeginDisabled();
             if (ImGui.Button("Place beside selection", new NumericsVector2(-1f, 32f)))
                 PlaceSceneTemplate(scene, chosenTemplate, selected);
@@ -117,7 +126,7 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.InputTextWithHint("##sceneTemplateName", "Template name",
                 ref _sceneTemplateNameDraft, 128);
 
-            var canSaveNew = !_isPlaying() && selected.TemplateInstance is null;
+            var canSaveNew = !_owner._isPlaying() && selected.TemplateInstance is null;
             if (!canSaveNew) ImGui.BeginDisabled();
             if (ImGui.Button("Save selection as new template", new NumericsVector2(-1f, 32f)))
                 SaveSceneTemplate(scene, selected);
@@ -127,7 +136,7 @@ internal sealed partial class CharacterStudioEditorUi
 
             if (chosenTemplate is not null && chosenTemplate.RootObjectId == selected.Id)
             {
-                var canSaveRevision = !_isPlaying();
+                var canSaveRevision = !_owner._isPlaying();
                 if (!canSaveRevision) ImGui.BeginDisabled();
                 if (ImGui.Button("Save changes to selected template", new NumericsVector2(-1f, 32f)))
                     SaveSceneTemplateRevision(scene, selected, chosenTemplate);
@@ -158,20 +167,20 @@ internal sealed partial class CharacterStudioEditorUi
         {
             ImGui.TextColored(new NumericsVector4(1f, 0.65f, 0.35f, 1f),
                 "Template source is missing or unreadable. The expanded scene remains available and playable.");
-            if (_isPlaying()) ImGui.BeginDisabled();
+            if (_owner._isPlaying()) ImGui.BeginDisabled();
             if (ImGui.Button("Locate matching template source…", new NumericsVector2(-1f, 32f)))
                 RelinkSceneTemplate(instance.TemplateId);
-            if (_isPlaying()) ImGui.EndDisabled();
+            if (_owner._isPlaying()) ImGui.EndDisabled();
             return;
         }
 
         ImGui.TextWrapped($"Source: {source.Name} · revision {source.Revision}");
         if (source.Revision > instance.AppliedRevision)
         {
-            if (_isPlaying()) ImGui.BeginDisabled();
+            if (_owner._isPlaying()) ImGui.BeginDisabled();
             if (ImGui.Button("Update this instance", new NumericsVector2(-1f, 32f)))
                 UpdateSceneTemplateInstance(scene, wrapper, source);
-            if (_isPlaying()) ImGui.EndDisabled();
+            if (_owner._isPlaying()) ImGui.EndDisabled();
             ImGui.TextWrapped("Only fields that still match the previous template are refreshed. Local edits are kept.");
         }
         else if (source.Revision == instance.AppliedRevision)
@@ -182,10 +191,10 @@ internal sealed partial class CharacterStudioEditorUi
         {
             ImGui.TextColored(new NumericsVector4(1f, 0.65f, 0.35f, 1f),
                 "The project template is older than this instance. Locate the newer source before updating.");
-            if (_isPlaying()) ImGui.BeginDisabled();
+            if (_owner._isPlaying()) ImGui.BeginDisabled();
             if (ImGui.Button("Locate newer template source…", new NumericsVector2(-1f, 32f)))
                 RelinkSceneTemplate(instance.TemplateId);
-            if (_isPlaying()) ImGui.EndDisabled();
+            if (_owner._isPlaying()) ImGui.EndDisabled();
         }
     }
 
@@ -283,9 +292,9 @@ internal sealed partial class CharacterStudioEditorUi
             var position = selected is null
                 ? Vector3.Zero
                 : scene.GetWorldMatrix(selected.Id).Translation + new Vector3(2f, 0f, 0f);
-            var command = new PlaceSceneTemplateCommand(template, position, FindCurrentWorldCell()?.Id);
-            _history.Execute(scene, command);
-            if (command.InstanceObjectId is { } wrapperId) SelectObject(wrapperId);
+            var command = new PlaceSceneTemplateCommand(template, position, _owner.FindCurrentWorldCell()?.Id);
+            _owner._history.Execute(scene, command);
+            if (command.InstanceObjectId is { } wrapperId) _owner.SelectObject(wrapperId);
             _sceneTemplateStatus = $"Placed {template.Name}. Undo is available; the original hierarchy is unchanged.";
         }
         catch (Exception exception)
@@ -300,7 +309,7 @@ internal sealed partial class CharacterStudioEditorUi
         try
         {
             var command = new UpdateSceneTemplateCommand(wrapper.Id, template);
-            _history.Execute(scene, command);
+            _owner._history.Execute(scene, command);
             _sceneTemplateStatus = command.OrphanedObjectIds.Count == 0
                 ? $"Updated this instance to revision {template.Revision}. Undo is available."
                 : $"Updated to revision {template.Revision}; kept {command.OrphanedObjectIds.Count} edited or referenced older object(s). Review the warning above.";
@@ -315,7 +324,7 @@ internal sealed partial class CharacterStudioEditorUi
     {
         if (_sceneTemplateLibrary is null) return;
         var sourcePath = CharacterStudioFilePickers.PickSceneTemplateFile(
-            _sceneTemplateLibrary.DirectoryPath, _windowHandle);
+            _sceneTemplateLibrary.DirectoryPath, _owner._windowHandle);
         if (sourcePath is null) return;
         try
         {
@@ -341,4 +350,6 @@ internal sealed partial class CharacterStudioEditorUi
         }
         return null;
     }
+}
+
 }
