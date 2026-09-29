@@ -58,6 +58,7 @@ public static class SceneGraphCloner
                 GltfAsset = item.GltfAsset,
                 StaticMeshLod = item.StaticMeshLod,
                 CharacterSettings = item.CharacterSettings?.DeepCopy(),
+                BoxCollider = item.BoxCollider,
                 Door = item.Door,
                 SpawnPoint = item.SpawnPoint,
                 WorldEntity = item.WorldEntity,

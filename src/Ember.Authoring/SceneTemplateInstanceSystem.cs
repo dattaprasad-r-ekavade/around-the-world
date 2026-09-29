@@ -65,7 +65,8 @@ public static class SceneTemplateInstanceSystem
                     door: clones[index].Door, hasDoorBaseline: true,
                     spawnPoint: clones[index].SpawnPoint, hasSpawnPointBaseline: true,
                     worldEntity: clones[index].WorldEntity, hasWorldEntityBaseline: true,
-                    sourceSpawnPointId: item.SpawnPoint?.Id)),
+                    sourceSpawnPointId: item.SpawnPoint?.Id,
+                    boxCollider: clones[index].BoxCollider, hasBoxColliderBaseline: true)),
                 targetWorldCellId: targetWorldCellId)
         };
 
@@ -157,7 +158,7 @@ public static class SceneTemplateInstanceSystem
                 || !baseline.HasGltfAssetBaseline || !baseline.HasStaticMeshLodBaseline
                 || !baseline.HasCharacterSettingsBaseline
                 || !baseline.HasDoorBaseline || !baseline.HasSpawnPointBaseline
-                || !baseline.HasWorldEntityBaseline
+                || !baseline.HasWorldEntityBaseline || !baseline.HasBoxColliderBaseline
                 || baseline.CharacterSettingsBaseline is { HasAttachmentMappings: false };
             var hasKnownOverride = !string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
                 || !baseline.MatchesTransform(target.Transform)
@@ -169,7 +170,8 @@ public static class SceneTemplateInstanceSystem
                     && !MatchesCharacterSettings(target.CharacterSettings, baseline.CharacterSettingsBaseline)
                 || baseline.HasDoorBaseline && !MatchesDoor(target.Door, baseline.Door)
                 || baseline.HasSpawnPointBaseline && !MatchesSpawnPoint(target.SpawnPoint, baseline.SpawnPoint)
-                || baseline.HasWorldEntityBaseline && !MatchesWorldEntity(target.WorldEntity, baseline.WorldEntity);
+                || baseline.HasWorldEntityBaseline && !MatchesWorldEntity(target.WorldEntity, baseline.WorldEntity)
+                || baseline.HasBoxColliderBaseline && !MatchesBoxCollider(target.BoxCollider, baseline.BoxCollider);
             if (baselineIsIncomplete || hasKnownOverride)
                 retainedRemovedIds.Add(target.Id);
         }
@@ -248,13 +250,14 @@ public static class SceneTemplateInstanceSystem
         var characterBaselinesBySourceId = new Dictionary<Guid, SceneTemplateCharacterSettingsBaseline?>();
         var worldBaselinesBySourceId = new Dictionary<Guid,
             (WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
-                WorldEntityPlacementComponent? WorldEntity, Guid? SourceSpawnPointId)>();
+                WorldEntityPlacementComponent? WorldEntity, Guid? SourceSpawnPointId,
+                SceneBoxColliderComponent? BoxCollider)>();
 
         var updates = new List<(SceneObject Target, string Name, Transform Transform,
             bool Enabled, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
             GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
             WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
-            WorldEntityPlacementComponent? WorldEntity,
+            WorldEntityPlacementComponent? WorldEntity, SceneBoxColliderComponent? BoxCollider,
             SceneTemplateCharacterSettingsBaseline? CharacterBaseline)>();
         foreach (var (sourceId, sourceObject) in sourceById)
         {
@@ -300,12 +303,14 @@ public static class SceneTemplateInstanceSystem
                 baseline.HasSpawnPointBaseline, baseline.SpawnPoint, MatchesSpawnPoint);
             var worldEntity = MergeComponent(sourceWorldEntityBaseline, target.WorldEntity,
                 baseline.HasWorldEntityBaseline, baseline.WorldEntity, MatchesWorldEntity);
+            var boxCollider = MergeComponent(sourceObject.BoxCollider, target.BoxCollider,
+                baseline.HasBoxColliderBaseline, baseline.BoxCollider, MatchesBoxCollider);
             characterBaselinesBySourceId[sourceId] = characterMerge.Baseline;
             worldBaselinesBySourceId[sourceId] =
                 (sourceDoorBaseline, sourceSpawnBaseline, sourceWorldEntityBaseline,
-                    sourceObject.SpawnPoint?.Id);
+                    sourceObject.SpawnPoint?.Id, sourceObject.BoxCollider);
             updates.Add((target, name, transform, enabled, resetPolicy, gltfAsset,
-                staticMeshLod, characterMerge.Settings, door, spawnPoint, worldEntity,
+                staticMeshLod, characterMerge.Settings, door, spawnPoint, worldEntity, boxCollider,
                 characterMerge.Baseline));
         }
         foreach (var sourceObject in source.Objects.Where(item => !oldMappings.ContainsKey(item.Id)))
@@ -314,7 +319,8 @@ public static class SceneTemplateInstanceSystem
             characterBaselinesBySourceId[sourceObject.Id] = CaptureCharacterSettingsBaseline(
                 sourceObject.CharacterSettings, clone.CharacterSettings);
             worldBaselinesBySourceId[sourceObject.Id] =
-                (clone.Door, clone.SpawnPoint, clone.WorldEntity, sourceObject.SpawnPoint?.Id);
+                (clone.Door, clone.SpawnPoint, clone.WorldEntity,
+                    sourceObject.SpawnPoint?.Id, clone.BoxCollider);
         }
 
         var nextOrphanIds = instance.OrphanedObjectIds
@@ -340,6 +346,7 @@ public static class SceneTemplateInstanceSystem
                 update.Target.Door = update.Door;
                 update.Target.SpawnPoint = update.SpawnPoint;
                 update.Target.WorldEntity = update.WorldEntity;
+                update.Target.BoxCollider = update.BoxCollider;
             }
             foreach (var sourceObject in source.Objects)
             {
@@ -365,7 +372,9 @@ public static class SceneTemplateInstanceSystem
                     door: worldBaselinesBySourceId[item.Id].Door, hasDoorBaseline: true,
                     spawnPoint: worldBaselinesBySourceId[item.Id].SpawnPoint, hasSpawnPointBaseline: true,
                     worldEntity: worldBaselinesBySourceId[item.Id].WorldEntity, hasWorldEntityBaseline: true,
-                    sourceSpawnPointId: worldBaselinesBySourceId[item.Id].SourceSpawnPointId)),
+                    sourceSpawnPointId: worldBaselinesBySourceId[item.Id].SourceSpawnPointId,
+                    boxCollider: worldBaselinesBySourceId[item.Id].BoxCollider,
+                    hasBoxColliderBaseline: true)),
                 nextOrphanIds, instance.TargetWorldCellId);
         }
         catch
@@ -394,7 +403,7 @@ public static class SceneTemplateInstanceSystem
                 ?? throw new InvalidOperationException($"Template instance object {id} is missing.");
             return new SceneTemplateObjectState(item, item.Name, item.Enabled, CopyTransform(item.Transform),
                 item.ResetPolicy, item.GltfAsset, item.StaticMeshLod, item.CharacterSettings,
-                item.Door, item.SpawnPoint, item.WorldEntity,
+                item.Door, item.SpawnPoint, item.WorldEntity, item.BoxCollider,
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
         return new SceneTemplateInstanceState(wrapperId, objects);
@@ -434,6 +443,7 @@ public static class SceneTemplateInstanceSystem
             current.Door = item.Door;
             current.SpawnPoint = item.SpawnPoint;
             current.WorldEntity = item.WorldEntity;
+            current.BoxCollider = item.BoxCollider;
             current.TemplateInstance = item.TemplateInstance;
         }
         foreach (var item in state.Objects)
@@ -459,6 +469,7 @@ public static class SceneTemplateInstanceSystem
             GltfAsset = source.GltfAsset,
             StaticMeshLod = source.StaticMeshLod,
             CharacterSettings = character,
+            BoxCollider = source.BoxCollider,
             Door = CopyDoorForInstance(source.Door, spawnMap, targetWorldCellId),
             SpawnPoint = CopySpawnForInstance(source.SpawnPoint, spawnMap),
             WorldEntity = CopyWorldEntityForInstance(source.WorldEntity, entityInstanceMap),
@@ -577,6 +588,11 @@ public static class SceneTemplateInstanceSystem
             && string.Equals(left.DefinitionId, right.DefinitionId, StringComparison.Ordinal)
             && left.InstanceId == right.InstanceId && left.TemplateId == right.TemplateId
             && left.TemplateOverrides == right.TemplateOverrides;
+
+    private static bool MatchesBoxCollider(SceneBoxColliderComponent? left,
+        SceneBoxColliderComponent? right) => left is null ? right is null
+        : right is not null && left.Center == right.Center && left.Size == right.Size
+            && left.IsTrigger == right.IsTrigger;
 
     private static bool MatchesAssetReference(GltfAssetReference? left, GltfAssetReference? right) =>
         left is null ? right is null
@@ -837,4 +853,4 @@ internal sealed record SceneTemplateObjectState(SceneObject Object, string Name,
     Transform Transform, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
     GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
     WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint, WorldEntityPlacementComponent? WorldEntity,
-    Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);
+    SceneBoxColliderComponent? BoxCollider, Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);

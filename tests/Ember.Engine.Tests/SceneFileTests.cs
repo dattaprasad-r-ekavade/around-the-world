@@ -46,6 +46,41 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesBoxColliderLocalShapeAndTriggerFlag()
+    {
+        var objectId = Guid.NewGuid();
+        var collider = new SceneBoxColliderComponent(
+            new Vector3(-0.5f, 1f, 0.25f), new Vector3(2f, 3f, 4f), isTrigger: true);
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(objectId, "Door trigger") { BoxCollider = collider });
+
+        var json = SceneFile.ToJson(scene);
+        var loaded = SceneFile.FromJson(json);
+        var savedCollider = loaded.Find(objectId)!.BoxCollider!;
+
+        Assert.Contains("\"Version\": 15", json, StringComparison.Ordinal);
+        Assert.Equal(collider.Center, savedCollider.Center);
+        Assert.Equal(collider.Size, savedCollider.Size);
+        Assert.True(savedCollider.IsTrigger);
+    }
+
+    [Fact]
+    public void VersionFourteenLoadsWithoutColliderAndColliderDataRequiresVersionFifteen()
+    {
+        const string legacyJson = "{\"Version\":14,\"Objects\":[{\"Id\":\"10101010-1010-1010-1010-101010101010\",\"Name\":\"Legacy\",\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}";
+        const string tooOldJson = "{\"Version\":14,\"Objects\":[{\"Id\":\"10101010-1010-1010-1010-101010101010\",\"Name\":\"Legacy\",\"BoxCollider\":{\"Center\":[0,0,0],\"Size\":[1,1,1]},\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}";
+        const string invalidSizeJson = "{\"Version\":15,\"Objects\":[{\"Id\":\"10101010-1010-1010-1010-101010101010\",\"Name\":\"Bad collider\",\"BoxCollider\":{\"Center\":[0,0,0],\"Size\":[1,0,1]},\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}";
+
+        var legacy = SceneFile.FromJson(legacyJson);
+
+        Assert.Null(legacy.Find(Guid.Parse("10101010-1010-1010-1010-101010101010"))!.BoxCollider);
+        Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(tooOldJson));
+        Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(invalidSizeJson));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            new SceneBoxColliderComponent(Vector3.Zero, new Vector3(1f, float.NaN, 1f)));
+    }
+
+    [Fact]
     public void SaveAndLoadPreservesRegisteredRpgPlacementAndStableInstanceId()
     {
         var scene = new SceneGraph();

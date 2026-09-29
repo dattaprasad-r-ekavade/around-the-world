@@ -52,8 +52,8 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
-M2.1–M2.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
+M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.1, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
+M2.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
 components are reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
@@ -198,9 +198,9 @@ service-boundary acceptance remain open.
   instance follows the normal project asset recovery flow.
 
 The M1.3 API saves atomic, versioned hierarchy snapshots, places expanded instances with remapped
-IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene version 14
+IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene version 15
 stores source name/transform, enabled-state, reset-policy, shared GLB asset, static-mesh LOD,
-character playback and attachment baselines, door/spawn/world-entity component baselines, plus
+character playback and attachment baselines, door/spawn/world-entity and box-collider component baselines, plus
 orphan IDs and the target world cell. Explicit updates preserve stable mappings and local overrides,
 synchronize source component and attachment additions/removals, retain edited component content,
 add and remove source objects, track uncertain removed content as orphans, and support undo/redo.
@@ -220,9 +220,15 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 
 | ID | Work | Acceptance | Status |
 | --- | --- | --- | --- |
-| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. | Not started |
+| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. | **In progress** |
 | M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. | Not started |
 | M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. | **In progress** |
+
+M2.1 now has its first data and authoring-command slice: scene version 15 stores validated local-space
+box colliders with trigger flags, and older scenes load without colliders. Template baselines preserve
+collider defaults and local overrides across explicit updates; undo/redo, duplication and Play-mode
+cloning retain the component. Runtime collision and trigger evaluation, player/camera settings,
+input actions, behavior assignments, and visible Inspector/What happens? controls remain open.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.

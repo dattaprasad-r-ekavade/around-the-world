@@ -79,6 +79,29 @@ public sealed class GltfStaticMeshLod
     }
 }
 
+/// <summary>A local-space box collider authored on a scene object.</summary>
+public sealed class SceneBoxColliderComponent
+{
+    public SceneBoxColliderComponent(Vector3 center, Vector3 size, bool isTrigger = false)
+    {
+        if (!IsFinite(center))
+            throw new ArgumentOutOfRangeException(nameof(center), "Collider center must be finite.");
+        if (!IsFinite(size) || size.X <= 0f || size.Y <= 0f || size.Z <= 0f)
+            throw new ArgumentOutOfRangeException(nameof(size), "Collider size must be finite and positive on every axis.");
+
+        Center = center;
+        Size = size;
+        IsTrigger = isTrigger;
+    }
+
+    public Vector3 Center { get; }
+    public Vector3 Size { get; }
+    public bool IsTrigger { get; }
+
+    private static bool IsFinite(Vector3 value) =>
+        float.IsFinite(value.X) && float.IsFinite(value.Y) && float.IsFinite(value.Z);
+}
+
 /// <summary>A stable scene object identity and its local authored state.</summary>
 public sealed class SceneObject
 {
@@ -99,6 +122,7 @@ public sealed class SceneObject
     public GltfAssetReference? GltfAsset { get; set; }
     public GltfStaticMeshLod? StaticMeshLod { get; set; }
     public GltfCharacterSettings? CharacterSettings { get; set; }
+    public SceneBoxColliderComponent? BoxCollider { get; set; }
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }
     public WorldEntityPlacementComponent? WorldEntity { get; set; }
@@ -121,7 +145,8 @@ public sealed class SceneTemplateObjectBaseline
         WorldDoorComponent? door = null, bool hasDoorBaseline = false,
         WorldSpawnComponent? spawnPoint = null, bool hasSpawnPointBaseline = false,
         WorldEntityPlacementComponent? worldEntity = null, bool hasWorldEntityBaseline = false,
-        Guid? sourceSpawnPointId = null)
+        Guid? sourceSpawnPointId = null,
+        SceneBoxColliderComponent? boxCollider = null, bool hasBoxColliderBaseline = false)
     {
         if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
@@ -150,6 +175,8 @@ public sealed class SceneTemplateObjectBaseline
             throw new ArgumentException("A source spawn ID requires an available spawn baseline.", nameof(sourceSpawnPointId));
         if (!hasWorldEntityBaseline && worldEntity is not null)
             throw new ArgumentException("A world entity requires an available source baseline.", nameof(worldEntity));
+        if (!hasBoxColliderBaseline && boxCollider is not null)
+            throw new ArgumentException("A box collider requires an available source baseline.", nameof(boxCollider));
 
         SourceObjectId = sourceObjectId;
         Name = name;
@@ -171,6 +198,8 @@ public sealed class SceneTemplateObjectBaseline
         SourceSpawnPointId = sourceSpawnPointId;
         WorldEntity = worldEntity;
         HasWorldEntityBaseline = hasWorldEntityBaseline;
+        BoxCollider = boxCollider;
+        HasBoxColliderBaseline = hasBoxColliderBaseline;
     }
 
     public Guid SourceObjectId { get; }
@@ -193,6 +222,8 @@ public sealed class SceneTemplateObjectBaseline
     public Guid? SourceSpawnPointId { get; }
     public WorldEntityPlacementComponent? WorldEntity { get; }
     public bool HasWorldEntityBaseline { get; }
+    public SceneBoxColliderComponent? BoxCollider { get; }
+    public bool HasBoxColliderBaseline { get; }
 
     public Transform ToTransform() => new()
     {

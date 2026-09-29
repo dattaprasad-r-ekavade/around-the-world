@@ -125,6 +125,30 @@ public sealed class EditCharacterSettingsCommand : ISceneCommand
         scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
 }
 
+/// <summary>Changes or removes the persisted box collider on one scene object.</summary>
+public sealed class EditBoxColliderCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly SceneBoxColliderComponent? _before;
+    private readonly SceneBoxColliderComponent? _after;
+
+    public EditBoxColliderCommand(Guid objectId, SceneBoxColliderComponent? before,
+        SceneBoxColliderComponent? after)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        _objectId = objectId;
+        _before = before;
+        _after = after;
+    }
+
+    public void Apply(SceneGraph scene) => Require(scene, _objectId).BoxCollider = _after;
+
+    public void Revert(SceneGraph scene) => Require(scene, _objectId).BoxCollider = _before;
+
+    private static SceneObject Require(SceneGraph scene, Guid id) =>
+        scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
+}
+
 /// <summary>Changes an object's parent while preserving its world transform when it is representable as TRS.</summary>
 public sealed class ReparentSceneObjectCommand : ISceneCommand
 {
@@ -473,6 +497,7 @@ internal static class SceneObjectCopy
             GltfAsset = source.GltfAsset,
             StaticMeshLod = source.StaticMeshLod,
             CharacterSettings = CopyCharacterSettings(source.CharacterSettings),
+            BoxCollider = source.BoxCollider,
             Door = source.Door,
             ResetPolicy = source.ResetPolicy,
             WorldEntity = source.WorldEntity is null

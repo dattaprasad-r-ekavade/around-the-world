@@ -105,6 +105,32 @@ public sealed class SceneCommandHistoryTests
     }
 
     [Fact]
+    public void BoxColliderEditsUndoRedoAndDuplicatePreservesTheShape()
+    {
+        var original = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One);
+        var replacement = new SceneBoxColliderComponent(
+            new Vector3(0f, 1f, 0f), new Vector3(2f, 1f, 2f), isTrigger: true);
+        var item = new SceneObject(Guid.NewGuid(), "Trigger") { BoxCollider = original };
+        var scene = new SceneGraph();
+        scene.Add(item);
+        var history = new SceneCommandHistory();
+
+        history.Execute(scene, new EditBoxColliderCommand(item.Id, original, replacement));
+        Assert.Same(replacement, item.BoxCollider);
+        Assert.True(history.IsDirty);
+        Assert.True(history.Undo(scene));
+        Assert.Same(original, item.BoxCollider);
+        Assert.True(history.Redo(scene));
+        Assert.Same(replacement, item.BoxCollider);
+
+        var duplicate = SceneObjectDuplicator.CreateDuplicate(scene, item.Id);
+        Assert.NotEqual(item.Id, duplicate.Id);
+        Assert.Equal(replacement.Center, duplicate.BoxCollider!.Center);
+        Assert.Equal(replacement.Size, duplicate.BoxCollider.Size);
+        Assert.True(duplicate.BoxCollider.IsTrigger);
+    }
+
+    [Fact]
     public void TransformEditUndoesAndRedoesAndNewEditClearsRedo()
     {
         var id = Guid.NewGuid();

@@ -2760,3 +2760,27 @@ desktop computer-use runtime is available.
 
 Next: verify project opening and cell switching in the editor when desktop input is available; keep
 M1.1 and UX.1–UX.5 open until the complete authoring loop is observed.
+
+## M2.1 first collider data slice — 29 September 2026
+
+- Scene version 15 persists a validated local-space box collider center and positive size, plus an
+  `IsTrigger` flag. Version 1–14 scenes without collider data still load; older template baselines
+  treat the previously unavailable collider field as an empty source default.
+- `EditBoxColliderCommand` makes component replacement/removal undoable. Scene duplication and the
+  isolated Play-mode scene copy retain collider data.
+- Template placement records collider defaults. Explicit template updates refresh unchanged defaults,
+  retain local collider overrides, save the new baseline, and include collider state in undo/redo.
+- M2.1 remains **In progress**. Physics integration, trigger events, player/camera settings, input
+  actions, behavior assignment UI, and beginner action presets have not been implemented.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused scene-file, history and template tests | PASS — 46 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 347 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+
+Next: make persisted colliders visible and editable in the Inspector, then connect static colliders
+to runtime physics and implement trigger overlap events; continue to keep the full M2.1 gate open.

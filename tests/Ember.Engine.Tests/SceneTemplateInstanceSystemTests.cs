@@ -167,6 +167,66 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
+    public void TemplateUpdatePreservesColliderOverridesAndUndoRestoresColliderState()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Room")
+            {
+                BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, new Vector3(8f, 3f, 8f))
+            };
+            var prop = new SceneObject(Guid.NewGuid(), "Crate")
+            {
+                BoxCollider = new SceneBoxColliderComponent(new Vector3(0f, 0.5f, 0f), Vector3.One)
+            };
+            var source = new SceneGraph();
+            source.Add(root);
+            source.Add(prop);
+            source.SetParent(prop.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var mappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var instanceRoot = scene.Find(mappings[root.Id])!;
+            var instanceProp = scene.Find(mappings[prop.Id])!;
+            var localOverride = new SceneBoxColliderComponent(
+                new Vector3(0f, 1f, 0f), new Vector3(2f, 2f, 2f), isTrigger: true);
+            instanceRoot.BoxCollider = localOverride;
+
+            root.BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, new Vector3(10f, 4f, 10f));
+            var updatedPropCollider = new SceneBoxColliderComponent(
+                new Vector3(0f, 0.75f, 0f), new Vector3(1.5f, 1.5f, 1.5f));
+            prop.BoxCollider = updatedPropCollider;
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var history = new SceneCommandHistory();
+            var command = new UpdateSceneTemplateCommand(wrapper.Id, secondRevision);
+
+            history.Execute(scene, command);
+
+            Assert.Same(localOverride, instanceRoot.BoxCollider);
+            Assert.Equal(updatedPropCollider.Center, instanceProp.BoxCollider!.Center);
+            Assert.Equal(updatedPropCollider.Size, instanceProp.BoxCollider.Size);
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            Assert.Equal(updatedPropCollider.Size,
+                reopened.Find(mappings[prop.Id])!.BoxCollider!.Size);
+
+            Assert.True(history.Undo(scene));
+            Assert.Same(localOverride, instanceRoot.BoxCollider);
+            Assert.Equal(new Vector3(1f), instanceProp.BoxCollider!.Size);
+            Assert.True(history.Redo(scene));
+            Assert.Same(localOverride, instanceRoot.BoxCollider);
+            Assert.Equal(updatedPropCollider.Size, instanceProp.BoxCollider!.Size);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void ExplicitUpdatePreservesNameAndTransformOverridesAndCanBeUndone()
     {
         var path = TemporaryTemplatePath();
@@ -382,7 +442,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(45f, overriddenLod.ExitFarDistance);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(14, SceneFile.CurrentVersion);
+            Assert.Equal(15, SceneFile.CurrentVersion);
             var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .ToDictionary(baseline => baseline.SourceObjectId);
             Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
@@ -497,7 +557,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(14, SceneFile.CurrentVersion);
+            Assert.Equal(15, SceneFile.CurrentVersion);
             var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
             Assert.Equal("Walk", characterBaseline.ClipName);
@@ -907,6 +967,7 @@ public sealed class SceneTemplateInstanceSystemTests
                 baseline.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
                 RemoveVersionFourteenWorldBaselines(baseline.AsObject());
+                RemoveVersionFifteenBoxColliderBaselines(baseline.AsObject());
             }
 
             var migrated = SceneFile.FromJson(versionNineJson.ToJsonString());
@@ -992,6 +1053,7 @@ public sealed class SceneTemplateInstanceSystemTests
                 baseline.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
                 RemoveVersionFourteenWorldBaselines(baseline.AsObject());
+                RemoveVersionFifteenBoxColliderBaselines(baseline.AsObject());
             }
             var migrated = SceneFile.FromJson(versionTenJson.ToJsonString());
             var migratedWrapper = migrated.Find(wrapper.Id)!;
@@ -1063,6 +1125,7 @@ public sealed class SceneTemplateInstanceSystemTests
                 baseline!.AsObject().Remove("HasCharacterSettingsBaseline");
                 baseline.AsObject().Remove("CharacterSettingsBaseline");
                 RemoveVersionFourteenWorldBaselines(baseline.AsObject());
+                RemoveVersionFifteenBoxColliderBaselines(baseline.AsObject());
             }
             var migrated = SceneFile.FromJson(versionElevenJson.ToJsonString());
             var migratedWrapper = migrated.Find(wrapper.Id)!;
@@ -1098,6 +1161,12 @@ public sealed class SceneTemplateInstanceSystemTests
         baseline.Remove("SourceSpawnPointId");
         baseline.Remove("HasWorldEntityBaseline");
         baseline.Remove("WorldEntity");
+    }
+
+    private static void RemoveVersionFifteenBoxColliderBaselines(JsonObject baseline)
+    {
+        baseline.Remove("HasBoxColliderBaseline");
+        baseline.Remove("BoxCollider");
     }
 
     private static SceneGraph CreateSourceHierarchy(out Guid rootId, out Guid childId,

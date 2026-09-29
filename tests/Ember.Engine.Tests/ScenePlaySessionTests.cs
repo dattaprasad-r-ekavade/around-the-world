@@ -88,18 +88,23 @@ public sealed class ScenePlaySessionTests
         var authored = new SceneGraph();
         var parentId = Guid.NewGuid();
         var childId = Guid.NewGuid();
+        var authoredCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One);
         authored.Add(new SceneObject(parentId, "Parent")
         {
             Transform = new Transform { Position = new Vector3(1f, 2f, 3f) }
         });
         authored.Add(new SceneObject(childId, "Child")
         {
-            CharacterSettings = new GltfCharacterSettings { ClipName = "Walk", IsPlaying = true }
+            CharacterSettings = new GltfCharacterSettings { ClipName = "Walk", IsPlaying = true },
+            BoxCollider = authoredCollider
         });
         authored.SetParent(childId, parentId);
 
         var session = new ScenePlaySession(authored);
         var runtime = session.RuntimeScene;
+        Assert.Same(authoredCollider, runtime.Find(childId)!.BoxCollider);
+        runtime.Find(childId)!.BoxCollider = new SceneBoxColliderComponent(
+            new Vector3(0f, 1f, 0f), new Vector3(2f, 2f, 2f));
         runtime.Find(parentId)!.Transform.Position = new Vector3(20f, 0f, 0f);
         Assert.True(runtime.Remove(childId));
         session.Dispose();
@@ -109,6 +114,7 @@ public sealed class ScenePlaySessionTests
         Assert.NotNull(authored.Find(childId));
         Assert.Null(runtime.Find(childId));
         Assert.Equal("Walk", authored.Find(childId)!.CharacterSettings!.ClipName);
+        Assert.Same(authoredCollider, authored.Find(childId)!.BoxCollider);
     }
 
     [Fact]
