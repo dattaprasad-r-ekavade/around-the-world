@@ -141,6 +141,12 @@ Feedback recognizes the creation and explains what it did; it should not grade a
 quality. Optional celebrations, a workshop setting and later narrative can build on this.
 No XP requirement, timer, forced tutorial, daily reward or unlock should gate core tools.
 
+This mission grows into career mode (see [CURRICULUM.md](CURRICULUM.md)): nine stages from
+a first game to an online world. Career mode may reveal tools stage by stage and use story
+deadlines and budgets, because that is the game. Free Create always exposes every finished
+tool, and both modes open the same projects. Story deadlines change outcomes; they never
+block editing or delete work.
+
 Mission steps must use the same authoring command/service layer as normal editor actions,
 including undo, validation, recovery and saved project data. Missions are declarative
 lesson data with observable completion conditions; do not introduce a second engine or

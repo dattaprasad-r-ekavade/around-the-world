@@ -16,6 +16,15 @@ See [CREATOR_EXPERIENCE.md](CREATOR_EXPERIENCE.md) for the layout, language, lea
 measurement targets, and designer-game direction. It defines acceptance; implementation and
 verification status are recorded below.
 
+**Pitch: Ember is a game about becoming a game developer, and its tools are a real engine.**
+Career mode takes the player through nine stages: My First Game, Game Jam Weekend, a first
+indie-store release, a large-store launch, working with a friend, an indie studio, a
+specialist role in an AA studio, a planning role in a AAA studio, and an online world.
+Each stage explains its basics, then adds new tools and people. Free Create exposes every
+finished tool without progression. [CURRICULUM.md](CURRICULUM.md) defines the stages,
+missions and transfer checks. The L track below builds the shared learning foundation
+(lesson data, visual rules, C# behaviours); the C track builds each career stage.
+
 Build a compact Windows 3D creation tool in which one person can create or generate a
 scene, refine it visually, and use that same scene in a playable game or a cutscene.
 A usable engine means a repeatable create → edit → preview → save → reopen → deliver
@@ -53,7 +62,7 @@ adapters; they are not prerequisites for the local tool.
 ## Status and evidence policy
 
 M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.1, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
-M2.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
+M2.2, L.1–L.5, C.1–C.9 and M3 onward remain **Not started** against their new acceptance criteria. Existing
 components are reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
@@ -261,6 +270,49 @@ Gate: an editor-authored 3–5 minute interaction demo starts, plays, saves/relo
 small state, and exits from a relocated package. No sample-specific source wiring is
 needed for the demonstrated workflow. Full RPG systems are not this gate. Include the optional UX.6 designer mission using the same saved project and editor commands.
 
+## L — Learning path from presets to code
+
+Dependency: L.1 depends on UX.4; L.2 depends on M2.1 and L.1; L.3 depends on L.2 and M2.2;
+L.4 and L.5 depend on L.3. The concept order, missions and transfer checks are in
+[CURRICULUM.md](CURRICULUM.md). The L track extends the teaching goal beyond action presets,
+so learners can progress to semi-professional skills. It does not replace M1–M5 gates, and
+a mission becomes available only after its feature gate passes.
+
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| L.1 | Declarative lesson and mission data. | Move the first-creation lesson from code into bundled versioned data with steps, "Why?" text, a hint ladder, completion conditions over scene state, play events, command history and saved files, plus a transfer task. The existing lesson behaves the same from data. Invalid lesson data reports the file and step without affecting the project. A new Tier 1 mission is added without engine code changes. | Not started |
+| L.2 | Visual When → If → Do rules. | Author event, condition and action blocks with variables and timers in the Inspector, through normal undoable commands; save/reopen and run them through the shared runtime. A rule trace in Play shows which rules fired and why others did not. Existing Collect/ReachGoal presets are expressible as rules. Tier 3 missions 3.1–3.5 are playable and pass novice transfer checks. | Not started |
+| L.3 | C# behaviours with reload in Play. | Create a project behaviour from the editor, edit it in an in-editor or external editor, and reload it without restarting the editor. Compile and run-time errors name the file, line and owning object in plain language. Public properties appear in the Inspector. A visual rule can be shown as equivalent C#. Behaviours package with M2.3 output. Custom code cannot corrupt authored data during Play. | Not started |
+| L.4 | Programming puzzles. | Ship at least three code missions with fixed goals checked from game state, and optional measures (time, steps or code size) shown as feedback, never as locks. A learner who solves one puzzle solves a different one without hints. | Not started |
+| L.5 | Concept progress view. | Show learned concepts and creations from the project-local progress record, with links to replay any mission. No tool is hidden or disabled by progress. | Not started |
+
+Gate: an observed learner moves one interaction from preset to visual rule to C#
+behaviour in the same project, explains the rule at each level, and makes a different
+behaviour in code without step-by-step hints.
+
+## C — Career mode stages
+
+Dependency: C.1 depends on L.1 and the M2 gate. Each later stage depends on the previous
+stage's gate and the features listed for its missions in [CURRICULUM.md](CURRICULUM.md).
+Career mode reveals tools by stage; Free Create stays ungated and opens the same projects.
+Stages 1–2 are the first-release target. Stages 3–4 follow. Stages 5–9 are post-release
+expansions and each needs a playable prototype before full content.
+
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| C.1 | Career shell and Stage 1, My First Game. | Career save, stage briefing and debrief, staged tool reveal and Stage 1 missions run from L.1 data. A novice completes Stage 1 and its transfer checks (UX.5 method). Switching to Free Create shows all tools and opens the same project unchanged. | Not started |
+| C.2 | Stage 2, Game Jam Weekend. | Theme draw, scope picker, story-time budget and playtest recorder. Jam ratings react only to measurable results (completable, rule clarity from test data, theme tag). Missing the story deadline changes the outcome but never blocks editing. Needs L.2. | Not started |
+| C.3 | Stage 3, first indie-store release. | HUD/menu builder, runtime save API, store page editor and simulated reviews tied to crashes, completion rate and store-page accuracy. The stage project packages and runs outside the checkout. Needs L.3 and M2.3. | Not started |
+| C.4 | Stage 4, large-store launch. | Profiler panel, options and rebinding builder, achievements, QA checklist and simulated sales tied to performance, bugs and content. Needs M3 and M4. | Not started |
+| C.5 | Stage 5, co-op with a friend. | Named checkpoints, change packages, scene diff and three-way merge with conflict resolution, and review comments. Works with a real second person and with a simulated collaborator. Concepts map to Git terms. | Not started |
+| C.6 | Stage 6, indie studio. | Task board, milestones, bug tracker and simulated teammates who deliver pre-authored content from the player's specs. Spec gaps produce visible, explained gaps in the delivery. | Not started |
+| C.7 | Stage 7, AA specialist. | At least two discipline tracks, each with its own missions and handoffs to simulated colleagues. Replaying with another track reuses the same studio project. | Not started |
+| C.8 | Stage 8, AAA planning. | Design document editor, UML class/sequence/state diagrams, dependency planner and a simulated production run that assembles a playable result from pre-built modules. Plan gaps appear as specific explained defects. Prototype one system before full stage content. | Not started |
+| C.9 | Stage 9, online world. | Local network simulator with several clients, latency and loss, server-authority checks, persistence and economy tools, reusing Ember.Rpg quests and world streaming. No real online service is required. | Not started |
+
+Gate for each stage: observed novices complete the stage project and its transfer checks,
+and most choose to continue to the next stage.
+
 ## M3 — Author and export cutscenes
 
 Dependency: M1; runtime-triggered sequence proof also depends on M2.2.
@@ -315,10 +367,10 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 5. Append evidence to ENGINE_PROGRESS.md and update only the current milestone status.
 6. Preserve user content; do not commit, push or publish unless requested.
 
-## After the first release — designer-game presentation experiment
+## After the first release — career expansion
 
-Use UX.6 feedback to explore an in-world workshop and a series of optional creation
-missions. Reuse editor commands, project formats and runtime; keep direct editing
-available and teach transferable game-development concepts. Validate one playable
-creator session before committing to a campaign, economy, social platform or immersive
-UI rewrite. Those larger features are not required for the lightweight first release.
+Use UX.6 and C.1–C.2 feedback before building later stages. Reuse editor commands, project
+formats and runtime; keep Free Create available and teach transferable game-development
+concepts. Prototype each later stage (C.5–C.9) with one playable session before writing its
+full content. Real online services, social features and an immersive UI rewrite are not
+required for the first release.
