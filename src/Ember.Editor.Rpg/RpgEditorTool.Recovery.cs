@@ -30,7 +30,11 @@ public sealed partial class RpgEditorTool
     private string? _recoveryReviewActivity;
     private string? _recoveryReviewProjectRoot;
     private string? _recoveryReviewDirectory;
+    private string? _recoveryReviewWorldManifestPath;
+    private string? _recoveryReviewRpgContentPath;
     private string? _recoveryStagingDirectory;
+    private string? _recoveryStagingWorldManifestPath;
+    private string? _recoveryStagingRpgContentPath;
     private float _recoveryAutosaveElapsedSeconds;
     private string? _observedWorldManifestPath;
     private WorldManifest? _recoveryWorldManifest;
@@ -163,8 +167,16 @@ public sealed partial class RpgEditorTool
 
     private void EnsureRecoveryWorldManifest(string? worldManifestPath, WorldManifest? worldManifest)
     {
-        if (SamePath(_observedWorldManifestPath, worldManifestPath)
+        var targetPathChanged = !SamePath(_observedWorldManifestPath, worldManifestPath);
+        if (!targetPathChanged
             && ReferenceEquals(_recoveryWorldManifest, worldManifest)) return;
+        if (targetPathChanged)
+        {
+            var reviewRunning = _recoveryReviewTask is not null;
+            if (reviewRunning) CancelRecoveryReview();
+            if (_recoveryStaging is not null)
+                DiscardReviewedRecovery("The active world changed; its reviewed recovery was discarded.");
+        }
         _observedWorldManifestPath = worldManifestPath;
         _recoveryAutosaveElapsedSeconds = 0f;
         var pathMatches = worldManifest is not null && !string.IsNullOrWhiteSpace(worldManifestPath)
@@ -223,7 +235,11 @@ public sealed partial class RpgEditorTool
             return;
         }
 
-        _recoveryStaging = null;
+        if (_recoveryStaging is not null)
+        {
+            DiscardReviewedRecovery("The previous recovery staging was removed before starting a new review.");
+            if (_recoveryStaging is not null) return;
+        }
         _recoveryCanApply = false;
         _recoveryReport = string.Empty;
         Interlocked.Exchange(ref _recoveryReviewProgress, null);
@@ -231,6 +247,8 @@ public sealed partial class RpgEditorTool
         {
             var manifestPath = Path.GetFullPath(context.WorldManifestPath);
             var rpgContentPath = Path.GetFullPath(_rpgContentPath);
+            _recoveryReviewWorldManifestPath = manifestPath;
+            _recoveryReviewRpgContentPath = rpgContentPath;
             _recoveryReviewProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(manifestPath, rpgContentPath);
             _recoveryReviewDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(manifestPath, rpgContentPath);
             var cancellation = new CancellationTokenSource();
@@ -263,6 +281,8 @@ public sealed partial class RpgEditorTool
             _recoveryReviewCancellation = null;
             _recoveryReviewProjectRoot = null;
             _recoveryReviewDirectory = null;
+            _recoveryReviewWorldManifestPath = null;
+            _recoveryReviewRpgContentPath = null;
             Interlocked.Exchange(ref _recoveryReviewActivity, null);
             _recoveryStatus = $"Could not review recovery: {exception.Message}";
         }
@@ -290,6 +310,8 @@ public sealed partial class RpgEditorTool
                 staging = null;
                 _recoveryStaging = null;
                 _recoveryStagingDirectory = null;
+                _recoveryStagingWorldManifestPath = null;
+                _recoveryStagingRpgContentPath = null;
                 _recoveryCanApply = false;
                 _recoveryReport = string.Empty;
                 _recoveryStatus = "Recovery review canceled. Staged files were removed.";
@@ -302,7 +324,10 @@ public sealed partial class RpgEditorTool
                 ?? throw new InvalidDataException("The recovery review completed without a validation result.");
             var activeProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(
                 context.WorldManifestPath ?? string.Empty, _rpgContentPath);
-            if (_recoveryReviewProjectRoot is not { } requestedProjectRoot
+            var reviewTargetMatches = RecoveryTargetsMatch(
+                _recoveryReviewWorldManifestPath, _recoveryReviewRpgContentPath,
+                context.WorldManifestPath, _rpgContentPath);
+            if (!reviewTargetMatches || _recoveryReviewProjectRoot is not { } requestedProjectRoot
                 || !SameDirectory(staging.ProjectRoot, requestedProjectRoot)
                 || !SameDirectory(staging.ProjectRoot, activeProjectRoot))
             {
@@ -310,14 +335,20 @@ public sealed partial class RpgEditorTool
                 staging = null;
                 _recoveryStaging = null;
                 _recoveryStagingDirectory = null;
+                _recoveryStagingWorldManifestPath = null;
+                _recoveryStagingRpgContentPath = null;
                 _recoveryCanApply = false;
                 _recoveryReport = string.Empty;
-                _recoveryStatus = "The active project changed during recovery review; staged files were discarded.";
+                _recoveryStatus = reviewTargetMatches
+                    ? "The active project changed during recovery review; staged files were discarded."
+                    : "The active world or RPG content changed during recovery review; staged files were discarded.";
                 return;
             }
 
             _recoveryStaging = staging;
             _recoveryStagingDirectory = _recoveryReviewDirectory;
+            _recoveryStagingWorldManifestPath = _recoveryReviewWorldManifestPath;
+            _recoveryStagingRpgContentPath = _recoveryReviewRpgContentPath;
             _recoveryCanApply = validation.IsValid;
             _recoveryReport = validation.IsValid
                 ? "Validation passed. This snapshot is ready to apply."
@@ -329,6 +360,9 @@ public sealed partial class RpgEditorTool
         catch (OperationCanceledException)
         {
             _recoveryStaging = null;
+            _recoveryStagingDirectory = null;
+            _recoveryStagingWorldManifestPath = null;
+            _recoveryStagingRpgContentPath = null;
             _recoveryCanApply = false;
             _recoveryReport = string.Empty;
             _recoveryStatus = "Recovery review canceled. Partial staging files were removed.";
@@ -342,6 +376,9 @@ public sealed partial class RpgEditorTool
                 catch (Exception cleanupError) { message += $" Staging cleanup failed: {cleanupError.Message}"; }
             }
             _recoveryStaging = null;
+            _recoveryStagingDirectory = null;
+            _recoveryStagingWorldManifestPath = null;
+            _recoveryStagingRpgContentPath = null;
             _recoveryCanApply = false;
             _recoveryReport = string.Empty;
             _recoveryStatus = $"Could not review recovery: {message}";
@@ -353,6 +390,8 @@ public sealed partial class RpgEditorTool
             _recoveryReviewCancellation = null;
             _recoveryReviewProjectRoot = null;
             _recoveryReviewDirectory = null;
+            _recoveryReviewWorldManifestPath = null;
+            _recoveryReviewRpgContentPath = null;
             Interlocked.Exchange(ref _recoveryReviewActivity, null);
             Interlocked.Exchange(ref _recoveryReviewProgress, null);
         }
@@ -362,6 +401,12 @@ public sealed partial class RpgEditorTool
     {
         try
         {
+            if (!RecoveryTargetsMatch(_recoveryStagingWorldManifestPath, _recoveryStagingRpgContentPath,
+                    context.WorldManifestPath, _rpgContentPath))
+            {
+                DiscardReviewedRecovery("The active world or RPG content changed; the reviewed recovery was discarded.");
+                return;
+            }
             if (context.ScenePath is null)
                 throw new InvalidOperationException("Save the active scene before applying recovery.");
             var relativeScenePath = Path.GetRelativePath(Path.GetFullPath(staging.ProjectRoot),
@@ -380,6 +425,8 @@ public sealed partial class RpgEditorTool
             DeleteRecoveryStaging(staging, _recoveryStagingDirectory ?? _recoveryReviewDirectory);
             _recoveryStaging = null;
             _recoveryStagingDirectory = null;
+            _recoveryStagingWorldManifestPath = null;
+            _recoveryStagingRpgContentPath = null;
             _recoveryReport = string.Empty;
             _recoveryCanApply = false;
             _rpgContent = null;
@@ -395,15 +442,8 @@ public sealed partial class RpgEditorTool
     {
         if (string.Equals(_loadedProjectFilePath, projectFilePath, StringComparison.OrdinalIgnoreCase)) return;
         CancelRecoveryReview();
-        if (_recoveryStaging is { } staging)
-        {
-            try { DeleteRecoveryStaging(staging, _recoveryStagingDirectory ?? _recoveryReviewDirectory); }
-            catch (Exception exception) { _recoveryStatus = $"Could not remove old recovery staging: {exception.Message}"; }
-        }
-        _recoveryStaging = null;
-        _recoveryStagingDirectory = null;
-        _recoveryCanApply = false;
-        _recoveryReport = string.Empty;
+        if (_recoveryStaging is not null)
+            DiscardReviewedRecovery("The project changed; its reviewed recovery was discarded.");
         _recoveryAutosaveElapsedSeconds = 0f;
     }
 
@@ -434,6 +474,38 @@ public sealed partial class RpgEditorTool
     private static bool SameDirectory(string first, string second) =>
         string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)),
             Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
+
+    internal static bool RecoveryTargetsMatch(string? reviewedWorldManifestPath, string? reviewedRpgContentPath,
+        string? activeWorldManifestPath, string? activeRpgContentPath) =>
+        !string.IsNullOrWhiteSpace(reviewedWorldManifestPath)
+        && !string.IsNullOrWhiteSpace(reviewedRpgContentPath)
+        && !string.IsNullOrWhiteSpace(activeWorldManifestPath)
+        && !string.IsNullOrWhiteSpace(activeRpgContentPath)
+        && SamePath(reviewedWorldManifestPath, activeWorldManifestPath)
+        && SamePath(reviewedRpgContentPath, activeRpgContentPath);
+
+    private void DiscardReviewedRecovery(string reason)
+    {
+        _recoveryCanApply = false;
+        _recoveryReport = string.Empty;
+        if (_recoveryStaging is { } staging)
+        {
+            try
+            {
+                DeleteRecoveryStaging(staging, _recoveryStagingDirectory ?? _recoveryReviewDirectory);
+                _recoveryStaging = null;
+                _recoveryStagingDirectory = null;
+                _recoveryStagingWorldManifestPath = null;
+                _recoveryStagingRpgContentPath = null;
+            }
+            catch (Exception exception)
+            {
+                _recoveryStatus = $"{reason} Staging cleanup failed: {exception.Message}";
+                return;
+            }
+        }
+        _recoveryStatus = reason;
+    }
 
     private static void DeleteRecoveryStaging(AuthoredProjectRecoveryStaging staging, string? recoveryDirectory)
     {
