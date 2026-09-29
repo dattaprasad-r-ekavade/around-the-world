@@ -12,6 +12,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Threading;
+using System.Threading.Tasks;
 using NumericsVector2 = System.Numerics.Vector2;
 using NumericsVector3 = System.Numerics.Vector3;
 using NumericsVector4 = System.Numerics.Vector4;
@@ -34,6 +36,9 @@ internal delegate string RecoveryApplyAction(AuthoredProjectRecoveryStaging stag
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed partial class CharacterStudioEditorUi : IDisposable
 {
+    private sealed record RecoveryReviewResult(AuthoredProjectRecoveryStaging Staging,
+        AuthoredProjectValidationResult? Validation, Exception? ValidationError);
+
     private enum TransformTool
     {
         Move,
@@ -114,6 +119,12 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private string _recoveryStatus = "No recovery snapshot reviewed.";
     private string _recoveryReport = string.Empty;
     private bool _recoveryCanApply;
+    private Task<RecoveryReviewResult>? _recoveryReviewTask;
+    private CancellationTokenSource? _recoveryReviewCancellation;
+    private AuthoredProjectRecoveryProgress? _recoveryReviewProgress;
+    private string? _recoveryReviewActivity;
+    private string? _recoveryReviewProjectRoot;
+    private string? _recoveryReviewDirectory;
     private float _recoveryAutosaveElapsedSeconds;
     private Guid? _selectedWorldCellId;
     private int _exteriorCellX;
@@ -356,6 +367,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public void OnProjectOpened(string projectRoot, string? worldManifestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        CancelRecoveryReview();
         _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         _worldManifest = null;
         _worldManifestPath = worldManifestPath is null
@@ -388,6 +400,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Vector2 logicalMouse, SceneGraph scene, bool suppressMouseInput = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(CharacterStudioEditorUi));
+        PollRecoveryReview();
         var viewport = _renderer.Viewport;
         _io.DisplaySize = new NumericsVector2(_logicalWidth, _logicalHeight);
         var framebufferScale = MathF.Min(
@@ -1470,15 +1483,19 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             return;
         }
 
+        var recoveryReviewRunning = _recoveryReviewTask is not null;
+        if (recoveryReviewRunning) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("##worldManifestPath", "Path to world.json", ref _worldManifestPath, 1024);
         if (ImGui.Button("Open manifest")) LoadWorldManifest();
         ImGui.SameLine();
         if (ImGui.Button("Create world")) CreateWorldManifest();
         if (ImGui.Button("Validate project")) ValidateAuthoredProject();
+        if (recoveryReviewRunning) ImGui.EndDisabled();
         DrawProjectValidationReport();
         ImGui.Separator();
         ImGui.Text("Authored recovery");
+        ImGui.BeginDisabled(recoveryReviewRunning);
         if (ImGui.Button("Autosave now"))
         {
             try
@@ -1491,13 +1508,32 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 _recoveryStatus = $"Autosave failed: {exception.Message}";
             }
         }
+        ImGui.EndDisabled();
         ImGui.SameLine();
-        if (ImGui.Button("Review recovery")) ReviewRecovery();
+        if (!recoveryReviewRunning)
+        {
+            if (ImGui.Button("Review recovery")) StartRecoveryReview();
+        }
+        else
+        {
+            var cancelRequested = _recoveryReviewCancellation?.IsCancellationRequested == true;
+            ImGui.BeginDisabled(cancelRequested);
+            if (ImGui.Button(cancelRequested ? "Canceling recovery…" : "Cancel recovery"))
+                CancelRecoveryReview();
+            ImGui.EndDisabled();
+            ImGui.TextDisabled(Volatile.Read(ref _recoveryReviewActivity) ?? "Restoring authored files…");
+            if (Volatile.Read(ref _recoveryReviewProgress) is { TotalFiles: > 0 } progress)
+            {
+                var fraction = Math.Clamp(progress.CompletedFiles / (float)progress.TotalFiles, 0f, 1f);
+                ImGui.ProgressBar(fraction, new NumericsVector2(-1f, 0f));
+                ImGui.TextDisabled($"Restoring {progress.CompletedFiles} of {progress.TotalFiles}: {Path.GetFileName(progress.CurrentRelativePath)}");
+            }
+        }
         ImGui.TextWrapped(_recoveryStatus);
         if (_recoveryStaging is not null)
         {
             ImGui.TextWrapped($"Reviewed snapshot {_recoveryStaging.SnapshotId:N} in staging.");
-            ImGui.BeginDisabled(!_recoveryCanApply);
+            ImGui.BeginDisabled(!_recoveryCanApply || recoveryReviewRunning);
             if (ImGui.Button("Apply reviewed recovery"))
             {
                 try
@@ -1612,16 +1648,106 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         }
     }
 
-    private void ReviewRecovery()
+    private void StartRecoveryReview()
     {
+        if (_recoveryReviewTask is not null) return;
+
+        _recoveryStaging = null;
+        _recoveryCanApply = false;
+        _recoveryReport = string.Empty;
+        Interlocked.Exchange(ref _recoveryReviewProgress, null);
         try
         {
-            var recoveryDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
+            var manifestPath = Path.GetFullPath(_worldManifestPath);
+            var rpgContentPath = Path.GetFullPath(_rpgContentPath);
+            _recoveryReviewProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(
+                manifestPath, rpgContentPath);
+            _recoveryReviewDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
+                manifestPath, rpgContentPath);
+            var cancellation = new CancellationTokenSource();
+            _recoveryReviewCancellation = cancellation;
+            Interlocked.Exchange(ref _recoveryReviewActivity, "Restoring authored files…");
+            var progress = new InlineRecoveryProgress(value =>
+                Interlocked.Exchange(ref _recoveryReviewProgress, value));
+            _recoveryStatus = "Preparing recovery review…";
+            var recoveryDirectory = _recoveryReviewDirectory
+                ?? throw new InvalidOperationException("The recovery directory could not be resolved.");
+            _recoveryReviewTask = Task.Run(async () =>
+            {
+                var staging = await AuthoredProjectRecoveryService.RestoreLatestToStagingAsync(
+                    manifestPath, rpgContentPath, recoveryDirectory, cancellation.Token, progress)
+                    .ConfigureAwait(false);
+                Interlocked.Exchange(ref _recoveryReviewActivity, "Validating restored project…");
+                try
+                {
+                    var validation = AuthoredProjectValidator.Validate(
+                        staging.WorldManifestPath, staging.RpgContentPath);
+                    return new RecoveryReviewResult(staging, validation, null);
+                }
+                catch (Exception exception)
+                {
+                    return new RecoveryReviewResult(staging, null, exception);
+                }
+            }, CancellationToken.None);
+        }
+        catch (Exception exception)
+        {
+            _recoveryReviewCancellation?.Dispose();
+            _recoveryReviewCancellation = null;
+            _recoveryReviewProjectRoot = null;
+            _recoveryReviewDirectory = null;
+            Interlocked.Exchange(ref _recoveryReviewActivity, null);
+            _recoveryStatus = $"Could not review recovery: {exception.Message}";
+        }
+    }
+
+    private void CancelRecoveryReview()
+    {
+        try { _recoveryReviewCancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
+    }
+
+    private void PollRecoveryReview()
+    {
+        var task = _recoveryReviewTask;
+        if (task is null || !task.IsCompleted) return;
+
+        AuthoredProjectRecoveryStaging? staging = null;
+        try
+        {
+            var review = task.GetAwaiter().GetResult();
+            staging = review.Staging;
+            if (_recoveryReviewCancellation?.IsCancellationRequested == true)
+            {
+                DeleteRecoveryStaging(staging, _recoveryReviewDirectory);
+                staging = null;
+                _recoveryStaging = null;
+                _recoveryCanApply = false;
+                _recoveryReport = string.Empty;
+                _recoveryStatus = "Recovery review canceled. Staged files were removed.";
+                return;
+            }
+
+            if (review.ValidationError is not null)
+                throw new InvalidDataException("The staged recovery could not be validated.", review.ValidationError);
+            var validation = review.Validation
+                ?? throw new InvalidDataException("The recovery review completed without a validation result.");
+            var activeProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(
                 _worldManifestPath, _rpgContentPath);
-            _recoveryStaging = AuthoredProjectRecoveryService.RestoreLatestToStaging(
-                _worldManifestPath, _rpgContentPath, recoveryDirectory);
-            var validation = AuthoredProjectValidator.Validate(
-                _recoveryStaging.WorldManifestPath, _recoveryStaging.RpgContentPath);
+            if (_recoveryReviewProjectRoot is not { } requestedProjectRoot
+                || !SameDirectory(staging.ProjectRoot, requestedProjectRoot)
+                || !SameDirectory(staging.ProjectRoot, activeProjectRoot))
+            {
+                DeleteRecoveryStaging(staging, _recoveryReviewDirectory);
+                staging = null;
+                _recoveryStaging = null;
+                _recoveryCanApply = false;
+                _recoveryReport = string.Empty;
+                _recoveryStatus = "The active project changed during recovery review; staged files were discarded.";
+                return;
+            }
+
+            _recoveryStaging = staging;
             _recoveryCanApply = validation.IsValid;
             _recoveryReport = validation.IsValid
                 ? "Validation passed. This snapshot is ready to apply."
@@ -1630,13 +1756,60 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 ? "Recovery staged and validated."
                 : $"Recovery staged with {validation.Diagnostics.Count} validation issue(s); apply is disabled.";
         }
-        catch (Exception exception)
+        catch (OperationCanceledException)
         {
             _recoveryStaging = null;
             _recoveryCanApply = false;
             _recoveryReport = string.Empty;
-            _recoveryStatus = $"Could not review recovery: {exception.Message}";
+            _recoveryStatus = "Recovery review canceled. Partial staging files were removed.";
         }
+        catch (Exception exception)
+        {
+            var message = exception.Message;
+            if (staging is not null)
+            {
+                try { DeleteRecoveryStaging(staging, _recoveryReviewDirectory); }
+                catch (Exception cleanupError) { message += $" Staging cleanup failed: {cleanupError.Message}"; }
+            }
+            _recoveryStaging = null;
+            _recoveryCanApply = false;
+            _recoveryReport = string.Empty;
+            _recoveryStatus = $"Could not review recovery: {message}";
+        }
+        finally
+        {
+            _recoveryReviewTask = null;
+            _recoveryReviewCancellation?.Dispose();
+            _recoveryReviewCancellation = null;
+            _recoveryReviewProjectRoot = null;
+            _recoveryReviewDirectory = null;
+            Interlocked.Exchange(ref _recoveryReviewActivity, null);
+            Interlocked.Exchange(ref _recoveryReviewProgress, null);
+        }
+    }
+
+    private static bool SameDirectory(string first, string second) =>
+        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)),
+            Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
+
+    private static void DeleteRecoveryStaging(AuthoredProjectRecoveryStaging staging, string? recoveryDirectory)
+    {
+        if (string.IsNullOrWhiteSpace(recoveryDirectory))
+            throw new InvalidOperationException("The recovery staging directory is unavailable for cleanup.");
+        var stagingParent = Path.GetFullPath(Path.Combine(recoveryDirectory, "staging"));
+        var stagingRoot = Path.GetFullPath(staging.StagingRoot);
+        var relative = Path.GetRelativePath(stagingParent, stagingRoot);
+        if (Path.IsPathRooted(relative) || relative is "." or ".."
+            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            throw new InvalidDataException("Recovery staging cleanup path escapes its staging directory.");
+        if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true);
+    }
+
+    private sealed class InlineRecoveryProgress(Action<AuthoredProjectRecoveryProgress> report)
+        : IProgress<AuthoredProjectRecoveryProgress>
+    {
+        public void Report(AuthoredProjectRecoveryProgress value) => report(value);
     }
 
     private void MaybeAutosaveAuthoredProject(SceneGraph scene, float elapsedSeconds)
@@ -2570,6 +2743,27 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        CancelRecoveryReview();
+        if (_recoveryReviewTask is { } recoveryTask)
+        {
+            try
+            {
+                var review = recoveryTask.GetAwaiter().GetResult();
+                DeleteRecoveryStaging(review.Staging, _recoveryReviewDirectory);
+            }
+            catch (OperationCanceledException) { }
+            catch (Exception exception)
+            {
+                Console.Error.WriteLine($"Recovery review cleanup during editor shutdown failed: {exception}");
+            }
+        }
+        _recoveryReviewCancellation?.Dispose();
+        _recoveryReviewCancellation = null;
+        _recoveryReviewTask = null;
+        _recoveryReviewDirectory = null;
+        _recoveryReviewProjectRoot = null;
+        Interlocked.Exchange(ref _recoveryReviewActivity, null);
+        Interlocked.Exchange(ref _recoveryReviewProgress, null);
         _renderer.Dispose();
         ImGui.DestroyContext(_context);
     }

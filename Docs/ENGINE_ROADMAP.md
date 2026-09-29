@@ -111,9 +111,10 @@ Dependency: none. Prioritize this before adding features.
 | M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | **Passed** |
 | M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add [Windows build/CPU-test CI](../.github/workflows/windows-engine.yml) and a documented [graphics/manual gate](MANUAL_GRAPHICS_GATE.md); keep RPG checks separate. | **In progress** |
 
-Recovery staging now has a cancellable asynchronous API that reports file progress and removes a
-partially written staging tree when canceled. CharacterStudio's recovery review still calls the
-synchronous wrapper, so visible progress/cancel controls and their live workflow remain open.
+Recovery staging has a cancellable asynchronous API with file progress and cleanup. CharacterStudio's
+recovery review now runs staging and validation off the render loop, displays progress, and offers
+Cancel. It cancels when a project changes, verifies project identity before enabling Apply, and removes
+unreviewed staging when the editor closes. Visible cancel/apply/close/reopen interaction remains open.
 
 M0.3 reference budgets apply only to CharacterStudio's paired-Fox scene on the named
 reference PC (Windows 10.0.26200, .NET 9.0.7, Intel UHD Graphics, 1280x720). They are

@@ -2896,5 +2896,31 @@ identity before exposing the beginner What happens? action cards.
 | Release solution build | PASS — 0 warnings, 0 errors |
 | RPG content save/load check | PASS — `[OK] save then load equals original` |
 
-Next: expose the async restore progress and cancel action in the recovery review UI, then verify cancel,
-review, apply and close/reopen behavior through the visible editor workflow.
+Next: verify cancel, review, apply and close/reopen behavior through the visible recovery workflow.
+
+## M0.4 recovery review progress and cancellation controls — 29 September 2026
+
+- CharacterStudio now runs recovery staging and project validation on a worker task. The recovery panel
+  shows completed-file progress and the current phase, offers a Cancel button, and reports that partial
+  files were removed after cancellation.
+- Opening another project cancels the review. A completed result is checked against both the project
+  that started the review and the currently open project before Apply is enabled. Closing the editor
+  cancels and drains an active review, removing any completed but unreviewed staging directory.
+- This is implementation and capture evidence only. The visible recovery panel has not been clicked
+  through because the desktop computer-use helper failed to initialize with `failed to write kernel
+  assets: The system cannot find the path specified (os error 3)`. M0.4 and the manual editor gate stay
+  **In progress**.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Full `Ember.Engine.Tests` Release run | PASS — 352 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| CharacterStudio Home and starter-scene captures | PASS — both exited 0 at 1280×720; stderr files were empty |
+| Capture environment | Windows 11 Home Single Language 10.0.26200; .NET 9.0.19; Intel UHD Graphics driver 27.20.100.9664; Release |
+| Capture artifacts | `%TEMP%/EmberRecoveryUi/cbfe9685a15343a5af8ee518edb25ace/home.png` and `starter-scene.png`; logs are in the same directory |
+| Interactive recovery cancel, apply and reopen | NOT RUN — desktop helper initialization failed as described above |
+
+Next: complete the recovery-panel interaction and project-switch checks when desktop input is available;
+continue the still-open UX.1–UX.4 and M1.1 authoring workflow work in parallel.
