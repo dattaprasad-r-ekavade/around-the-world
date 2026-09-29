@@ -26,11 +26,5 @@ internal sealed partial class CharacterStudioEditorUi
     private void DrawWorldAuthoringPanel(SceneGraph scene) => _worldPanel.DrawWorldAuthoringPanel(scene);
     private void DrawWorldCellPanel(SceneGraph scene) => _worldPanel.DrawWorldCellPanel(scene);
     private void LoadWorldManifest() => _worldPanel.LoadWorldManifest();
-    private void CancelRecoveryReview() => _worldPanel.CancelRecoveryReview();
-    private static void DeleteRecoveryStaging(AuthoredProjectRecoveryStaging staging, string? recoveryDirectory) =>
-        WorldPanel.DeleteRecoveryStaging(staging, recoveryDirectory);
-    private void PollRecoveryReview() => _worldPanel.PollRecoveryReview();
-    private void MaybeAutosaveAuthoredProject(SceneGraph scene, float elapsedSeconds) => _worldPanel.MaybeAutosaveAuthoredProject(scene, elapsedSeconds);
-    public void RefreshAfterRecovery() => _worldPanel.RefreshAfterRecovery();
     private WorldCellDefinition? FindCurrentWorldCell() => _worldPanel.FindCurrentWorldCell();
 }

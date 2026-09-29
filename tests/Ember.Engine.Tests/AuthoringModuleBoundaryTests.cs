@@ -1,5 +1,6 @@
 using System.Linq;
 using Ember.Authoring;
+using Ember.Editor;
 using Xunit;
 
 namespace Ember.Engine.Tests;
@@ -23,5 +24,13 @@ public sealed class AuthoringModuleBoundaryTests
         Assert.Equal("Ember.Authoring.Rpg", assembly.GetName().Name);
         Assert.Contains("Ember.Authoring", references);
         Assert.Contains("Ember.Rpg", references);
+    }
+
+    [Fact]
+    public void GenericEditorAssemblyDoesNotReferenceRpgAssemblies()
+    {
+        var references = typeof(CharacterStudioGame).Assembly.GetReferencedAssemblies();
+
+        Assert.DoesNotContain(references, reference => reference.Name is "Ember.Rpg" or "Ember.Authoring.Rpg");
     }
 }

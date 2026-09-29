@@ -1,6 +1,5 @@
 using Ember.Scene;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.World;
@@ -28,16 +27,10 @@ internal sealed record SequenceExportEditorInfo(
     bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
 internal sealed record SequenceExportEditorRequest(
     string OutputDirectory, float StartTime, float EndTime, int FrameRate, int Width, int Height);
-internal delegate string RecoveryCaptureAction(SceneGraph scene, string worldManifestPath, string rpgContentPath,
-    string? currentScenePath, RpgContentSet? content);
-internal delegate string RecoveryApplyAction(AuthoredProjectRecoveryStaging staging);
 
 /// <summary>Immediate-mode scene hierarchy and transform panel for CharacterStudio.</summary>
 internal sealed partial class CharacterStudioEditorUi : IDisposable
 {
-    private sealed record RecoveryReviewResult(AuthoredProjectRecoveryStaging Staging,
-        AuthoredProjectValidationResult? Validation, Exception? ValidationError);
-
     private enum TransformTool
     {
         Move,
@@ -74,8 +67,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Func<string, string, string?> _openWorldCell;
     private readonly Action<string, string, Guid> _worldCellRenamed;
     private readonly Func<string?> _getCurrentScenePath;
-    private readonly RecoveryCaptureAction _captureRecovery;
-    private readonly RecoveryApplyAction _applyRecovery;
+    private readonly Func<string, string, Action, string> _applyRecoveredProject;
     private readonly Func<Guid, CellPathGraph, CellPathRoute, string> _startPathFollow;
     private readonly Func<Guid, string?> _getPathFollowStatus;
     private readonly Action<Guid> _stopPathFollow;
@@ -104,8 +96,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private string _cellName = "New Cell";
     private string _renameCellName = string.Empty;
     private string _sceneSaveAsPath = Path.Combine(Environment.CurrentDirectory, "Scenes", "Untitled.json");
-    private string _rpgContentPath = Path.Combine(AppContext.BaseDirectory, "Assets", "RpgPlacementDefinitions.json");
-    private RpgContentSet? _rpgContent;
     private NumericsVector3 _spawnMarkerPosition = NumericsVector3.Zero;
     private string _travelStatus = "Open a world manifest to author travel links.";
     private Guid? _selectedTravelCellId;
@@ -113,17 +103,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Dictionary<Guid, string> _doorLinkStatuses = new();
     private readonly Dictionary<Guid, (string Path, DateTime LastWriteUtc, SceneGraph Scene)> _travelSceneCache = new();
     private WorldManifest? _worldManifest;
-    private AuthoredProjectRecoveryStaging? _recoveryStaging;
-    private string _recoveryStatus = "No recovery snapshot reviewed.";
-    private string _recoveryReport = string.Empty;
-    private bool _recoveryCanApply;
-    private Task<RecoveryReviewResult>? _recoveryReviewTask;
-    private CancellationTokenSource? _recoveryReviewCancellation;
-    private AuthoredProjectRecoveryProgress? _recoveryReviewProgress;
-    private string? _recoveryReviewActivity;
-    private string? _recoveryReviewProjectRoot;
-    private string? _recoveryReviewDirectory;
-    private float _recoveryAutosaveElapsedSeconds;
     private Guid? _selectedWorldCellId;
     private int _exteriorCellX;
     private int _exteriorCellZ;
@@ -191,8 +170,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         (Keys.OemPipe, ImGuiKey.Backslash), (Keys.OemTilde, ImGuiKey.GraveAccent)
     ];
 
-    private const float RecoveryAutosaveIntervalSeconds = 60f;
-
     public CharacterStudioEditorUi(GraphicsDevice device, int logicalWidth, int logicalHeight,
         SceneCommandHistory history, Action afterStructureChange,
         Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
@@ -206,7 +183,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
         Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
         Action<string, string, Guid> worldCellRenamed, Func<string?> getCurrentScenePath,
-        RecoveryCaptureAction captureRecovery, RecoveryApplyAction applyRecovery,
+        Func<string, string, Action, string> applyRecoveredProject,
         Func<Guid, CellPathGraph, CellPathRoute, string> startPathFollow,
         Func<Guid, string?> getPathFollowStatus, Action<Guid> stopPathFollow,
         Func<string, bool, string> createProject, Func<string, string> openProject,
@@ -232,7 +209,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _placementTemplatePanel = new PlacementTemplatePanel(this);
         _playSettingsPanel = new PlaySettingsPanel(this);
         _unsavedChangesController = new UnsavedChangesController(this);
-        _projectValidationPanel = new ProjectValidationPanel(this);
         _sceneTemplatePanel = new SceneTemplatePanel(this);
         var loadedExtensions = EditorToolExtensionLoader.Load(AppContext.BaseDirectory);
         _toolExtensions = loadedExtensions.Extensions;
@@ -262,8 +238,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _openWorldCell = openWorldCell ?? throw new ArgumentNullException(nameof(openWorldCell));
         _worldCellRenamed = worldCellRenamed ?? throw new ArgumentNullException(nameof(worldCellRenamed));
         _getCurrentScenePath = getCurrentScenePath ?? throw new ArgumentNullException(nameof(getCurrentScenePath));
-        _captureRecovery = captureRecovery ?? throw new ArgumentNullException(nameof(captureRecovery));
-        _applyRecovery = applyRecovery ?? throw new ArgumentNullException(nameof(applyRecovery));
+        _applyRecoveredProject = applyRecoveredProject ?? throw new ArgumentNullException(nameof(applyRecoveredProject));
         _startPathFollow = startPathFollow ?? throw new ArgumentNullException(nameof(startPathFollow));
         _getPathFollowStatus = getPathFollowStatus ?? throw new ArgumentNullException(nameof(getPathFollowStatus));
         _stopPathFollow = stopPathFollow ?? throw new ArgumentNullException(nameof(stopPathFollow));
@@ -290,7 +265,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _confirmExit = confirmExit ?? throw new ArgumentNullException(nameof(confirmExit));
         _showHome = _getCurrentProjectPath() is null && _getCurrentScenePath() is null;
         _projectWorkspaceStatus = GetWorkspaceReadyMessage();
-        LoadRpgPlacementContent();
         _context = ImGui.CreateContext();
         try
         {
@@ -324,20 +298,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
-
-    private void LoadRpgPlacementContent()
-    {
-        _rpgContent = null;
-        try
-        {
-            var parsed = RpgContentJson.ParseForValidation(File.ReadAllText(_rpgContentPath));
-            _rpgContent = parsed.Content;
-        }
-        catch (Exception exception)
-        {
-            _projectWorkspaceStatus = $"Could not load RPG content for recovery: {exception.Message}";
-        }
-    }
 
     public void CompletePendingEdit(SceneGraph scene)
     {
@@ -399,7 +359,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     public void OnProjectOpened(string projectRoot, string? worldManifestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
-        CancelRecoveryReview();
         _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         _worldManifest = null;
         _worldManifestPath = worldManifestPath is null
@@ -409,16 +368,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (worldManifestPath is not null) LoadWorldManifest();
         _travelSceneCache.Clear();
         _doorLinkStatuses.Clear();
-        _recoveryStaging = null;
-        _recoveryStatus = "No recovery snapshot reviewed.";
-        _recoveryReport = string.Empty;
-        _recoveryCanApply = false;
-        _recoveryAutosaveElapsedSeconds = 0f;
         _selectedWorldCellId = null;
         _selectedTravelCellId = null;
         _selectedTravelSpawnId = null;
-        _rpgContentPath = Path.Combine(projectRoot, "RpgContent.json");
-        LoadRpgPlacementContent();
         ResetSceneSelection();
     }
 
@@ -432,7 +384,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Vector2 logicalMouse, SceneGraph scene, bool suppressMouseInput = false)
     {
         if (_disposed) throw new ObjectDisposedException(nameof(CharacterStudioEditorUi));
-        PollRecoveryReview();
+        UpdateToolExtensions(scene, elapsedSeconds);
         var viewport = _renderer.Viewport;
         _io.DisplaySize = new NumericsVector2(_logicalWidth, _logicalHeight);
         var framebufferScale = MathF.Min(
@@ -451,7 +403,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (!suppressMouseInput && wheel != 0f) _io.AddMouseWheelEvent(0f, wheel);
         _lastWheel = mouse.ScrollWheelValue;
         UpdateKeyboard(keyboard);
-        MaybeAutosaveAuthoredProject(scene, elapsedSeconds);
 
         if (_startLessonAfterProjectCreate && !_showHome
             && _getCurrentProjectPath() is { } createdProjectPath)
@@ -536,13 +487,38 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
         try
         {
-            extension.Draw(new EditorToolContext(scene, _isPlaying(), _getCurrentProjectPath(),
-                _getCurrentScenePath(), sceneObject => AddSceneObjectFromExtension(scene, sceneObject)));
+            extension.Draw(CreateToolContext(scene));
         }
         catch (Exception exception)
         {
             _projectWorkspaceStatus = $"{extension.DisplayName} stopped after an error: {exception.Message}";
             _activeToolExtensionId = null;
+        }
+    }
+
+    private EditorToolContext CreateToolContext(SceneGraph scene) => new(
+        scene,
+        _isPlaying(),
+        _getCurrentProjectPath(),
+        _getCurrentScenePath(),
+        _worldManifestPath,
+        _getSequenceExportInfo().IsRunning,
+        _worldManifest,
+        sceneObject => AddSceneObjectFromExtension(scene, sceneObject),
+        () => CompletePendingEdit(scene),
+        _applyRecoveredProject,
+        _worldPanel.RefreshAfterRecovery);
+
+    private void UpdateToolExtensions(SceneGraph scene, float elapsedSeconds)
+    {
+        var context = CreateToolContext(scene);
+        foreach (var extension in _toolExtensions)
+        {
+            try { extension.Update(context, elapsedSeconds); }
+            catch (Exception exception)
+            {
+                _projectWorkspaceStatus = $"{extension.DisplayName} update failed: {exception.Message}";
+            }
         }
     }
 

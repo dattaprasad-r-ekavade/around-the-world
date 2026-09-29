@@ -17,7 +17,6 @@ using Ember.Physics;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;

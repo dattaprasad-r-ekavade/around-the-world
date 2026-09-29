@@ -17,7 +17,6 @@ using Ember.Physics;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -530,30 +529,7 @@ public sealed partial class CharacterStudioGame
         }
     }
 
-    private string CaptureAuthoringRecovery(SceneGraph scene, string worldManifestPath,
-        string rpgContentPath, string? currentScenePath, RpgContentSet? content)
-    {
-        if (_playSession is not null)
-            throw new InvalidOperationException("Stop play mode before capturing an authoring recovery snapshot.");
-        if (_sequenceExportJob?.IsRunning == true)
-            throw new InvalidOperationException("Wait for sequence export to finish before capturing recovery.");
-        if (currentScenePath is null)
-            throw new InvalidOperationException("Save the active scene in the world manifest before capturing recovery.");
-
-        _editorUi?.CompletePendingEdit(scene);
-        var recoveryDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
-            worldManifestPath, rpgContentPath);
-        var sceneJson = Encoding.UTF8.GetBytes(SceneFile.ToJson(scene));
-        var contentJson = content is null
-            ? null
-            : Encoding.UTF8.GetBytes(RpgContentJson.ToJsonForRecovery(content));
-        var snapshot = AuthoredProjectRecoveryService.Capture(worldManifestPath, rpgContentPath,
-            recoveryDirectory, currentScenePath: currentScenePath, currentSceneJson: sceneJson,
-            currentRpgContentJson: contentJson);
-        return $"Autosaved {snapshot.Files.Count} authored files outside the project.";
-    }
-
-    private string ApplyAuthoringRecovery(AuthoredProjectRecoveryStaging staging)
+    private string ApplyRecoveredProject(string stagedScenePath, string projectRoot, Action applyProjectFiles)
     {
         if (_playSession is not null)
             throw new InvalidOperationException("Stop play mode before applying an authoring recovery.");
@@ -561,22 +537,17 @@ public sealed partial class CharacterStudioGame
             throw new InvalidOperationException("Wait for sequence export to finish before applying recovery.");
         if (_preview is null || _sceneSavePath is null)
             throw new InvalidOperationException("The active scene preview is not ready for recovery.");
+        ArgumentNullException.ThrowIfNull(applyProjectFiles);
 
         var sourceScenePath = Path.GetFullPath(_sceneSavePath);
-        var relativeScenePath = Path.GetRelativePath(Path.GetFullPath(staging.ProjectRoot), sourceScenePath);
+        var relativeScenePath = Path.GetRelativePath(Path.GetFullPath(projectRoot), sourceScenePath);
         if (Path.IsPathRooted(relativeScenePath) || relativeScenePath == ".."
             || relativeScenePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
             || relativeScenePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
             throw new InvalidDataException("The active scene is outside the recovered project.");
-        var stagedScenePath = Path.GetFullPath(Path.Combine(staging.StagingRoot, relativeScenePath));
-        var stagedRelative = Path.GetRelativePath(Path.GetFullPath(staging.StagingRoot), stagedScenePath);
-        if (Path.IsPathRooted(stagedRelative) || stagedRelative == ".."
-            || stagedRelative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || stagedRelative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-            throw new InvalidDataException("The active scene path escapes recovery staging.");
 
-        // Prepare the recovered scene and every GPU resource before modifying the project files.
-        var candidate = SceneFile.Load(stagedScenePath);
+        // Prepare the recovered scene and every GPU resource before modifying project files.
+        var candidate = SceneFile.Load(Path.GetFullPath(stagedScenePath));
         var loadedPreview = PreviewResources.Load(GraphicsDevice,
             ResolveSceneAssets(candidate, _sceneAssetRoot), candidate);
         AttachmentBoxRenderer? attachmentCandidate = null;
@@ -591,7 +562,7 @@ public sealed partial class CharacterStudioGame
                     attachmentCandidate = new AttachmentBoxRenderer(GraphicsDevice);
             }
 
-            AuthoredProjectRecoveryService.ApplyValidatedStaging(staging);
+            applyProjectFiles();
             var cleanupError = _preview.Reload(() => loadedPreview);
             previewTransferred = true;
             if (attachmentCandidate is not null)
@@ -606,7 +577,6 @@ public sealed partial class CharacterStudioGame
             _editorHistory = new SceneCommandHistory();
             _editorUi?.SetHistory(_editorHistory);
             _editorUi?.ResetSceneSelection();
-            _editorUi?.RefreshAfterRecovery();
             _farLodByObjectId.Clear();
             BuildSequencePreview();
             if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
@@ -623,7 +593,6 @@ public sealed partial class CharacterStudioGame
             throw;
         }
     }
-
     private void OnWorldCellRenamed(string previousScenePath, string renamedScenePath, Guid cellId)
     {
         if (_sceneSavePath is null || !PathsReferToSameFile(_sceneSavePath, previousScenePath)) return;

@@ -17,7 +17,6 @@ using Ember.Physics;
 using Ember.Scene;
 using Ember.Sequence;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
@@ -360,7 +359,7 @@ public sealed partial class CharacterStudioGame : EngineHost
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
                 SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
-                CaptureAuthoringRecovery, ApplyAuthoringRecovery,
+                ApplyRecoveredProject,
                 StartPathFollow, GetPathFollowStatus, StopPathFollow,
                 CreateProjectForEditor, path => OpenProjectForEditor(path), ImportGlbForEditor,
                 GetPendingAssetPreviewName, AcceptPendingAssetPreview, CancelPendingAssetPreview,

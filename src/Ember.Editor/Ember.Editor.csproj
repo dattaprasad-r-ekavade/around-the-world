@@ -13,8 +13,6 @@
   <ItemGroup>
     <ProjectReference Include="..\Ember.Engine\Ember.Engine.csproj" />
     <ProjectReference Include="..\Ember.Authoring\Ember.Authoring.csproj" />
-    <ProjectReference Include="..\Ember.Authoring.Rpg\Ember.Authoring.Rpg.csproj" />
-    <ProjectReference Include="..\Ember.Rpg\Ember.Rpg.csproj" />
   </ItemGroup>
 
   <ItemGroup>

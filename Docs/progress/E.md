@@ -53,7 +53,7 @@ E.2 is **Passed**: the panels and Play controller now own their feature behavior
 files are within the size target, and build, tests and captures pass. The live desktop interaction
 gate remains unverified under M0.4.
 
-## E.3 Optional RPG authoring module — in progress, 29 September 2026
+## E.3 Optional RPG authoring module — passed, 29 September 2026
 
 Moved `AuthoredProjectValidator` and `AuthoredProjectRecoveryService` into the new
 `Ember.Authoring.Rpg` assembly and removed the `Ember.Authoring` → `Ember.Rpg` project reference.
@@ -65,12 +65,19 @@ The generic World authoring panel retains Templates, Travel and Paths.
 | Check | Result |
 | --- | --- |
 | `dotnet build src/Ember.Authoring/Ember.Authoring.csproj --configuration Release --nologo` | PASS — 0 warnings, 0 errors |
-| `dotnet build Ember.sln --configuration Release --nologo` | PASS — 0 warnings, 0 errors |
-| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 367 passed, 0 failed, 0 skipped, including authoring-boundary and extension-loading tests |
+| `dotnet build src/Ember.Editor/Ember.Editor.csproj --configuration Release --nologo` | PASS — 0 warnings, 0 errors; project has no RPG project references |
+| `dotnet build Ember.sln --configuration Release --nologo` | PASS — 0 warnings, 0 errors; builds CharacterStudio, Campaign, RpgSlice and both optional RPG modules |
+| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 368 passed, 0 failed, 0 skipped, including generic authoring/editor boundary and extension-loading tests |
 | `dotnet run --project tests/Ember.Rpg.Check --configuration Release --no-build --no-restore` | PASS — save then load equals original |
-| CharacterStudio Home and Release A showcase captures | PASS — both exited successfully and saved 1280×720 PNGs under `%TEMP%/Ember/ManualGraphicsGate/e3-plugin-4be9b42ae65e4313ab5bf996de06d6d2/` |
+| RpgSlice `--persistence-smoke` | PASS — drop, loot, kill, follower travel, interior entry, save/restart and exactly-once verification; stderr empty |
+| Campaign `--windowed --seed 173 --bot --bot-minutes 0.05` | PASS — bot reached town and exited at its time limit with zero deaths; stderr empty |
+| CharacterStudio publish with `EnableRpgAuthoringModule=false` | PASS — publish contains no `Ember.Rpg.dll`, `Ember.Authoring.Rpg.dll`, `Ember.Editor.Rpg.dll` or `Modules` folder |
+| Generic CharacterStudio Home and Release A showcase captures | PASS — both exited successfully and saved 1280×720 PNGs under `%TEMP%/Ember/ManualGraphicsGate/e3-no-rpg-a94a9517143b4b2ab977363702412592/` |
+| CharacterStudio with RPG module enabled, Home/showcase captures | PASS — 1280×720; empty stderr; Home is byte-identical to the prior capture and showcase is visually unchanged under `%TEMP%/Ember/ManualGraphicsGate/e3-rpg-module-ab8aca92a17349db8ff2e3200ede7a15/` |
+| Before captures | PASS — Home/showcase PNGs under `%TEMP%/Ember/ManualGraphicsGate/e3-plugin-4be9b42ae65e4313ab5bf996de06d6d2/`; Home after change is byte-identical, and showcase is visually unchanged |
 
-E.3 remains **In progress**. `Ember.Editor` still directly references RPG assemblies for project validation
-and recovery, so the editor has not yet been proven to build and start with the RPG module disabled.
-RpgSlice/Campaign-specific verification also remains for the final E.3 gate. The M0.4 live resize,
-save/reopen, Play/Stop and recovery-dialog checks remain a separate manual desktop gate.
+E.3 is **Passed**: generic `Ember.Authoring` and `Ember.Editor` have no direct RPG assembly references,
+the RPG panels, validation and recovery live in the optional module, and generic CharacterStudio
+publishes and starts without any RPG assembly present. RpgSlice persistence and Campaign bot smokes,
+the RPG round-trip check and all engine tests pass. The M0.4 live resize, save/reopen, Play/Stop and
+recovery-dialog checks remain a separate manual desktop gate.

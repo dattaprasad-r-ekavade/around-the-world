@@ -5,6 +5,7 @@ using System.Linq;
 using System.Reflection;
 using System.Runtime.Loader;
 using Ember.Scene;
+using Ember.World;
 
 namespace Ember.Editor;
 
@@ -13,6 +14,7 @@ public interface IEditorToolExtension
 {
     string Id { get; }
     string DisplayName { get; }
+    void Update(EditorToolContext context, float elapsedSeconds) { }
     void Draw(EditorToolContext context);
 }
 
@@ -20,24 +22,52 @@ public interface IEditorToolExtension
 public sealed class EditorToolContext
 {
     private readonly Action<SceneObject> _addSceneObject;
+    private readonly Action _completePendingEdits;
+    private readonly Func<string, string, Action, string> _applyRecoveredProject;
+    private readonly Action _refreshWorld;
 
     internal EditorToolContext(SceneGraph scene, bool isPlaying, string? projectFilePath,
-        string? scenePath, Action<SceneObject> addSceneObject)
+        string? scenePath, string? worldManifestPath, bool isOperationBusy,
+        WorldManifest? worldManifest,
+        Action<SceneObject> addSceneObject, Action completePendingEdits,
+        Func<string, string, Action, string> applyRecoveredProject, Action refreshWorld)
     {
         Scene = scene ?? throw new ArgumentNullException(nameof(scene));
         IsPlaying = isPlaying;
         ProjectFilePath = projectFilePath;
         ScenePath = scenePath;
+        WorldManifestPath = worldManifestPath;
+        IsOperationBusy = isOperationBusy;
+        WorldManifest = worldManifest;
         _addSceneObject = addSceneObject ?? throw new ArgumentNullException(nameof(addSceneObject));
+        _completePendingEdits = completePendingEdits ?? throw new ArgumentNullException(nameof(completePendingEdits));
+        _applyRecoveredProject = applyRecoveredProject ?? throw new ArgumentNullException(nameof(applyRecoveredProject));
+        _refreshWorld = refreshWorld ?? throw new ArgumentNullException(nameof(refreshWorld));
     }
 
     public SceneGraph Scene { get; }
     public bool IsPlaying { get; }
+    public bool IsOperationBusy { get; }
     public string? ProjectFilePath { get; }
     public string? ScenePath { get; }
+    public string? WorldManifestPath { get; }
+    public WorldManifest? WorldManifest { get; }
 
     public void AddSceneObject(SceneObject sceneObject) =>
         _addSceneObject(sceneObject ?? throw new ArgumentNullException(nameof(sceneObject)));
+
+    public void CompletePendingEdits() => _completePendingEdits();
+
+    /// <summary>Apply validated project files and reload the active scene through the editor host.</summary>
+    public string ApplyRecoveredProject(string stagedScenePath, string projectRoot, Action applyProjectFiles)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(stagedScenePath);
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
+        ArgumentNullException.ThrowIfNull(applyProjectFiles);
+        return _applyRecoveredProject(stagedScenePath, projectRoot, applyProjectFiles);
+    }
+
+    public void RefreshWorld() => _refreshWorld();
 }
 
 public sealed record EditorToolExtensionLoadResult(

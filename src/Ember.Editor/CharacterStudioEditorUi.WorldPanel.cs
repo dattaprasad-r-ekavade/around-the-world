@@ -251,80 +251,11 @@ internal sealed partial class CharacterStudioEditorUi
             return;
         }
 
-        var recoveryReviewRunning = _owner._recoveryReviewTask is not null;
-        if (recoveryReviewRunning) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-1f);
         ImGui.InputTextWithHint("##worldManifestPath", "Path to world.json", ref _owner._worldManifestPath, 1024);
         if (ImGui.Button("Open manifest")) LoadWorldManifest();
         ImGui.SameLine();
         if (ImGui.Button("Create world")) CreateWorldManifest();
-        if (ImGui.Button("Validate project")) _owner.ValidateAuthoredProject();
-        if (recoveryReviewRunning) ImGui.EndDisabled();
-        _owner.DrawProjectValidationReport();
-        ImGui.Separator();
-        ImGui.Text("Authored recovery");
-        ImGui.BeginDisabled(recoveryReviewRunning);
-        if (ImGui.Button("Autosave now"))
-        {
-            try
-            {
-                _owner._recoveryStatus = _owner._captureRecovery(scene, _owner._worldManifestPath, _owner._rpgContentPath,
-                    _owner._getCurrentScenePath(), _owner._rpgContent);
-            }
-            catch (Exception exception)
-            {
-                _owner._recoveryStatus = $"Autosave failed: {exception.Message}";
-            }
-        }
-        ImGui.EndDisabled();
-        ImGui.SameLine();
-        if (!recoveryReviewRunning)
-        {
-            if (ImGui.Button("Review recovery")) StartRecoveryReview();
-        }
-        else
-        {
-            var cancelRequested = _owner._recoveryReviewCancellation?.IsCancellationRequested == true;
-            ImGui.BeginDisabled(cancelRequested);
-            if (ImGui.Button(cancelRequested ? "Canceling recovery…" : "Cancel recovery"))
-                CancelRecoveryReview();
-            ImGui.EndDisabled();
-            ImGui.TextDisabled(Volatile.Read(ref _owner._recoveryReviewActivity) ?? "Restoring authored files…");
-            if (Volatile.Read(ref _owner._recoveryReviewProgress) is { TotalFiles: > 0 } progress)
-            {
-                var fraction = Math.Clamp(progress.CompletedFiles / (float)progress.TotalFiles, 0f, 1f);
-                ImGui.ProgressBar(fraction, new NumericsVector2(-1f, 0f));
-                ImGui.TextDisabled($"Restoring {progress.CompletedFiles} of {progress.TotalFiles}: {Path.GetFileName(progress.CurrentRelativePath)}");
-            }
-        }
-        ImGui.TextWrapped(_owner._recoveryStatus);
-        if (_owner._recoveryStaging is not null)
-        {
-            ImGui.TextWrapped($"Reviewed snapshot {_owner._recoveryStaging.SnapshotId:N} in staging.");
-            ImGui.BeginDisabled(!_owner._recoveryCanApply || recoveryReviewRunning);
-            if (ImGui.Button("Apply reviewed recovery"))
-            {
-                try
-                {
-                    _owner._recoveryStatus = _owner._applyRecovery(_owner._recoveryStaging);
-                    _owner._recoveryStaging = null;
-                    _owner._recoveryReport = string.Empty;
-                    _owner._recoveryCanApply = false;
-                }
-                catch (Exception exception)
-                {
-                    _owner._recoveryStatus = $"Recovery apply failed: {exception.Message}";
-                }
-            }
-            ImGui.EndDisabled();
-            if (!string.IsNullOrWhiteSpace(_owner._recoveryReport))
-            {
-                ImGui.BeginChild("Recovery validation report", new NumericsVector2(0f, 110f), ImGuiChildFlags.Borders);
-                foreach (var line in _owner._recoveryReport.Split(Environment.NewLine, StringSplitOptions.RemoveEmptyEntries))
-                    ImGui.TextWrapped(line);
-                ImGui.EndChild();
-            }
-        }
         ImGui.Text("Exterior cell width (used for new worlds)");
         if (_owner._worldManifest is not null) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-1f);
@@ -407,7 +338,6 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._worldManifest = WorldManifest.Load(_owner._worldManifestPath);
             _owner._exteriorCellWidth = _owner._worldManifest.ExteriorCellWidth;
             _owner._selectedWorldCellId = null;
-            _owner._recoveryAutosaveElapsedSeconds = RecoveryAutosaveIntervalSeconds;
             _owner._worldStatus = $"Loaded {Path.GetFileName(_owner._worldManifest.FilePath)}.";
         }
         catch (Exception exception)
@@ -416,210 +346,12 @@ internal sealed partial class CharacterStudioEditorUi
         }
     }
 
-    private void StartRecoveryReview()
-    {
-        if (_owner._recoveryReviewTask is not null) return;
-
-        _owner._recoveryStaging = null;
-        _owner._recoveryCanApply = false;
-        _owner._recoveryReport = string.Empty;
-        Interlocked.Exchange(ref _owner._recoveryReviewProgress, null);
-        try
-        {
-            var manifestPath = Path.GetFullPath(_owner._worldManifestPath);
-            var rpgContentPath = Path.GetFullPath(_owner._rpgContentPath);
-            _owner._recoveryReviewProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(
-                manifestPath, rpgContentPath);
-            _owner._recoveryReviewDirectory = AuthoredProjectRecoveryService.GetDefaultRecoveryDirectory(
-                manifestPath, rpgContentPath);
-            var cancellation = new CancellationTokenSource();
-            _owner._recoveryReviewCancellation = cancellation;
-            Interlocked.Exchange(ref _owner._recoveryReviewActivity, "Restoring authored files…");
-            var progress = new InlineRecoveryProgress(value =>
-                Interlocked.Exchange(ref _owner._recoveryReviewProgress, value));
-            _owner._recoveryStatus = "Preparing recovery review…";
-            var recoveryDirectory = _owner._recoveryReviewDirectory
-                ?? throw new InvalidOperationException("The recovery directory could not be resolved.");
-            _owner._recoveryReviewTask = Task.Run(async () =>
-            {
-                var staging = await AuthoredProjectRecoveryService.RestoreLatestToStagingAsync(
-                    manifestPath, rpgContentPath, recoveryDirectory, cancellation.Token, progress)
-                    .ConfigureAwait(false);
-                Interlocked.Exchange(ref _owner._recoveryReviewActivity, "Validating restored project…");
-                try
-                {
-                    var validation = AuthoredProjectValidator.Validate(
-                        staging.WorldManifestPath, staging.RpgContentPath);
-                    return new CharacterStudioEditorUi.RecoveryReviewResult(staging, validation, null);
-                }
-                catch (Exception exception)
-                {
-                    return new CharacterStudioEditorUi.RecoveryReviewResult(staging, null, exception);
-                }
-            }, CancellationToken.None);
-        }
-        catch (Exception exception)
-        {
-            _owner._recoveryReviewCancellation?.Dispose();
-            _owner._recoveryReviewCancellation = null;
-            _owner._recoveryReviewProjectRoot = null;
-            _owner._recoveryReviewDirectory = null;
-            Interlocked.Exchange(ref _owner._recoveryReviewActivity, null);
-            _owner._recoveryStatus = $"Could not review recovery: {exception.Message}";
-        }
-    }
-
-    public void CancelRecoveryReview()
-    {
-        try { _owner._recoveryReviewCancellation?.Cancel(); }
-        catch (ObjectDisposedException) { }
-    }
-
-    public void PollRecoveryReview()
-    {
-        var task = _owner._recoveryReviewTask;
-        if (task is null || !task.IsCompleted) return;
-
-        AuthoredProjectRecoveryStaging? staging = null;
-        try
-        {
-            var review = task.GetAwaiter().GetResult();
-            staging = review.Staging;
-            if (_owner._recoveryReviewCancellation?.IsCancellationRequested == true)
-            {
-                DeleteRecoveryStaging(staging, _owner._recoveryReviewDirectory);
-                staging = null;
-                _owner._recoveryStaging = null;
-                _owner._recoveryCanApply = false;
-                _owner._recoveryReport = string.Empty;
-                _owner._recoveryStatus = "Recovery review canceled. Staged files were removed.";
-                return;
-            }
-
-            if (review.ValidationError is not null)
-                throw new InvalidDataException("The staged recovery could not be validated.", review.ValidationError);
-            var validation = review.Validation
-                ?? throw new InvalidDataException("The recovery review completed without a validation result.");
-            var activeProjectRoot = AuthoredProjectRecoveryService.GetProjectRoot(
-                _owner._worldManifestPath, _owner._rpgContentPath);
-            if (_owner._recoveryReviewProjectRoot is not { } requestedProjectRoot
-                || !SameDirectory(staging.ProjectRoot, requestedProjectRoot)
-                || !SameDirectory(staging.ProjectRoot, activeProjectRoot))
-            {
-                DeleteRecoveryStaging(staging, _owner._recoveryReviewDirectory);
-                staging = null;
-                _owner._recoveryStaging = null;
-                _owner._recoveryCanApply = false;
-                _owner._recoveryReport = string.Empty;
-                _owner._recoveryStatus = "The active project changed during recovery review; staged files were discarded.";
-                return;
-            }
-
-            _owner._recoveryStaging = staging;
-            _owner._recoveryCanApply = validation.IsValid;
-            _owner._recoveryReport = validation.IsValid
-                ? "Validation passed. This snapshot is ready to apply."
-                : string.Join(Environment.NewLine, validation.Diagnostics.Select(value => value.ToString()));
-            _owner._recoveryStatus = validation.IsValid
-                ? "Recovery staged and validated."
-                : $"Recovery staged with {validation.Diagnostics.Count} validation issue(s); apply is disabled.";
-        }
-        catch (OperationCanceledException)
-        {
-            _owner._recoveryStaging = null;
-            _owner._recoveryCanApply = false;
-            _owner._recoveryReport = string.Empty;
-            _owner._recoveryStatus = "Recovery review canceled. Partial staging files were removed.";
-        }
-        catch (Exception exception)
-        {
-            var message = exception.Message;
-            if (staging is not null)
-            {
-                try { DeleteRecoveryStaging(staging, _owner._recoveryReviewDirectory); }
-                catch (Exception cleanupError) { message += $" Staging cleanup failed: {cleanupError.Message}"; }
-            }
-            _owner._recoveryStaging = null;
-            _owner._recoveryCanApply = false;
-            _owner._recoveryReport = string.Empty;
-            _owner._recoveryStatus = $"Could not review recovery: {message}";
-        }
-        finally
-        {
-            _owner._recoveryReviewTask = null;
-            _owner._recoveryReviewCancellation?.Dispose();
-            _owner._recoveryReviewCancellation = null;
-            _owner._recoveryReviewProjectRoot = null;
-            _owner._recoveryReviewDirectory = null;
-            Interlocked.Exchange(ref _owner._recoveryReviewActivity, null);
-            Interlocked.Exchange(ref _owner._recoveryReviewProgress, null);
-        }
-    }
-
-    private static bool SameDirectory(string first, string second) =>
-        string.Equals(Path.TrimEndingDirectorySeparator(Path.GetFullPath(first)),
-            Path.TrimEndingDirectorySeparator(Path.GetFullPath(second)), StringComparison.OrdinalIgnoreCase);
-
-    public static void DeleteRecoveryStaging(AuthoredProjectRecoveryStaging staging, string? recoveryDirectory)
-    {
-        if (string.IsNullOrWhiteSpace(recoveryDirectory))
-            throw new InvalidOperationException("The recovery staging directory is unavailable for cleanup.");
-        var stagingParent = Path.GetFullPath(Path.Combine(recoveryDirectory, "staging"));
-        var stagingRoot = Path.GetFullPath(staging.StagingRoot);
-        var relative = Path.GetRelativePath(stagingParent, stagingRoot);
-        if (Path.IsPathRooted(relative) || relative is "." or ".."
-            || relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
-            || relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
-            throw new InvalidDataException("Recovery staging cleanup path escapes its staging directory.");
-        if (Directory.Exists(stagingRoot)) Directory.Delete(stagingRoot, recursive: true);
-    }
-
-    private sealed class InlineRecoveryProgress(Action<AuthoredProjectRecoveryProgress> report)
-        : IProgress<AuthoredProjectRecoveryProgress>
-    {
-        public void Report(AuthoredProjectRecoveryProgress value) => report(value);
-    }
-
-    public void MaybeAutosaveAuthoredProject(SceneGraph scene, float elapsedSeconds)
-    {
-        if (_owner._worldManifest is null || _owner._rpgContent is null || _owner._isPlaying()
-            || _owner._getSequenceExportInfo().IsRunning)
-        {
-            _owner._recoveryAutosaveElapsedSeconds = 0f;
-            return;
-        }
-
-        var currentScenePath = _owner._getCurrentScenePath();
-        if (currentScenePath is null || !_owner._worldManifest.Cells.Any(cell =>
-                string.Equals(Path.GetFullPath(_owner._worldManifest.ResolveScenePath(cell.Id)),
-                    Path.GetFullPath(currentScenePath), StringComparison.OrdinalIgnoreCase)))
-            return;
-
-        _owner._recoveryAutosaveElapsedSeconds += Math.Max(0f, elapsedSeconds);
-        if (_owner._recoveryAutosaveElapsedSeconds < RecoveryAutosaveIntervalSeconds) return;
-        _owner._recoveryAutosaveElapsedSeconds = 0f;
-        try
-        {
-            _owner._recoveryStatus = _owner._captureRecovery(scene, _owner._worldManifestPath, _owner._rpgContentPath,
-                currentScenePath, _owner._rpgContent);
-        }
-        catch (Exception exception)
-        {
-            _owner._recoveryStatus = $"Autosave failed: {exception.Message}";
-        }
-    }
-
     public void RefreshAfterRecovery()
     {
         _owner._travelSceneCache.Clear();
         _owner._doorLinkStatuses.Clear();
-        _owner._recoveryStaging = null;
-        _owner._recoveryCanApply = false;
-        _owner._recoveryReport = string.Empty;
         LoadWorldManifest();
-        _owner.LoadRpgPlacementContent();
     }
-
     private void CreateWorldManifest()
     {
         try

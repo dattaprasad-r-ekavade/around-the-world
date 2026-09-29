@@ -1,6 +1,5 @@
 using Ember.Scene;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.World;

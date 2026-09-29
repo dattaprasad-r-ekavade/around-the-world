@@ -1,6 +1,5 @@
 using Ember.Scene;
 using Ember.Render;
-using Ember.Rpg;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.World;
@@ -63,28 +62,15 @@ internal sealed partial class CharacterStudioEditorUi
     {
         if (_disposed) return;
         _disposed = true;
-        CancelRecoveryReview();
-        if (_recoveryReviewTask is { } recoveryTask)
+        _renderer.Dispose();
+        foreach (var extension in _toolExtensions.OfType<IDisposable>())
         {
-            try
-            {
-                var review = recoveryTask.GetAwaiter().GetResult();
-                DeleteRecoveryStaging(review.Staging, _recoveryReviewDirectory);
-            }
-            catch (OperationCanceledException) { }
+            try { extension.Dispose(); }
             catch (Exception exception)
             {
-                Console.Error.WriteLine($"Recovery review cleanup during editor shutdown failed: {exception}");
+                Console.Error.WriteLine($"Optional editor module cleanup failed: {exception}");
             }
         }
-        _recoveryReviewCancellation?.Dispose();
-        _recoveryReviewCancellation = null;
-        _recoveryReviewTask = null;
-        _recoveryReviewDirectory = null;
-        _recoveryReviewProjectRoot = null;
-        Interlocked.Exchange(ref _recoveryReviewActivity, null);
-        Interlocked.Exchange(ref _recoveryReviewProgress, null);
-        _renderer.Dispose();
         ImGui.DestroyContext(_context);
     }
     private sealed class InspectorPanel

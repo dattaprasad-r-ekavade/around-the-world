@@ -12,7 +12,7 @@ using NumericsVector3 = System.Numerics.Vector3;
 
 namespace Ember.Editor;
 
-public sealed partial class RpgEditorTool : IEditorToolExtension
+public sealed partial class RpgEditorTool : IEditorToolExtension, IDisposable
 {
     private sealed record RpgPlacementOption(WorldEntityKind Kind, string Id, string Name);
 
@@ -22,6 +22,7 @@ public sealed partial class RpgEditorTool : IEditorToolExtension
     private string? _selectedRpgDefinitionKey;
     private NumericsVector3 _rpgPlacementPosition;
     private string? _loadedProjectFilePath;
+    private bool _contentPathInitialized;
 
     public RpgEditorTool()
     {
@@ -61,6 +62,11 @@ public sealed partial class RpgEditorTool : IEditorToolExtension
                 _questPanel.DrawQuestAuthoringTab();
                 ImGui.EndTabItem();
             }
+            if (ImGui.BeginTabItem("Project"))
+            {
+                DrawProjectRecovery(context);
+                ImGui.EndTabItem();
+            }
             ImGui.EndTabBar();
         }
         ImGui.End();
@@ -68,8 +74,11 @@ public sealed partial class RpgEditorTool : IEditorToolExtension
 
     private void SelectContentPath(string? projectFilePath)
     {
-        if (string.Equals(_loadedProjectFilePath, projectFilePath, StringComparison.OrdinalIgnoreCase)) return;
+        if (_contentPathInitialized
+            && string.Equals(_loadedProjectFilePath, projectFilePath, StringComparison.OrdinalIgnoreCase)) return;
+        MaybeResetProjectState(projectFilePath);
         _loadedProjectFilePath = projectFilePath;
+        _contentPathInitialized = true;
         _rpgContentPath = projectFilePath is null
             ? Path.Combine(AppContext.BaseDirectory, "Assets", "RpgPlacementDefinitions.json")
             : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(projectFilePath))!, "RpgContent.json");
