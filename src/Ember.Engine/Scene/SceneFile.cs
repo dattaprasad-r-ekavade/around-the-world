@@ -14,7 +14,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 9;
+    public const int CurrentVersion = 13;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -271,7 +271,17 @@ public static class SceneFile
                     Name = baseline.Name,
                     Position = ToArray(baseline.Position),
                     Rotation = ToArray(baseline.Rotation),
-                    Scale = ToArray(baseline.Scale)
+                    Scale = ToArray(baseline.Scale),
+                    Enabled = baseline.Enabled,
+                    ResetPolicy = baseline.ResetPolicy,
+                    HasGltfAssetBaseline = baseline.HasGltfAssetBaseline,
+                    GltfAssetId = baseline.GltfAsset?.AssetId,
+                    GltfAssetPath = baseline.GltfAsset?.SourcePath,
+                    HasStaticMeshLodBaseline = baseline.HasStaticMeshLodBaseline,
+                    StaticMeshLod = ToStaticMeshLodData(baseline.StaticMeshLod),
+                    HasCharacterSettingsBaseline = baseline.HasCharacterSettingsBaseline,
+                    CharacterSettingsBaseline = ToTemplateCharacterBaselineData(
+                        baseline.CharacterSettingsBaseline)
                 }).ToList(),
                 OrphanedObjectIds = component.OrphanedObjectIds.ToList(),
                 TargetWorldCellId = component.TargetWorldCellId
@@ -286,16 +296,98 @@ public static class SceneFile
             throw new InvalidDataException("Scene template instance object baseline has an invalid transform.");
         try
         {
+            if (data.ResetPolicy is { } resetPolicy && !Enum.IsDefined(resetPolicy))
+                throw new InvalidDataException("Scene template instance baseline has an unknown reset policy.");
+            var hasGltfAssetBaseline = data.HasGltfAssetBaseline == true;
+            if (!hasGltfAssetBaseline && (data.GltfAssetId is not null || data.GltfAssetPath is not null))
+                throw new InvalidDataException("Scene template instance baseline has a GLB reference without a baseline marker.");
+            if ((data.GltfAssetId is null) != (data.GltfAssetPath is null))
+                throw new InvalidDataException("Scene template instance baseline GLB reference must provide both asset ID and path.");
+            var gltfAsset = data.GltfAssetId is { } assetId
+                ? new GltfAssetReference(assetId, data.GltfAssetPath!)
+                : null;
+            var hasStaticMeshLodBaseline = data.HasStaticMeshLodBaseline == true;
+            if (!hasStaticMeshLodBaseline && data.StaticMeshLod is not null)
+                throw new InvalidDataException("Scene template instance baseline has LOD settings without a baseline marker.");
+            var staticMeshLod = ToStaticMeshLod(data.StaticMeshLod);
+            var hasCharacterSettingsBaseline = data.HasCharacterSettingsBaseline == true;
+            if (!hasCharacterSettingsBaseline && data.CharacterSettingsBaseline is not null)
+                throw new InvalidDataException("Scene template instance character settings have no baseline marker.");
+            var characterSettingsBaseline = ToTemplateCharacterSettingsBaseline(
+                data.CharacterSettingsBaseline);
             return new SceneTemplateObjectBaseline(data.SourceObjectId, data.Name!, new Transform
             {
                 Position = new Vector3(data.Position[0], data.Position[1], data.Position[2]),
                 Rotation = new Quaternion(data.Rotation[0], data.Rotation[1], data.Rotation[2], data.Rotation[3]),
                 Scale = new Vector3(data.Scale[0], data.Scale[1], data.Scale[2])
-            });
+            }, data.Enabled, data.ResetPolicy, gltfAsset, hasGltfAssetBaseline,
+                staticMeshLod, hasStaticMeshLodBaseline,
+                characterSettingsBaseline, hasCharacterSettingsBaseline);
         }
         catch (ArgumentException exception)
         {
             throw new InvalidDataException($"Scene template instance object baseline is invalid: {exception.Message}", exception);
+        }
+    }
+
+    private static SceneTemplateCharacterSettingsBaselineData? ToTemplateCharacterBaselineData(
+        SceneTemplateCharacterSettingsBaseline? baseline) => baseline is null
+            ? null
+            : new SceneTemplateCharacterSettingsBaselineData
+            {
+                ClipName = baseline.ClipName,
+                Time = baseline.Time,
+                Speed = baseline.Speed,
+                Loop = baseline.Loop,
+                IsPlaying = baseline.IsPlaying,
+                CrossfadeClipName = baseline.CrossfadeClipName,
+                BlendAmount = baseline.BlendAmount,
+                AttachmentCount = baseline.AttachmentCount,
+                HasAttachmentMappings = baseline.HasAttachmentMappings,
+                AttachmentBaselines = baseline.AttachmentBaselines.Select(attachment =>
+                    new SceneTemplateAttachmentBaselineData
+                    {
+                        SourceAttachmentId = attachment.SourceAttachmentId,
+                        InstanceAttachmentId = attachment.InstanceAttachmentId,
+                        BoneName = attachment.BoneName,
+                        LocalOffset = ToArray(attachment.LocalOffset)
+                    }).ToList()
+            };
+
+    private static SceneTemplateCharacterSettingsBaseline? ToTemplateCharacterSettingsBaseline(
+        SceneTemplateCharacterSettingsBaselineData? data)
+    {
+        if (data is null) return null;
+        if (data.Time is null || data.Speed is null || data.Loop is null
+            || data.IsPlaying is null || data.BlendAmount is null || data.AttachmentCount is null
+            || data.AttachmentCount < 0)
+            throw new InvalidDataException("Scene template character baseline is incomplete.");
+        var hasAttachmentMappings = data.HasAttachmentMappings == true;
+        var attachmentData = data.AttachmentBaselines ?? new List<SceneTemplateAttachmentBaselineData>();
+        if (data.HasAttachmentMappings is null && attachmentData.Count > 0)
+            throw new InvalidDataException("Scene template character attachment mappings have no availability marker.");
+        if (!hasAttachmentMappings && attachmentData.Count > 0)
+            throw new InvalidDataException("Scene template character attachment mappings are present without an availability marker.");
+        if (hasAttachmentMappings && (data.AttachmentBaselines is null
+            || attachmentData.Count != data.AttachmentCount.Value))
+            throw new InvalidDataException("Scene template character attachment mappings are incomplete.");
+        var attachmentBaselines = attachmentData.Select(attachment =>
+        {
+            if (attachment.LocalOffset is null || attachment.LocalOffset.Length != 16)
+                throw new InvalidDataException("Scene template character attachment baseline has an invalid transform.");
+            return new SceneTemplateAttachmentBaseline(attachment.SourceAttachmentId,
+                attachment.InstanceAttachmentId, attachment.BoneName!, ToMatrix(attachment.LocalOffset));
+        }).ToArray();
+        try
+        {
+            return new SceneTemplateCharacterSettingsBaseline(data.ClipName, data.Time.Value,
+                data.Speed.Value, data.Loop.Value, data.IsPlaying.Value, data.CrossfadeClipName,
+                data.BlendAmount.Value, data.AttachmentCount.Value, attachmentBaselines,
+                hasAttachmentMappings);
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException($"Scene template character baseline is invalid: {exception.Message}", exception);
         }
     }
 
@@ -464,6 +556,21 @@ public static class SceneFile
                 || instanceData.OrphanedObjectIds is { Count: > 0 }
                 || instanceData.TargetWorldCellId is not null))
             throw new InvalidDataException($"Object {data.Id} scene template update metadata requires scene version 9.");
+        if (documentVersion < 10 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.Enabled is not null || baseline.ResetPolicy is not null)) == true)
+            throw new InvalidDataException($"Object {data.Id} extended template field baselines require scene version 10.");
+        if (documentVersion < 11 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.HasGltfAssetBaseline is not null || baseline.GltfAssetId is not null
+                    || baseline.GltfAssetPath is not null || baseline.HasStaticMeshLodBaseline is not null
+                    || baseline.StaticMeshLod is not null)) == true)
+            throw new InvalidDataException($"Object {data.Id} asset and LOD template baselines require scene version 11.");
+        if (documentVersion < 12 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.HasCharacterSettingsBaseline is not null
+                    || baseline.CharacterSettingsBaseline is not null)) == true)
+            throw new InvalidDataException($"Object {data.Id} character template baselines require scene version 12.");
+        if (documentVersion < 13 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline?.CharacterSettingsBaseline is { } character
+                && (character.HasAttachmentMappings is not null || character.AttachmentBaselines is not null)) == true)
+            throw new InvalidDataException($"Object {data.Id} character attachment mappings require scene version 13.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)
@@ -695,5 +802,36 @@ public static class SceneFile
         public float[]? Position { get; set; }
         public float[]? Rotation { get; set; }
         public float[]? Scale { get; set; }
+        public bool? Enabled { get; set; }
+        public WorldInstanceResetPolicy? ResetPolicy { get; set; }
+        public bool? HasGltfAssetBaseline { get; set; }
+        public Guid? GltfAssetId { get; set; }
+        public string? GltfAssetPath { get; set; }
+        public bool? HasStaticMeshLodBaseline { get; set; }
+        public SceneMeshLodData? StaticMeshLod { get; set; }
+        public bool? HasCharacterSettingsBaseline { get; set; }
+        public SceneTemplateCharacterSettingsBaselineData? CharacterSettingsBaseline { get; set; }
+    }
+
+    private sealed class SceneTemplateCharacterSettingsBaselineData
+    {
+        public string? ClipName { get; set; }
+        public float? Time { get; set; }
+        public float? Speed { get; set; }
+        public bool? Loop { get; set; }
+        public bool? IsPlaying { get; set; }
+        public string? CrossfadeClipName { get; set; }
+        public float? BlendAmount { get; set; }
+        public int? AttachmentCount { get; set; }
+        public bool? HasAttachmentMappings { get; set; }
+        public List<SceneTemplateAttachmentBaselineData>? AttachmentBaselines { get; set; }
+    }
+
+    private sealed class SceneTemplateAttachmentBaselineData
+    {
+        public Guid SourceAttachmentId { get; set; }
+        public Guid InstanceAttachmentId { get; set; }
+        public string? BoneName { get; set; }
+        public float[]? LocalOffset { get; set; }
     }
 }

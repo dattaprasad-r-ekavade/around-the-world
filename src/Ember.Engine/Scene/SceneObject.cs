@@ -109,10 +109,15 @@ public sealed class SceneObject
 /// <summary>Maps a stable template source object ID to its placed scene-object ID.</summary>
 public readonly record struct SceneTemplateObjectMapping(Guid SourceObjectId, Guid InstanceObjectId);
 
-/// <summary>Source defaults used to detect name and local-transform overrides on an instance.</summary>
+/// <summary>Source defaults used to detect authored field overrides on an instance.</summary>
 public sealed class SceneTemplateObjectBaseline
 {
-    public SceneTemplateObjectBaseline(Guid sourceObjectId, string name, Transform transform)
+    public SceneTemplateObjectBaseline(Guid sourceObjectId, string name, Transform transform,
+        bool? enabled = null, WorldInstanceResetPolicy? resetPolicy = null,
+        GltfAssetReference? gltfAsset = null, bool hasGltfAssetBaseline = false,
+        GltfStaticMeshLod? staticMeshLod = null, bool hasStaticMeshLodBaseline = false,
+        SceneTemplateCharacterSettingsBaseline? characterSettingsBaseline = null,
+        bool hasCharacterSettingsBaseline = false)
     {
         if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
@@ -121,12 +126,28 @@ public sealed class SceneTemplateObjectBaseline
             throw new ArgumentException("Template source object transform must be finite.", nameof(transform));
         if (transform.Rotation.LengthSquared() < 1e-12f)
             throw new ArgumentException("Template source object rotation must be nonzero.", nameof(transform));
+        if (resetPolicy is { } policy && !Enum.IsDefined(policy))
+            throw new ArgumentOutOfRangeException(nameof(resetPolicy), "Template source reset policy is unknown.");
+        if (!hasGltfAssetBaseline && gltfAsset is not null)
+            throw new ArgumentException("A GLB reference requires an available source baseline.", nameof(gltfAsset));
+        if (!hasStaticMeshLodBaseline && staticMeshLod is not null)
+            throw new ArgumentException("Static-mesh LOD requires an available source baseline.", nameof(staticMeshLod));
+        if (!hasCharacterSettingsBaseline && characterSettingsBaseline is not null)
+            throw new ArgumentException("Character settings require an available source baseline.", nameof(characterSettingsBaseline));
 
         SourceObjectId = sourceObjectId;
         Name = name;
         Position = transform.Position;
         Rotation = transform.Rotation;
         Scale = transform.Scale;
+        Enabled = enabled;
+        ResetPolicy = resetPolicy;
+        GltfAsset = gltfAsset;
+        HasGltfAssetBaseline = hasGltfAssetBaseline;
+        StaticMeshLod = staticMeshLod;
+        HasStaticMeshLodBaseline = hasStaticMeshLodBaseline;
+        CharacterSettingsBaseline = characterSettingsBaseline;
+        HasCharacterSettingsBaseline = hasCharacterSettingsBaseline;
     }
 
     public Guid SourceObjectId { get; }
@@ -134,6 +155,14 @@ public sealed class SceneTemplateObjectBaseline
     public Vector3 Position { get; }
     public Quaternion Rotation { get; }
     public Vector3 Scale { get; }
+    public bool? Enabled { get; }
+    public WorldInstanceResetPolicy? ResetPolicy { get; }
+    public GltfAssetReference? GltfAsset { get; }
+    public bool HasGltfAssetBaseline { get; }
+    public GltfStaticMeshLod? StaticMeshLod { get; }
+    public bool HasStaticMeshLodBaseline { get; }
+    public SceneTemplateCharacterSettingsBaseline? CharacterSettingsBaseline { get; }
+    public bool HasCharacterSettingsBaseline { get; }
 
     public Transform ToTransform() => new()
     {
@@ -151,6 +180,75 @@ public sealed class SceneTemplateObjectBaseline
     private static bool IsFinite(Quaternion value) =>
         float.IsFinite(value.X) && float.IsFinite(value.Y)
         && float.IsFinite(value.Z) && float.IsFinite(value.W);
+}
+
+/// <summary>A source attachment and its stable remapped ID in an expanded template instance.</summary>
+public sealed class SceneTemplateAttachmentBaseline
+{
+    public SceneTemplateAttachmentBaseline(Guid sourceAttachmentId, Guid instanceAttachmentId,
+        string boneName, Matrix localOffset)
+    {
+        if (sourceAttachmentId == Guid.Empty)
+            throw new ArgumentException("Template source attachment ID cannot be empty.", nameof(sourceAttachmentId));
+        if (instanceAttachmentId == Guid.Empty)
+            throw new ArgumentException("Template instance attachment ID cannot be empty.", nameof(instanceAttachmentId));
+        _ = new GltfBoneAttachmentReference(instanceAttachmentId, boneName, localOffset);
+        SourceAttachmentId = sourceAttachmentId;
+        InstanceAttachmentId = instanceAttachmentId;
+        BoneName = boneName;
+        LocalOffset = localOffset;
+    }
+
+    public Guid SourceAttachmentId { get; }
+    public Guid InstanceAttachmentId { get; }
+    public string BoneName { get; }
+    public Matrix LocalOffset { get; }
+}
+
+/// <summary>Playback and attachment defaults used to detect character overrides on a template instance.</summary>
+public sealed class SceneTemplateCharacterSettingsBaseline
+{
+    public SceneTemplateCharacterSettingsBaseline(string? clipName, float time, float speed,
+        bool loop, bool isPlaying, string? crossfadeClipName, float blendAmount, int attachmentCount,
+        IEnumerable<SceneTemplateAttachmentBaseline>? attachmentBaselines = null,
+        bool hasAttachmentMappings = false)
+    {
+        if (!float.IsFinite(time) || !float.IsFinite(speed) || !float.IsFinite(blendAmount))
+            throw new ArgumentException("Character playback baselines must be finite.");
+        if (attachmentCount < 0) throw new ArgumentOutOfRangeException(nameof(attachmentCount));
+        var attachments = (attachmentBaselines ?? Array.Empty<SceneTemplateAttachmentBaseline>()).ToArray();
+        if (attachments.Any(attachment => attachment is null))
+            throw new ArgumentException("Character attachment baselines cannot contain null entries.", nameof(attachmentBaselines));
+        if (hasAttachmentMappings && attachments.Length != attachmentCount)
+            throw new ArgumentException("Character attachment mappings must match the source attachment count.", nameof(attachmentBaselines));
+        if (!hasAttachmentMappings && attachments.Length != 0)
+            throw new ArgumentException("Character attachment mappings require a known mapping marker.", nameof(attachmentBaselines));
+        if (attachments.Select(attachment => attachment.SourceAttachmentId).Distinct().Count() != attachments.Length)
+            throw new ArgumentException("Character source attachment IDs must be unique.", nameof(attachmentBaselines));
+        if (attachments.Select(attachment => attachment.InstanceAttachmentId).Distinct().Count() != attachments.Length)
+            throw new ArgumentException("Character instance attachment IDs must be unique.", nameof(attachmentBaselines));
+        ClipName = clipName;
+        Time = time;
+        Speed = speed;
+        Loop = loop;
+        IsPlaying = isPlaying;
+        CrossfadeClipName = crossfadeClipName;
+        BlendAmount = blendAmount;
+        AttachmentCount = attachmentCount;
+        AttachmentBaselines = Array.AsReadOnly(attachments);
+        HasAttachmentMappings = hasAttachmentMappings;
+    }
+
+    public string? ClipName { get; }
+    public float Time { get; }
+    public float Speed { get; }
+    public bool Loop { get; }
+    public bool IsPlaying { get; }
+    public string? CrossfadeClipName { get; }
+    public float BlendAmount { get; }
+    public int AttachmentCount { get; }
+    public IReadOnlyList<SceneTemplateAttachmentBaseline> AttachmentBaselines { get; }
+    public bool HasAttachmentMappings { get; }
 }
 
 /// <summary>Persistent source identity for an expanded scene-template instance hierarchy.</summary>

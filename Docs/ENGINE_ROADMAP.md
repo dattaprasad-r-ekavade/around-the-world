@@ -175,11 +175,12 @@ Dependency: M0 for gate closure; UX.1–UX.5 are part of acceptance. Extract sha
 
 The M1.3 API now saves atomic, versioned hierarchy snapshots, places expanded instances with
 remapped IDs and persisted source mappings, and explicitly updates changed hierarchies. Scene
-version 9 stores source name/transform baselines, orphan IDs and the target world cell; update
-commands preserve stable mappings and local name/transform edits, add and remove source objects,
-retain edited or referenced removed content as tracked orphans, and support undo/redo. Overrides
-for other fields, visible orphan warnings, the editor placement/update workflow and source
-relinking remain open.
+version 12 stores source name/transform, enabled-state, reset-policy, shared GLB asset, static
+mesh LOD and character playback baselines, plus orphan IDs and the target world cell. Explicit
+updates preserve stable mappings and local overrides for those fields, add and remove source
+objects, retain edited, referenced or uncertain removed content as tracked orphans, and support
+undo/redo. Character attachment-list updates, door/spawn/world-entity overrides, visible orphan
+warnings, the editor placement/update workflow and source relinking remain open.
 
 Gate: create a furnished, lit scene using editor actions, with no handwritten JSON or
 source changes; restart and recover the same scene. Record the complete action sequence and pass UX.1–UX.5; a developer-only walkthrough is insufficient.

@@ -175,6 +175,8 @@ public sealed class SceneTemplateInstanceSystemTests
             var source = new SceneGraph();
             var root = new SceneObject(Guid.NewGuid(), "Workshop")
             {
+                Enabled = true,
+                ResetPolicy = WorldInstanceResetPolicy.Preserve,
                 Transform = new Transform { Position = new Vector3(1f, 0f, 0f) }
             };
             var child = new SceneObject(Guid.NewGuid(), "Old lamp")
@@ -195,9 +197,13 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(2, wrapper.TemplateInstance.ObjectBaselines.Count);
 
             instanceRoot.Name = "Local workshop name";
+            instanceRoot.Enabled = false;
+            instanceRoot.ResetPolicy = WorldInstanceResetPolicy.QuestPersistent;
             instanceChild.Transform = new Transform { Position = new Vector3(0f, 7f, 0f) };
             root.Transform = new Transform { Position = new Vector3(3f, 0f, 0f) };
             child.Name = "Updated lamp";
+            child.Enabled = false;
+            child.ResetPolicy = WorldInstanceResetPolicy.ResetOnCellReset;
             child.Transform = new Transform { Position = new Vector3(0f, 2f, 0f) };
             var secondRevision = SceneTemplateFile.Save(source, root.Id, "Workshop", path);
             var history = new SceneCommandHistory();
@@ -205,8 +211,12 @@ public sealed class SceneTemplateInstanceSystemTests
             history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, secondRevision));
 
             Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.False(instanceRoot.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent, instanceRoot.ResetPolicy);
             Assert.Equal(new Vector3(3f, 0f, 0f), instanceRoot.Transform.Position);
             Assert.Equal("Updated lamp", instanceChild.Name);
+            Assert.False(instanceChild.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.ResetOnCellReset, instanceChild.ResetPolicy);
             Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
             Assert.Equal(2, wrapper.TemplateInstance!.AppliedRevision);
             Assert.Equal(new Vector3(3f, 0f, 0f), wrapper.TemplateInstance.ObjectBaselines
@@ -215,21 +225,37 @@ public sealed class SceneTemplateInstanceSystemTests
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
             Assert.Equal(2, reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines.Count);
+            Assert.False(reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == child.Id).Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.ResetOnCellReset, reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == child.Id).ResetPolicy);
+            Assert.False(reopened.Find(mappings[root.Id])!.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent, reopened.Find(mappings[root.Id])!.ResetPolicy);
             Assert.Equal(new Vector3(0f, 7f, 0f), reopened.Find(mappings[child.Id])!.Transform.Position);
 
             Assert.True(history.Undo(scene));
             Assert.Equal(1, wrapper.TemplateInstance!.AppliedRevision);
             Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.False(instanceRoot.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent, instanceRoot.ResetPolicy);
             Assert.Equal("Old lamp", instanceChild.Name);
+            Assert.True(instanceChild.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.Preserve, instanceChild.ResetPolicy);
             Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
             Assert.True(history.Redo(scene));
             Assert.Equal(2, wrapper.TemplateInstance!.AppliedRevision);
             Assert.Equal("Local workshop name", instanceRoot.Name);
+            Assert.False(instanceRoot.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent, instanceRoot.ResetPolicy);
+            Assert.False(instanceChild.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.ResetOnCellReset, instanceChild.ResetPolicy);
             Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
 
             root.Name = "Final workshop name";
             root.Transform = new Transform { Position = new Vector3(4f, 0f, 0f) };
             child.Name = "Final lamp";
+            child.Enabled = true;
+            child.ResetPolicy = WorldInstanceResetPolicy.Preserve;
             child.Transform = new Transform { Position = new Vector3(0f, 3f, 0f) };
             var thirdRevision = SceneTemplateFile.Save(source, root.Id, "Workshop", path);
             history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, thirdRevision));
@@ -237,6 +263,8 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("Local workshop name", instanceRoot.Name);
             Assert.Equal(new Vector3(4f, 0f, 0f), instanceRoot.Transform.Position);
             Assert.Equal("Final lamp", instanceChild.Name);
+            Assert.True(instanceChild.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.Preserve, instanceChild.ResetPolicy);
             Assert.Equal(new Vector3(0f, 7f, 0f), instanceChild.Transform.Position);
         }
         finally
@@ -276,6 +304,239 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
+    public void UpdateMergesSharedAssetAndLodComponentsWhilePreservingLocalOverrides()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var sourceAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/source-v1.glb");
+            var updatedAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/source-v2.glb");
+            var localAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/local.glb");
+            var sourceNearV1 = new GltfAssetReference(Guid.NewGuid(), "Assets/near-v1.glb");
+            var sourceFarV1 = new GltfAssetReference(Guid.NewGuid(), "Assets/far-v1.glb");
+            var sourceNearV2 = new GltfAssetReference(Guid.NewGuid(), "Assets/near-v2.glb");
+            var sourceFarV2 = new GltfAssetReference(Guid.NewGuid(), "Assets/far-v2.glb");
+            var localNear = new GltfAssetReference(Guid.NewGuid(), "Assets/local-near.glb");
+            var localFar = new GltfAssetReference(Guid.NewGuid(), "Assets/local-far.glb");
+            var sourceLodV1 = new GltfStaticMeshLod(sourceNearV1, sourceFarV1, 100f, 80f);
+            var sourceLodV2 = new GltfStaticMeshLod(sourceNearV2, sourceFarV2, 150f, 120f);
+            var localLod = new GltfStaticMeshLod(localNear, localFar, 60f, 45f);
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Assets")
+            {
+                GltfAsset = sourceAsset
+            };
+            var updatedAssetObject = new SceneObject(Guid.NewGuid(), "Default asset")
+            {
+                GltfAsset = sourceAsset
+            };
+            var overriddenAssetObject = new SceneObject(Guid.NewGuid(), "Overridden asset")
+            {
+                GltfAsset = sourceAsset
+            };
+            var updatedLodObject = new SceneObject(Guid.NewGuid(), "Default LOD")
+            {
+                StaticMeshLod = sourceLodV1
+            };
+            var overriddenLodObject = new SceneObject(Guid.NewGuid(), "Overridden LOD")
+            {
+                StaticMeshLod = sourceLodV1
+            };
+            source.Add(root);
+            source.Add(updatedAssetObject);
+            source.Add(overriddenAssetObject);
+            source.Add(updatedLodObject);
+            source.Add(overriddenLodObject);
+            source.SetParent(updatedAssetObject.Id, root.Id);
+            source.SetParent(overriddenAssetObject.Id, root.Id);
+            source.SetParent(updatedLodObject.Id, root.Id);
+            source.SetParent(overriddenLodObject.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Assets", path);
+
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var mappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            scene.Find(mappings[overriddenAssetObject.Id])!.GltfAsset = localAsset;
+            scene.Find(mappings[overriddenLodObject.Id])!.StaticMeshLod = localLod;
+            updatedAssetObject.GltfAsset = updatedAsset;
+            overriddenAssetObject.GltfAsset = updatedAsset;
+            updatedLodObject.StaticMeshLod = sourceLodV2;
+            overriddenLodObject.StaticMeshLod = sourceLodV2;
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Assets", path);
+            var history = new SceneCommandHistory();
+
+            history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, secondRevision));
+
+            Assert.Equal(updatedAsset.AssetId, scene.Find(mappings[updatedAssetObject.Id])!.GltfAsset!.AssetId);
+            Assert.Equal(localAsset.AssetId, scene.Find(mappings[overriddenAssetObject.Id])!.GltfAsset!.AssetId);
+            var updatedLod = scene.Find(mappings[updatedLodObject.Id])!.StaticMeshLod!;
+            Assert.Equal(sourceNearV2.AssetId, updatedLod.NearAsset.AssetId);
+            Assert.Equal(sourceFarV2.AssetId, updatedLod.FarAsset.AssetId);
+            Assert.Equal(150f, updatedLod.EnterFarDistance);
+            Assert.Equal(120f, updatedLod.ExitFarDistance);
+            var overriddenLod = scene.Find(mappings[overriddenLodObject.Id])!.StaticMeshLod!;
+            Assert.Equal(localNear.AssetId, overriddenLod.NearAsset.AssetId);
+            Assert.Equal(localFar.AssetId, overriddenLod.FarAsset.AssetId);
+            Assert.Equal(60f, overriddenLod.EnterFarDistance);
+            Assert.Equal(45f, overriddenLod.ExitFarDistance);
+
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            Assert.Equal(13, SceneFile.CurrentVersion);
+            var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
+                .ToDictionary(baseline => baseline.SourceObjectId);
+            Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
+            Assert.Equal(updatedAsset.AssetId, baselines[updatedAssetObject.Id].GltfAsset!.AssetId);
+            Assert.True(baselines[updatedLodObject.Id].HasStaticMeshLodBaseline);
+            Assert.Equal(sourceNearV2.AssetId, baselines[updatedLodObject.Id].StaticMeshLod!.NearAsset.AssetId);
+            Assert.Equal(150f, baselines[updatedLodObject.Id].StaticMeshLod!.EnterFarDistance);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal(sourceAsset.AssetId, scene.Find(mappings[updatedAssetObject.Id])!.GltfAsset!.AssetId);
+            Assert.Equal(localAsset.AssetId, scene.Find(mappings[overriddenAssetObject.Id])!.GltfAsset!.AssetId);
+            Assert.Equal(100f, scene.Find(mappings[updatedLodObject.Id])!.StaticMeshLod!.EnterFarDistance);
+            Assert.Equal(60f, scene.Find(mappings[overriddenLodObject.Id])!.StaticMeshLod!.EnterFarDistance);
+            Assert.True(history.Redo(scene));
+            Assert.Equal(updatedAsset.AssetId, scene.Find(mappings[updatedAssetObject.Id])!.GltfAsset!.AssetId);
+            Assert.Equal(localAsset.AssetId, scene.Find(mappings[overriddenAssetObject.Id])!.GltfAsset!.AssetId);
+            Assert.Equal(150f, scene.Find(mappings[updatedLodObject.Id])!.StaticMeshLod!.EnterFarDistance);
+            Assert.Equal(60f, scene.Find(mappings[overriddenLodObject.Id])!.StaticMeshLod!.EnterFarDistance);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void UpdateMergesCharacterPlaybackDefaultsAndPreservesInstanceAttachments()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Animated character")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/character.glb"),
+                CharacterSettings = new GltfCharacterSettings
+                {
+                    ClipName = "Idle",
+                    Time = 0.25f,
+                    Speed = 1f,
+                    Loop = true,
+                    IsPlaying = false,
+                    BlendAmount = 0.5f
+                }
+            };
+            var animatedProp = new SceneObject(Guid.NewGuid(), "New animated prop")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/animated-prop.glb")
+            };
+            var sourceAttachmentId = Guid.NewGuid();
+            var addedSourceAttachmentId = Guid.NewGuid();
+            root.CharacterSettings.Attachments.Add(new GltfBoneAttachmentReference(
+                sourceAttachmentId, "hand_r", Matrix.Identity));
+            source.Add(root);
+            source.Add(animatedProp);
+            source.SetParent(animatedProp.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Animated character", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceObjectId = wrapper.TemplateInstance!.InstanceRootObjectId;
+            var mappings = wrapper.TemplateInstance.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var animatedPropInstanceId = mappings[animatedProp.Id];
+            var targetSettings = scene.Find(instanceObjectId)!.CharacterSettings!;
+            var instanceAttachmentId = Assert.Single(targetSettings.Attachments).Id;
+            targetSettings.ClipName = "PlayerRun";
+            targetSettings.Attachments.Clear();
+            targetSettings.Attachments.Add(new GltfBoneAttachmentReference(instanceAttachmentId,
+                "local_grip", Matrix.CreateTranslation(1f, 2f, 3f)));
+
+            root.CharacterSettings.ClipName = "Walk";
+            root.CharacterSettings.Time = 0.75f;
+            root.CharacterSettings.Speed = 2f;
+            root.CharacterSettings.Loop = false;
+            root.CharacterSettings.IsPlaying = true;
+            root.CharacterSettings.CrossfadeClipName = "Attack";
+            root.CharacterSettings.BlendAmount = 0.2f;
+            root.CharacterSettings.Attachments.Clear();
+            root.CharacterSettings.Attachments.Add(new GltfBoneAttachmentReference(
+                sourceAttachmentId, "weapon_grip", Matrix.CreateTranslation(4f, 0f, 0f)));
+            root.CharacterSettings.Attachments.Add(new GltfBoneAttachmentReference(
+                addedSourceAttachmentId, "hand_l", Matrix.Identity));
+            animatedProp.CharacterSettings = new GltfCharacterSettings { ClipName = "PropIdle" };
+            var addedPropAttachmentId = Guid.NewGuid();
+            animatedProp.CharacterSettings.Attachments.Add(new GltfBoneAttachmentReference(
+                addedPropAttachmentId, "prop_joint", Matrix.Identity));
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Animated character", path);
+            var history = new SceneCommandHistory();
+
+            history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, secondRevision));
+
+            var updated = scene.Find(instanceObjectId)!.CharacterSettings!;
+            Assert.Equal("PlayerRun", updated.ClipName);
+            Assert.Equal(0.75f, updated.Time);
+            Assert.Equal(2f, updated.Speed);
+            Assert.False(updated.Loop);
+            Assert.True(updated.IsPlaying);
+            Assert.Equal("Attack", updated.CrossfadeClipName);
+            Assert.Equal(0.2f, updated.BlendAmount);
+            Assert.Equal(2, updated.Attachments.Count);
+            var retainedAttachment = updated.Attachments.Single(attachment => attachment.Id == instanceAttachmentId);
+            Assert.Equal(instanceAttachmentId, retainedAttachment.Id);
+            Assert.Equal("local_grip", retainedAttachment.BoneName);
+            Assert.Equal(Matrix.CreateTranslation(1f, 2f, 3f), retainedAttachment.LocalOffset);
+            var addedCharacterAttachment = Assert.Single(updated.Attachments,
+                attachment => attachment.BoneName == "hand_l");
+            Assert.NotEqual(addedSourceAttachmentId, addedCharacterAttachment.Id);
+            var addedPropSettings = scene.Find(animatedPropInstanceId)!.CharacterSettings!;
+            Assert.Equal("PropIdle", addedPropSettings.ClipName);
+            var remappedPropAttachment = Assert.Single(addedPropSettings.Attachments);
+            Assert.NotEqual(addedPropAttachmentId, remappedPropAttachment.Id);
+            Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
+
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            Assert.Equal(13, SceneFile.CurrentVersion);
+            var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
+            Assert.Equal("Walk", characterBaseline.ClipName);
+            Assert.Equal(0.75f, characterBaseline.Time);
+            Assert.Equal(2f, characterBaseline.Speed);
+            Assert.False(characterBaseline.Loop);
+            Assert.True(characterBaseline.IsPlaying);
+            Assert.Equal("Attack", characterBaseline.CrossfadeClipName);
+            Assert.Equal(0.2f, characterBaseline.BlendAmount);
+            Assert.Equal(2, reopened.Find(mappings[root.Id])!.CharacterSettings!.Attachments.Count);
+            Assert.Contains(characterBaseline.AttachmentBaselines, attachment =>
+                attachment.SourceAttachmentId == sourceAttachmentId
+                && attachment.InstanceAttachmentId == instanceAttachmentId
+                && attachment.BoneName == "weapon_grip");
+            Assert.Contains(characterBaseline.AttachmentBaselines, attachment =>
+                attachment.SourceAttachmentId == addedSourceAttachmentId
+                && attachment.InstanceAttachmentId == addedCharacterAttachment.Id);
+            Assert.Equal("PropIdle", reopened.Find(animatedPropInstanceId)!.CharacterSettings!.ClipName);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal("PlayerRun", scene.Find(instanceObjectId)!.CharacterSettings!.ClipName);
+            Assert.Null(scene.Find(animatedPropInstanceId)!.CharacterSettings);
+            Assert.Single(scene.Find(instanceObjectId)!.CharacterSettings!.Attachments);
+            Assert.Equal("local_grip", scene.Find(instanceObjectId)!.CharacterSettings!.Attachments[0].BoneName);
+            Assert.True(history.Redo(scene));
+            Assert.Equal("PlayerRun", scene.Find(instanceObjectId)!.CharacterSettings!.ClipName);
+            Assert.Equal("PropIdle", scene.Find(animatedPropInstanceId)!.CharacterSettings!.ClipName);
+            Assert.Equal(0.75f, scene.Find(instanceObjectId)!.CharacterSettings!.Time);
+            Assert.Equal(2, scene.Find(instanceObjectId)!.CharacterSettings!.Attachments.Count);
+            Assert.Equal("local_grip", scene.Find(instanceObjectId)!.CharacterSettings!.Attachments
+                .Single(attachment => attachment.Id == instanceAttachmentId).BoneName);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void UpdateAddsAndRemovesObjectsAndRetainsEditedContentAsOrphans()
     {
         var path = TemporaryTemplatePath();
@@ -285,6 +546,20 @@ public sealed class SceneTemplateInstanceSystemTests
             var root = new SceneObject(Guid.NewGuid(), "Interior");
             var editedSource = new SceneObject(Guid.NewGuid(), "Cabinet");
             var removedSource = new SceneObject(Guid.NewGuid(), "Old stool");
+            var overriddenRemovedSource = new SceneObject(Guid.NewGuid(), "Retired sign")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/retired-sign.glb")
+            };
+            var overriddenCharacterSource = new SceneObject(Guid.NewGuid(), "Retired actor")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/retired-actor.glb"),
+                CharacterSettings = new GltfCharacterSettings { ClipName = "Idle" }
+            };
+            var unchangedCharacterSource = new SceneObject(Guid.NewGuid(), "Retired mannequin")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/retired-mannequin.glb"),
+                CharacterSettings = new GltfCharacterSettings { ClipName = "Idle" }
+            };
             var linkedSpawnSourceId = Guid.NewGuid();
             var linkedSpawn = new SceneObject(Guid.NewGuid(), "Linked old spawn")
             {
@@ -297,10 +572,16 @@ public sealed class SceneTemplateInstanceSystemTests
             source.Add(root);
             source.Add(editedSource);
             source.Add(removedSource);
+            source.Add(overriddenRemovedSource);
+            source.Add(overriddenCharacterSource);
+            source.Add(unchangedCharacterSource);
             source.Add(linkedSpawn);
             source.Add(linkedDoor);
             source.SetParent(editedSource.Id, root.Id);
             source.SetParent(removedSource.Id, root.Id);
+            source.SetParent(overriddenRemovedSource.Id, root.Id);
+            source.SetParent(overriddenCharacterSource.Id, root.Id);
+            source.SetParent(unchangedCharacterSource.Id, root.Id);
             source.SetParent(linkedSpawn.Id, root.Id);
             source.SetParent(linkedDoor.Id, root.Id);
             var firstRevision = SceneTemplateFile.Save(source, root.Id, "Interior", path);
@@ -312,16 +593,27 @@ public sealed class SceneTemplateInstanceSystemTests
                 mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
             var editedInstanceId = originalMappings[editedSource.Id];
             var removedInstanceId = originalMappings[removedSource.Id];
+            var overriddenRemovedInstanceId = originalMappings[overriddenRemovedSource.Id];
+            var overriddenCharacterInstanceId = originalMappings[overriddenCharacterSource.Id];
+            var unchangedCharacterInstanceId = originalMappings[unchangedCharacterSource.Id];
             var linkedSpawnInstanceId = originalMappings[linkedSpawn.Id];
             var linkedDoorInstanceId = originalMappings[linkedDoor.Id];
             var linkedSpawnInstanceSpawnId = scene.Find(linkedSpawnInstanceId)!.SpawnPoint!.Id;
             scene.Find(editedInstanceId)!.Name = "Player cabinet";
+            scene.Find(overriddenRemovedInstanceId)!.Enabled = false;
+            scene.Find(overriddenRemovedInstanceId)!.ResetPolicy = WorldInstanceResetPolicy.QuestPersistent;
+            var localAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/player-sign.glb");
+            scene.Find(overriddenRemovedInstanceId)!.GltfAsset = localAsset;
+            scene.Find(overriddenCharacterInstanceId)!.CharacterSettings!.ClipName = "Player dance";
             var playerProp = new SceneObject(Guid.NewGuid(), "Stored prop");
             scene.Add(playerProp);
             scene.SetParent(playerProp.Id, editedInstanceId);
 
             source.Remove(editedSource.Id);
             source.Remove(removedSource.Id);
+            source.Remove(overriddenRemovedSource.Id);
+            source.Remove(overriddenCharacterSource.Id);
+            source.Remove(unchangedCharacterSource.Id);
             source.Remove(linkedSpawn.Id);
             var spawnSourceId = Guid.NewGuid();
             var spawnMarker = new SceneObject(Guid.NewGuid(), "New spawn")
@@ -351,6 +643,15 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.NotEqual(spawnMarker.Id, newMappings[spawnMarker.Id]);
             Assert.Equal("Player cabinet", scene.Find(editedInstanceId)!.Name);
             Assert.Null(scene.Find(removedInstanceId));
+            Assert.NotNull(scene.Find(overriddenRemovedInstanceId));
+            Assert.False(scene.Find(overriddenRemovedInstanceId)!.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent,
+                scene.Find(overriddenRemovedInstanceId)!.ResetPolicy);
+            Assert.Equal(localAsset.AssetId, scene.Find(overriddenRemovedInstanceId)!.GltfAsset!.AssetId);
+            Assert.Contains(overriddenRemovedInstanceId, command.OrphanedObjectIds);
+            Assert.Equal("Player dance", scene.Find(overriddenCharacterInstanceId)!.CharacterSettings!.ClipName);
+            Assert.Contains(overriddenCharacterInstanceId, command.OrphanedObjectIds);
+            Assert.Null(scene.Find(unchangedCharacterInstanceId));
             Assert.NotNull(scene.Find(linkedSpawnInstanceId));
             Assert.Contains(linkedSpawnInstanceId, command.OrphanedObjectIds);
             Assert.Equal(linkedSpawnInstanceSpawnId,
@@ -370,8 +671,11 @@ public sealed class SceneTemplateInstanceSystemTests
 
             Assert.True(history.Undo(scene));
             Assert.Equal(1, wrapper.TemplateInstance!.AppliedRevision);
-            Assert.Equal(5, wrapper.TemplateInstance.ObjectMappings.Count);
+            Assert.Equal(8, wrapper.TemplateInstance.ObjectMappings.Count);
             Assert.NotNull(scene.Find(removedInstanceId));
+            Assert.NotNull(scene.Find(overriddenRemovedInstanceId));
+            Assert.NotNull(scene.Find(overriddenCharacterInstanceId));
+            Assert.NotNull(scene.Find(unchangedCharacterInstanceId));
             Assert.Null(scene.Find(newMappings[spawnMarker.Id]));
             Assert.Equal(editedInstanceId, scene.Find(playerProp.Id)!.ParentId);
 
@@ -381,6 +685,9 @@ public sealed class SceneTemplateInstanceSystemTests
                 .Single(mapping => mapping.SourceObjectId == spawnMarker.Id).InstanceObjectId);
             Assert.Contains(editedInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
             Assert.Contains(linkedSpawnInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
+            Assert.Contains(overriddenRemovedInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
+            Assert.Contains(overriddenCharacterInstanceId, wrapper.TemplateInstance.OrphanedObjectIds);
+            Assert.Null(scene.Find(unchangedCharacterInstanceId));
         }
         finally
         {
@@ -409,7 +716,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var legacyScene = SceneFile.FromJson(legacyJson.ToJsonString());
             var legacyWrapper = legacyScene.Find(wrapper.Id)!;
             Assert.Empty(legacyWrapper.TemplateInstance!.ObjectBaselines);
-            Assert.Contains("\"Version\": 9", SceneFile.ToJson(legacyScene), StringComparison.Ordinal);
+            Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", SceneFile.ToJson(legacyScene), StringComparison.Ordinal);
 
             root.Name = "Updated room";
             var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
@@ -417,6 +724,217 @@ public sealed class SceneTemplateInstanceSystemTests
                 new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(legacyScene));
             Assert.Equal(1, legacyWrapper.TemplateInstance.AppliedRevision);
             Assert.Equal("Room", legacyScene.Find(legacyWrapper.TemplateInstance.InstanceRootObjectId)!.Name);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void VersionNineTemplateBaselinesPreserveUnknownScalarOverridesThenUpgrade()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Room");
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var rootInstanceId = wrapper.TemplateInstance!.InstanceRootObjectId;
+            scene.Find(rootInstanceId)!.Enabled = false;
+            scene.Find(rootInstanceId)!.ResetPolicy = WorldInstanceResetPolicy.QuestPersistent;
+
+            var versionNineJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
+            versionNineJson["Version"] = 9;
+            var wrapperData = versionNineJson["Objects"]!.AsArray().Single(item =>
+                Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
+            foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
+            {
+                baseline!.AsObject().Remove("Enabled");
+                baseline.AsObject().Remove("ResetPolicy");
+                baseline.AsObject().Remove("HasGltfAssetBaseline");
+                baseline.AsObject().Remove("GltfAssetId");
+                baseline.AsObject().Remove("GltfAssetPath");
+                baseline.AsObject().Remove("HasStaticMeshLodBaseline");
+                baseline.AsObject().Remove("StaticMeshLod");
+                baseline.AsObject().Remove("HasCharacterSettingsBaseline");
+                baseline.AsObject().Remove("CharacterSettingsBaseline");
+            }
+
+            var migrated = SceneFile.FromJson(versionNineJson.ToJsonString());
+            var migratedWrapper = migrated.Find(wrapper.Id)!;
+            var legacyBaseline = Assert.Single(migratedWrapper.TemplateInstance!.ObjectBaselines);
+            Assert.Null(legacyBaseline.Enabled);
+            Assert.Null(legacyBaseline.ResetPolicy);
+            Assert.False(legacyBaseline.HasGltfAssetBaseline);
+            Assert.False(legacyBaseline.HasStaticMeshLodBaseline);
+
+            root.Name = "Updated room";
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(migrated);
+
+            var updated = migrated.Find(rootInstanceId)!;
+            Assert.Equal("Updated room", updated.Name);
+            Assert.False(updated.Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.QuestPersistent, updated.ResetPolicy);
+            Assert.True(migratedWrapper.TemplateInstance!.ObjectBaselines.Single().Enabled);
+            Assert.Equal(WorldInstanceResetPolicy.Preserve,
+                migratedWrapper.TemplateInstance.ObjectBaselines.Single().ResetPolicy);
+            Assert.True(migratedWrapper.TemplateInstance.ObjectBaselines.Single().HasGltfAssetBaseline);
+            Assert.True(migratedWrapper.TemplateInstance.ObjectBaselines.Single().HasStaticMeshLodBaseline);
+            Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", SceneFile.ToJson(migrated), StringComparison.Ordinal);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void VersionTenTemplateBaselinesPreserveUnknownAssetOverridesThenUpgrade()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var sourceAssetV1 = new GltfAssetReference(Guid.NewGuid(), "Assets/room-v1.glb");
+            var sourceAssetV2 = new GltfAssetReference(Guid.NewGuid(), "Assets/room-v2.glb");
+            var localAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/local-room.glb");
+            var nearV1 = new GltfAssetReference(Guid.NewGuid(), "Assets/near-v1.glb");
+            var farV1 = new GltfAssetReference(Guid.NewGuid(), "Assets/far-v1.glb");
+            var nearV2 = new GltfAssetReference(Guid.NewGuid(), "Assets/near-v2.glb");
+            var farV2 = new GltfAssetReference(Guid.NewGuid(), "Assets/far-v2.glb");
+            var localNear = new GltfAssetReference(Guid.NewGuid(), "Assets/local-near.glb");
+            var localFar = new GltfAssetReference(Guid.NewGuid(), "Assets/local-far.glb");
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Room") { GltfAsset = sourceAssetV1 };
+            var lodObject = new SceneObject(Guid.NewGuid(), "Room LOD")
+            {
+                StaticMeshLod = new GltfStaticMeshLod(nearV1, farV1, 100f, 80f)
+            };
+            var removedLegacyObject = new SceneObject(Guid.NewGuid(), "Untracked removed prop")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/untracked-prop.glb")
+            };
+            source.Add(root);
+            source.Add(lodObject);
+            source.Add(removedLegacyObject);
+            source.SetParent(lodObject.Id, root.Id);
+            source.SetParent(removedLegacyObject.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var mappings = wrapper.TemplateInstance!.ObjectMappings.ToDictionary(
+                mapping => mapping.SourceObjectId, mapping => mapping.InstanceObjectId);
+            var removedLegacyInstanceId = mappings[removedLegacyObject.Id];
+            scene.Find(mappings[root.Id])!.GltfAsset = localAsset;
+            scene.Find(mappings[lodObject.Id])!.StaticMeshLod =
+                new GltfStaticMeshLod(localNear, localFar, 50f, 35f);
+
+            var versionTenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
+            versionTenJson["Version"] = 10;
+            var wrapperData = versionTenJson["Objects"]!.AsArray().Single(item =>
+                Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
+            foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
+            {
+                baseline!.AsObject().Remove("HasGltfAssetBaseline");
+                baseline.AsObject().Remove("GltfAssetId");
+                baseline.AsObject().Remove("GltfAssetPath");
+                baseline.AsObject().Remove("HasStaticMeshLodBaseline");
+                baseline.AsObject().Remove("StaticMeshLod");
+                baseline.AsObject().Remove("HasCharacterSettingsBaseline");
+                baseline.AsObject().Remove("CharacterSettingsBaseline");
+            }
+            var migrated = SceneFile.FromJson(versionTenJson.ToJsonString());
+            var migratedWrapper = migrated.Find(wrapper.Id)!;
+            Assert.False(migratedWrapper.TemplateInstance!.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == root.Id).HasGltfAssetBaseline);
+            Assert.False(migratedWrapper.TemplateInstance.ObjectBaselines
+                .Single(baseline => baseline.SourceObjectId == lodObject.Id).HasStaticMeshLodBaseline);
+
+            root.GltfAsset = sourceAssetV2;
+            lodObject.StaticMeshLod = new GltfStaticMeshLod(nearV2, farV2, 140f, 110f);
+            source.Remove(removedLegacyObject.Id);
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(migrated);
+
+            Assert.Equal(localAsset.AssetId, migrated.Find(mappings[root.Id])!.GltfAsset!.AssetId);
+            var retainedLod = migrated.Find(mappings[lodObject.Id])!.StaticMeshLod!;
+            Assert.Equal(localNear.AssetId, retainedLod.NearAsset.AssetId);
+            Assert.Equal(localFar.AssetId, retainedLod.FarAsset.AssetId);
+            Assert.Equal(50f, retainedLod.EnterFarDistance);
+            Assert.NotNull(migrated.Find(removedLegacyInstanceId));
+            Assert.Contains(removedLegacyInstanceId, migratedWrapper.TemplateInstance!.OrphanedObjectIds);
+            Assert.DoesNotContain(removedLegacyObject.Id,
+                migratedWrapper.TemplateInstance.ObjectMappings.Select(mapping => mapping.SourceObjectId));
+            var upgradedBaselines = migratedWrapper.TemplateInstance!.ObjectBaselines
+                .ToDictionary(baseline => baseline.SourceObjectId);
+            Assert.True(upgradedBaselines[root.Id].HasGltfAssetBaseline);
+            Assert.Equal(sourceAssetV2.AssetId, upgradedBaselines[root.Id].GltfAsset!.AssetId);
+            Assert.True(upgradedBaselines[lodObject.Id].HasStaticMeshLodBaseline);
+            Assert.Equal(nearV2.AssetId, upgradedBaselines[lodObject.Id].StaticMeshLod!.NearAsset.AssetId);
+            Assert.Equal(140f, upgradedBaselines[lodObject.Id].StaticMeshLod!.EnterFarDistance);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void VersionElevenTemplateBaselinesPreserveUnknownCharacterOverridesThenUpgrade()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var source = new SceneGraph();
+            var root = new SceneObject(Guid.NewGuid(), "Animated character")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/character.glb"),
+                CharacterSettings = new GltfCharacterSettings
+                {
+                    ClipName = "Idle",
+                    Time = 0.2f,
+                    Speed = 1f
+                }
+            };
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Animated character", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceObjectId = wrapper.TemplateInstance!.InstanceRootObjectId;
+            scene.Find(instanceObjectId)!.CharacterSettings!.ClipName = "PlayerRun";
+            scene.Find(instanceObjectId)!.CharacterSettings!.Speed = 1.25f;
+
+            var versionElevenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
+            versionElevenJson["Version"] = 11;
+            var wrapperData = versionElevenJson["Objects"]!.AsArray().Single(item =>
+                Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
+            foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
+            {
+                baseline!.AsObject().Remove("HasCharacterSettingsBaseline");
+                baseline.AsObject().Remove("CharacterSettingsBaseline");
+            }
+            var migrated = SceneFile.FromJson(versionElevenJson.ToJsonString());
+            var migratedWrapper = migrated.Find(wrapper.Id)!;
+            var legacyBaseline = Assert.Single(migratedWrapper.TemplateInstance!.ObjectBaselines);
+            Assert.False(legacyBaseline.HasCharacterSettingsBaseline);
+
+            root.CharacterSettings!.ClipName = "Walk";
+            root.CharacterSettings.Speed = 2f;
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Animated character", path);
+            new UpdateSceneTemplateCommand(wrapper.Id, secondRevision).Apply(migrated);
+
+            var updatedSettings = migrated.Find(instanceObjectId)!.CharacterSettings!;
+            Assert.Equal("PlayerRun", updatedSettings.ClipName);
+            Assert.Equal(1.25f, updatedSettings.Speed);
+            var upgradedBaseline = migratedWrapper.TemplateInstance!.ObjectBaselines.Single()
+                .CharacterSettingsBaseline!;
+            Assert.True(migratedWrapper.TemplateInstance.ObjectBaselines.Single().HasCharacterSettingsBaseline);
+            Assert.Equal("Walk", upgradedBaseline.ClipName);
+            Assert.Equal(2f, upgradedBaseline.Speed);
         }
         finally
         {

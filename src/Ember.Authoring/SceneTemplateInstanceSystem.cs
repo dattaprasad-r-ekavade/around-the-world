@@ -55,8 +55,14 @@ public static class SceneTemplateInstanceSystem
             Transform = new Transform { Position = position },
             TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
                 template.RootObjectId, objectMap[template.RootObjectId], mappings,
-                source.Objects.Select(item => new SceneTemplateObjectBaseline(
-                    item.Id, item.Name, item.Transform)), targetWorldCellId: targetWorldCellId)
+                source.Objects.Select((item, index) => new SceneTemplateObjectBaseline(
+                    item.Id, item.Name, item.Transform, item.Enabled, item.ResetPolicy,
+                    item.GltfAsset, hasGltfAssetBaseline: true,
+                    staticMeshLod: item.StaticMeshLod, hasStaticMeshLodBaseline: true,
+                    characterSettingsBaseline: CaptureCharacterSettingsBaseline(
+                        item.CharacterSettings, clones[index].CharacterSettings),
+                    hasCharacterSettingsBaseline: true)),
+                targetWorldCellId: targetWorldCellId)
         };
 
         var addedIds = new List<Guid>(clones.Length + 1);
@@ -143,8 +149,19 @@ public static class SceneTemplateInstanceSystem
                 ?? throw new InvalidOperationException($"Mapped instance object {oldMappings[sourceId]} is missing.");
             if (!baselines.TryGetValue(sourceId, out var baseline))
                 throw new InvalidOperationException($"The saved source baseline for object {sourceId} is missing.");
-            if (!string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
-                || !baseline.MatchesTransform(target.Transform))
+            var baselineIsIncomplete = baseline.Enabled is null || baseline.ResetPolicy is null
+                || !baseline.HasGltfAssetBaseline || !baseline.HasStaticMeshLodBaseline
+                || !baseline.HasCharacterSettingsBaseline
+                || baseline.CharacterSettingsBaseline is { HasAttachmentMappings: false };
+            var hasKnownOverride = !string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
+                || !baseline.MatchesTransform(target.Transform)
+                || baseline.Enabled is { } baselineEnabled && target.Enabled != baselineEnabled
+                || baseline.ResetPolicy is { } baselineResetPolicy && target.ResetPolicy != baselineResetPolicy
+                || baseline.HasGltfAssetBaseline && !MatchesAssetReference(target.GltfAsset, baseline.GltfAsset)
+                || baseline.HasStaticMeshLodBaseline && !MatchesStaticMeshLod(target.StaticMeshLod, baseline.StaticMeshLod)
+                || baseline.HasCharacterSettingsBaseline
+                    && !MatchesCharacterSettings(target.CharacterSettings, baseline.CharacterSettingsBaseline);
+            if (baselineIsIncomplete || hasKnownOverride)
                 retainedRemovedIds.Add(target.Id);
         }
         var referencedSpawnIds = destination.Objects.Where(item => item.Door is not null)
@@ -204,11 +221,20 @@ public static class SceneTemplateInstanceSystem
             });
         var attachmentIds = destination.Objects.Where(item => item.CharacterSettings is not null)
             .SelectMany(item => item.CharacterSettings!.Attachments).Select(item => item.Id).ToHashSet();
+        foreach (var attachmentBaseline in baselines.Values
+            .SelectMany(baseline => baseline.CharacterSettingsBaseline?.AttachmentBaselines
+                ?? Array.Empty<SceneTemplateAttachmentBaseline>()))
+            attachmentIds.Add(attachmentBaseline.InstanceAttachmentId);
         var newObjects = source.Objects.Where(item => !oldMappings.ContainsKey(item.Id))
             .Select(item => CreateClone(item, mappings[item.Id], spawnMap, entityMap,
                 attachmentIds, instance.TargetWorldCellId)).ToArray();
+        var newObjectsById = newObjects.ToDictionary(item => item.Id);
+        var characterBaselinesBySourceId = new Dictionary<Guid, SceneTemplateCharacterSettingsBaseline?>();
 
-        var updates = new List<(SceneObject Target, string Name, Transform Transform)>();
+        var updates = new List<(SceneObject Target, string Name, Transform Transform,
+            bool Enabled, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
+            GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
+            SceneTemplateCharacterSettingsBaseline? CharacterBaseline)>();
         foreach (var (sourceId, sourceObject) in sourceById)
         {
             if (!oldMappings.TryGetValue(sourceId, out var instanceObjectId)) continue;
@@ -226,8 +252,30 @@ public static class SceneTemplateInstanceSystem
             var transform = baseline.MatchesTransform(target.Transform)
                 ? CopyTransform(sourceObject.Transform)
                 : CopyTransform(target.Transform);
-            updates.Add((target, name, transform));
+            var enabled = baseline.Enabled is { } baselineEnabled && target.Enabled == baselineEnabled
+                ? sourceObject.Enabled
+                : target.Enabled;
+            var resetPolicy = baseline.ResetPolicy is { } baselineResetPolicy
+                && target.ResetPolicy == baselineResetPolicy
+                ? sourceObject.ResetPolicy
+                : target.ResetPolicy;
+            var gltfAsset = baseline.HasGltfAssetBaseline
+                && MatchesAssetReference(target.GltfAsset, baseline.GltfAsset)
+                ? sourceObject.GltfAsset
+                : target.GltfAsset;
+            var staticMeshLod = baseline.HasStaticMeshLodBaseline
+                && MatchesStaticMeshLod(target.StaticMeshLod, baseline.StaticMeshLod)
+                ? sourceObject.StaticMeshLod
+                : target.StaticMeshLod;
+            var characterMerge = MergeCharacterSettings(sourceObject.CharacterSettings,
+                target.CharacterSettings, baseline, attachmentIds);
+            characterBaselinesBySourceId[sourceId] = characterMerge.Baseline;
+            updates.Add((target, name, transform, enabled, resetPolicy, gltfAsset,
+                staticMeshLod, characterMerge.Settings, characterMerge.Baseline));
         }
+        foreach (var sourceObject in source.Objects.Where(item => !oldMappings.ContainsKey(item.Id)))
+            characterBaselinesBySourceId[sourceObject.Id] = CaptureCharacterSettingsBaseline(
+                sourceObject.CharacterSettings, newObjectsById[mappings[sourceObject.Id]].CharacterSettings);
 
         var nextOrphanIds = instance.OrphanedObjectIds
             .Where(id => destination.Find(id) is not null)
@@ -244,6 +292,11 @@ public static class SceneTemplateInstanceSystem
             {
                 update.Target.Name = update.Name;
                 update.Target.Transform = update.Transform;
+                update.Target.Enabled = update.Enabled;
+                update.Target.ResetPolicy = update.ResetPolicy;
+                update.Target.GltfAsset = update.GltfAsset;
+                update.Target.StaticMeshLod = update.StaticMeshLod;
+                update.Target.CharacterSettings = update.CharacterSettings;
             }
             foreach (var sourceObject in source.Objects)
             {
@@ -261,7 +314,11 @@ public static class SceneTemplateInstanceSystem
             wrapper.TemplateInstance = new SceneTemplateInstanceComponent(template.Id, template.Revision,
                 template.RootObjectId, mappings[template.RootObjectId], objectMappings,
                 source.Objects.Select(item => new SceneTemplateObjectBaseline(
-                    item.Id, item.Name, item.Transform)),
+                    item.Id, item.Name, item.Transform, item.Enabled, item.ResetPolicy,
+                    item.GltfAsset, hasGltfAssetBaseline: true,
+                    staticMeshLod: item.StaticMeshLod, hasStaticMeshLodBaseline: true,
+                    characterSettingsBaseline: characterBaselinesBySourceId[item.Id],
+                    hasCharacterSettingsBaseline: true)),
                 nextOrphanIds, instance.TargetWorldCellId);
         }
         catch
@@ -288,7 +345,8 @@ public static class SceneTemplateInstanceSystem
         {
             var item = scene.Find(id)
                 ?? throw new InvalidOperationException($"Template instance object {id} is missing.");
-            return new SceneTemplateObjectState(item, item.Name, CopyTransform(item.Transform),
+            return new SceneTemplateObjectState(item, item.Name, item.Enabled, CopyTransform(item.Transform),
+                item.ResetPolicy, item.GltfAsset, item.StaticMeshLod, item.CharacterSettings,
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
         return new SceneTemplateInstanceState(wrapperId, objects);
@@ -319,7 +377,12 @@ public static class SceneTemplateInstanceSystem
         {
             var current = scene.Find(item.Object.Id)!;
             current.Name = item.Name;
+            current.Enabled = item.Enabled;
             current.Transform = CopyTransform(item.Transform);
+            current.ResetPolicy = item.ResetPolicy;
+            current.GltfAsset = item.GltfAsset;
+            current.StaticMeshLod = item.StaticMeshLod;
+            current.CharacterSettings = item.CharacterSettings;
             current.TemplateInstance = item.TemplateInstance;
         }
         foreach (var item in state.Objects)
@@ -440,6 +503,188 @@ public static class SceneTemplateInstanceSystem
         Scale = source.Scale
     };
 
+    private static bool MatchesAssetReference(GltfAssetReference? left, GltfAssetReference? right) =>
+        left is null ? right is null
+        : right is not null && left.AssetId == right.AssetId
+            && string.Equals(left.SourcePath, right.SourcePath, StringComparison.Ordinal);
+
+    private static bool MatchesStaticMeshLod(GltfStaticMeshLod? left, GltfStaticMeshLod? right) =>
+        left is null ? right is null
+        : right is not null
+            && MatchesAssetReference(left.NearAsset, right.NearAsset)
+            && MatchesAssetReference(left.FarAsset, right.FarAsset)
+            && left.EnterFarDistance.Equals(right.EnterFarDistance)
+            && left.ExitFarDistance.Equals(right.ExitFarDistance);
+
+    private static bool MatchesCharacterSettings(GltfCharacterSettings? target,
+        SceneTemplateCharacterSettingsBaseline? baseline)
+    {
+        if (target is null) return baseline is null;
+        if (baseline is null || target.Attachments.Count != baseline.AttachmentCount) return false;
+        if (!string.Equals(target.ClipName, baseline.ClipName, StringComparison.Ordinal)
+            || !target.Time.Equals(baseline.Time)
+            || !target.Speed.Equals(baseline.Speed)
+            || target.Loop != baseline.Loop
+            || target.IsPlaying != baseline.IsPlaying
+            || !string.Equals(target.CrossfadeClipName, baseline.CrossfadeClipName, StringComparison.Ordinal)
+            || !target.BlendAmount.Equals(baseline.BlendAmount)) return false;
+        if (!baseline.HasAttachmentMappings) return true;
+        if (target.Attachments.Count != baseline.AttachmentBaselines.Count) return false;
+        var targetById = target.Attachments.ToDictionary(attachment => attachment.Id);
+        return baseline.AttachmentBaselines.All(attachment =>
+            targetById.TryGetValue(attachment.InstanceAttachmentId, out var current)
+            && string.Equals(current.BoneName, attachment.BoneName, StringComparison.Ordinal)
+            && current.LocalOffset.Equals(attachment.LocalOffset));
+    }
+
+    private static (GltfCharacterSettings? Settings, SceneTemplateCharacterSettingsBaseline? Baseline)
+        MergeCharacterSettings(GltfCharacterSettings? source,
+        GltfCharacterSettings? target, SceneTemplateObjectBaseline baseline, HashSet<Guid> usedAttachmentIds)
+    {
+        var previous = baseline.HasCharacterSettingsBaseline ? baseline.CharacterSettingsBaseline : null;
+        if (source is null)
+        {
+            var retained = target is not null && (previous is null || !MatchesCharacterSettings(target, previous));
+            return (retained ? target : null, null);
+        }
+        if (target is null)
+        {
+            if (baseline.HasCharacterSettingsBaseline && previous is null)
+            {
+                var copy = CopyCharacterSettings(source, usedAttachmentIds)!;
+                return (copy, CaptureCharacterSettingsBaseline(source, copy));
+            }
+            return (null, CaptureCharacterSettingsWithoutInstance(source));
+        }
+
+        var merged = new GltfCharacterSettings
+        {
+            ClipName = previous is not null
+                && string.Equals(target.ClipName, previous.ClipName, StringComparison.Ordinal)
+                ? source.ClipName : target.ClipName,
+            Time = previous is not null && target.Time.Equals(previous.Time) ? source.Time : target.Time,
+            Speed = previous is not null && target.Speed.Equals(previous.Speed) ? source.Speed : target.Speed,
+            Loop = previous is not null && target.Loop == previous.Loop ? source.Loop : target.Loop,
+            IsPlaying = previous is not null && target.IsPlaying == previous.IsPlaying ? source.IsPlaying : target.IsPlaying,
+            CrossfadeClipName = previous is not null && string.Equals(target.CrossfadeClipName, previous.CrossfadeClipName,
+                StringComparison.Ordinal) ? source.CrossfadeClipName : target.CrossfadeClipName,
+            BlendAmount = previous is not null && target.BlendAmount.Equals(previous.BlendAmount)
+                ? source.BlendAmount : target.BlendAmount
+        };
+        var attachmentBaselines = MergeAttachments(source, target, previous, merged, usedAttachmentIds);
+        var mergedBaseline = CreateCharacterSettingsBaseline(source, attachmentBaselines);
+        return (merged, mergedBaseline);
+    }
+
+    private static SceneTemplateCharacterSettingsBaseline? CaptureCharacterSettingsBaseline(
+        GltfCharacterSettings? source, GltfCharacterSettings? instance)
+    {
+        if (source is null) return null;
+        if (instance is null || source.Attachments.Count != instance.Attachments.Count)
+            return CaptureCharacterSettingsWithoutInstance(source);
+        var mappings = source.Attachments.Select((attachment, index) =>
+            new SceneTemplateAttachmentBaseline(attachment.Id, instance.Attachments[index].Id,
+                attachment.BoneName, attachment.LocalOffset)).ToArray();
+        return CreateCharacterSettingsBaseline(source, mappings);
+    }
+
+    private static SceneTemplateCharacterSettingsBaseline CaptureCharacterSettingsWithoutInstance(
+        GltfCharacterSettings source) => new(
+        source.ClipName, source.Time, source.Speed, source.Loop, source.IsPlaying,
+        source.CrossfadeClipName, source.BlendAmount, source.Attachments.Count,
+        hasAttachmentMappings: false);
+
+    private static SceneTemplateCharacterSettingsBaseline CreateCharacterSettingsBaseline(
+        GltfCharacterSettings source, IEnumerable<SceneTemplateAttachmentBaseline> attachments) => new(
+        source.ClipName, source.Time, source.Speed, source.Loop, source.IsPlaying,
+        source.CrossfadeClipName, source.BlendAmount, source.Attachments.Count,
+        attachments, hasAttachmentMappings: true);
+
+    private static IReadOnlyList<SceneTemplateAttachmentBaseline> MergeAttachments(
+        GltfCharacterSettings source, GltfCharacterSettings target,
+        SceneTemplateCharacterSettingsBaseline? previous, GltfCharacterSettings merged,
+        HashSet<Guid> usedAttachmentIds)
+    {
+        var sourceAttachments = source.Attachments;
+        var targetAttachments = target.Attachments;
+        var oldMappings = previous?.AttachmentBaselines.ToDictionary(
+            attachment => attachment.SourceAttachmentId) ?? new Dictionary<Guid, SceneTemplateAttachmentBaseline>();
+        var targetById = targetAttachments.ToDictionary(attachment => attachment.Id);
+        var mappings = new List<SceneTemplateAttachmentBaseline>(sourceAttachments.Count);
+        var mappedInstanceIds = new HashSet<Guid>();
+        foreach (var oldMapping in oldMappings.Values)
+            mappedInstanceIds.Add(oldMapping.InstanceAttachmentId);
+        var emittedIds = new HashSet<Guid>();
+
+        for (var index = 0; index < sourceAttachments.Count; index++)
+        {
+            var sourceAttachment = sourceAttachments[index];
+            SceneTemplateAttachmentBaseline? oldMapping = null;
+            if (oldMappings.TryGetValue(sourceAttachment.Id, out var knownMapping))
+                oldMapping = knownMapping;
+            else if (previous is { HasAttachmentMappings: false }
+                && targetAttachments.Count == previous.AttachmentCount
+                && index < previous.AttachmentCount)
+            {
+                // Legacy baselines saved attachment count and order, but not source IDs.
+                oldMapping = new SceneTemplateAttachmentBaseline(sourceAttachment.Id,
+                    targetAttachments[index].Id, sourceAttachment.BoneName, sourceAttachment.LocalOffset);
+            }
+
+            if (oldMapping is not null)
+            {
+                mappedInstanceIds.Add(oldMapping.InstanceAttachmentId);
+                if (targetById.TryGetValue(oldMapping.InstanceAttachmentId, out var current))
+                {
+                    var unchanged = string.Equals(current.BoneName, oldMapping.BoneName, StringComparison.Ordinal)
+                        && current.LocalOffset.Equals(oldMapping.LocalOffset);
+                    var result = unchanged
+                        ? new GltfBoneAttachmentReference(current.Id, sourceAttachment.BoneName, sourceAttachment.LocalOffset)
+                        : current;
+                    if (emittedIds.Add(result.Id)) merged.Attachments.Add(result);
+                }
+                mappings.Add(new SceneTemplateAttachmentBaseline(sourceAttachment.Id,
+                    oldMapping.InstanceAttachmentId, sourceAttachment.BoneName, sourceAttachment.LocalOffset));
+                continue;
+            }
+
+            if (previous is { HasAttachmentMappings: false }
+                && index < previous.AttachmentCount)
+            {
+                // The instance has no provable match for this legacy source attachment. Keep the
+                // mapping absent so updates do not silently recreate a locally removed attachment.
+                var placeholderId = CreateUniqueId(usedAttachmentIds);
+                mappings.Add(new SceneTemplateAttachmentBaseline(sourceAttachment.Id,
+                    placeholderId, sourceAttachment.BoneName, sourceAttachment.LocalOffset));
+                continue;
+            }
+
+            var newId = CreateUniqueId(usedAttachmentIds);
+            merged.Attachments.Add(new GltfBoneAttachmentReference(
+                newId, sourceAttachment.BoneName, sourceAttachment.LocalOffset));
+            emittedIds.Add(newId);
+            mappings.Add(new SceneTemplateAttachmentBaseline(sourceAttachment.Id,
+                newId, sourceAttachment.BoneName, sourceAttachment.LocalOffset));
+        }
+
+        foreach (var oldMapping in oldMappings.Values)
+        {
+            if (sourceAttachments.Any(attachment => attachment.Id == oldMapping.SourceAttachmentId)) continue;
+            if (targetById.TryGetValue(oldMapping.InstanceAttachmentId, out var current)
+                && (!string.Equals(current.BoneName, oldMapping.BoneName, StringComparison.Ordinal)
+                    || !current.LocalOffset.Equals(oldMapping.LocalOffset))
+                && emittedIds.Add(current.Id))
+                merged.Attachments.Add(current);
+        }
+
+        foreach (var attachment in targetAttachments)
+        {
+            if (mappedInstanceIds.Contains(attachment.Id)) continue;
+            if (emittedIds.Add(attachment.Id)) merged.Attachments.Add(attachment);
+        }
+        return mappings;
+    }
+
     private static bool IsInInstanceHierarchy(SceneGraph scene, SceneObject item, Guid wrapperId)
     {
         var visited = new HashSet<Guid>();
@@ -513,5 +758,7 @@ public static class SceneTemplateInstanceSystem
 
 internal sealed record SceneTemplateInstanceState(Guid WrapperId, IReadOnlyList<SceneTemplateObjectState> Objects);
 
-internal sealed record SceneTemplateObjectState(SceneObject Object, string Name, Transform Transform,
-    Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);
+internal sealed record SceneTemplateObjectState(SceneObject Object, string Name, bool Enabled,
+    Transform Transform, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
+    GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings, Guid? ParentId,
+    SceneTemplateInstanceComponent? TemplateInstance);

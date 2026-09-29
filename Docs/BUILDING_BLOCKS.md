@@ -419,12 +419,16 @@ are not stored in the scene file.
 
 The authoring library can save a selected object hierarchy as a validated, versioned JSON scene
 template and place independent expanded instances with remapped object, spawn, attachment and RPG
-entity IDs. Scene saves retain each instance's template revision, source-object map and source
-name/transform baselines. `UpdateSceneTemplateCommand` explicitly applies a newer revision while
-preserving stable mappings and local name/transform edits; it adds new objects, removes unchanged
-objects and tracks edited or referenced removed content as orphans, with undo/redo. Overrides for
-other fields, visible orphan warnings, relinking and the visible template workflow remain in
-progress. The roadmap records the intended broken-source behavior.
+entity IDs. Scene saves retain each instance's template revision, source-object map and baselines
+for name, transform, enabled/reset policy, shared GLB assets, static-mesh LOD and character
+playback settings. `UpdateSceneTemplateCommand` explicitly applies a newer revision while
+preserving stable mappings and local overrides for those fields; it adds new objects, removes
+unchanged objects and tracks edited or referenced removed content as orphans,
+with undo/redo. Incomplete legacy baselines cause removed objects to be retained because their
+override state is unknown. Playback fields merge by default; instance attachment edits remain
+intact. Template attachment-list updates and door/spawn/world-entity overrides, visible orphan
+warnings, relinking and the visible workflow remain in progress. The roadmap records the intended
+broken-source behavior.
 
 `SceneLighting` applies one ambient color and normalized directional light to CharacterStudio's
 static and skinned shader paths. The sample exposes the ambient RGB, direction, and directional RGB

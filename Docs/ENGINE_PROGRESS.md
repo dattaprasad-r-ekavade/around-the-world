@@ -2313,3 +2313,100 @@ the visible workflow remain open.
 
 Next: broaden field-level overrides and expose template placement, update, orphan warnings and
 source relinking in CharacterStudio.
+
+## M1.3 scalar field overrides and version-9 baseline migration — 29 September 2026
+
+- Scene version 10 records source defaults for each object's enabled state and world reset policy
+  alongside its name and local transform. Explicit template updates apply changed defaults only
+  while the corresponding instance value still matches the prior baseline; local edits persist.
+- Undo and redo restore both authored values. Baselines advance after each update so later template
+  revisions can distinguish retained overrides from source defaults.
+- Version-9 scenes load with unknown enabled/reset-policy baselines. Their first explicit update
+  preserves those instance values rather than guessing whether they were overridden, then records
+  the new source defaults for subsequent updates. Version-8 scenes without any baseline remain
+  ineligible for safe updates.
+- Asset references, LOD settings, character playback/attachments, doors, spawns and world-entity
+  component overrides are still not merged by template updates.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Template update, scene persistence and world-travel focused tests | PASS — 26 tests, 0 failures |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 323 passed, 0 failed |
+| Visible template placement/update/relink workflow | NOT RUN — CharacterStudio controls are still open |
+
+M1.3 remains **In progress**. Scalar overrides now cover name, transform, enabled state and reset
+policy, with backward-compatible loading from version 9. Component-level overrides, visible
+orphan warnings, source relinking and the complete editor workflow remain open.
+
+Next: define safe merge rules for character attachments and world-travel/entity fields, then
+expose template placement, update, orphan warnings and source relinking in CharacterStudio.
+
+## M1.3 shared asset and static-mesh LOD overrides — 29 September 2026
+
+- Scene version 11 records whether GLB and static-mesh LOD baselines are known, including the
+  source asset IDs/paths and LOD distance thresholds. A known empty component is distinguished
+  from a legacy scene that never saved that baseline.
+- Explicit updates replace an asset reference or full LOD configuration only when its instance
+  value still matches the previous source default. Locally assigned assets, LOD assets and LOD
+  thresholds remain instance overrides. Undo and redo restore the same references and settings.
+- Version-9 and version-10 instances load with these component baselines marked unknown. Their
+  first explicit update keeps the instance component values and records the new source defaults.
+  When an object is removed while any supported baseline is unknown, it is retained as orphan
+  content so an older scene cannot silently lose an unrecorded override.
+- The same baseline comparison now protects removed objects with local enabled/reset-policy,
+  GLB or LOD changes. Unchanged removed objects remain eligible for deletion; user children and
+  referenced spawn markers continue to be retained.
+- Character playback/attachments, door/spawn/world-entity component overrides, visible orphan
+  warnings, source relinking and the complete CharacterStudio workflow remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Template update, scene persistence and world-travel focused tests | PASS — 28 tests, 0 failures |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 325 passed, 0 failed |
+| Visible template placement/update/relink workflow | NOT RUN — CharacterStudio controls are still open |
+
+M1.3 remains **In progress**. Template updates now merge name/transform, enabled/reset-policy,
+shared GLB asset and static-mesh LOD values with legacy-safe override preservation. Character and
+world component overrides, visible warnings, relinking and editor acceptance remain incomplete.
+
+Next: merge per-instance character playback and attachment fields, then build the visible template
+placement/update/relink workflow in CharacterStudio.
+
+## M1.3 character playback defaults and legacy migration — 29 September 2026
+
+- Scene version 12 records source character playback defaults and the attachment count for each
+  mapped object. Explicit updates merge clip, time, speed, loop, playing, crossfade and blend
+  values independently against their prior defaults. Instance attachment lists and their remapped
+  IDs remain intact during playback updates.
+- If a source adds character settings to an object that previously had none, the instance receives
+  a copy with fresh attachment IDs. A character component removed from a source revision remains
+  as instance content until its attachment list can be safely classified.
+- Version-11 scenes load with unknown character baselines. Their first update keeps current
+  playback values, then records the new source defaults. Objects with unknown character state or
+  nonempty untracked attachments are retained as orphans when removed; objects with no attachment
+  content can still be deleted when all recorded playback values match.
+- Template attachment additions/removals, attachment-level override detection, door/spawn and
+  world-entity component updates, visible orphan warnings, source relinking and the complete
+  CharacterStudio workflow remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Template update, scene persistence and world-travel focused tests | PASS — 30 tests, 0 failures |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Full `Ember.Engine.Tests` run | PASS — 327 passed, 0 failed |
+| Visible template placement/update/relink workflow | NOT RUN — CharacterStudio controls are still open |
+
+M1.3 remains **In progress**. Name/transform, enabled/reset policy, asset/LOD and character
+playback defaults now preserve detectable local overrides and old saved state. Character
+attachment synchronization, remaining world components, editor controls and relinking remain.
+
+Next: add stable attachment-source mappings and merge attachment additions, removals and overrides;
+then implement template workflow controls and broken-source relinking in CharacterStudio.
