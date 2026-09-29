@@ -52,9 +52,9 @@ adapters; they are not prerequisites for the local tool.
 
 ## Status and evidence policy
 
-M0.1 through M0.3 have passed; M0.4, M1.1–M1.4 and UX.1–UX.4 are **In progress**; UX.5–UX.6
-and M2 onward remain **Not started** against their new acceptance criteria. Existing components are
-reusable foundations, not a reason to repeat their implementation.
+M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
+M2.1–M2.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
+components are reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
 passes on the pulled baseline; interactive resize/save/reopen/play-stop evidence remains
@@ -211,11 +211,15 @@ source changes; restart and recover the same scene. Record the complete action s
 
 Dependency: M1. Reuse existing controller, physics, behavior, audio, and packaging code.
 
-| ID | Work | Acceptance |
-| --- | --- | --- |
-| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. |
-| M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. |
-| M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. |
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| M2.1 | Persist and inspect colliders, player/camera settings, input actions and behavior assignments. | Author a controllable character, collision, trigger and interaction in the editor; save/reopen and run them through the shared runtime. Invalid assignments report the owning object. Offer beginner action presets (collect, open, reach goal) through a What happens? panel; advanced component bindings remain optional. | Not started |
+| M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. | Not started |
+| M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. | **In progress** |
+
+M2.3 packaging now carries cell path graphs and world-path network files from both `Paths` and
+`Navigation`. Relocation tests reopen the packaged world and validate its graphs; asset/audio/sequence
+closure, the user-facing build panel and a relocated playable game remain open.
 
 Gate: an editor-authored 3–5 minute interaction demo starts, plays, saves/reloads its
 small state, and exits from a relocated package. No sample-specific source wiring is

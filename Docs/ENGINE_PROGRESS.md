@@ -2655,5 +2655,28 @@ Sequence controls remain preview-only, with no timeline authoring UI; sequence d
 must join M3.1. M1.4 remains **In progress** pending manual acceptance, reviewed recovery apply,
 sequence authoring integration, and editor service-boundary checks.
 
-Next: carry path assets into runtime packaging and wire sequence timeline edits through undoable
-commands; keep the manual editor and recovery acceptance gates open.
+Next: complete dependency discovery and a usable build panel for M2.3, then wire sequence timeline
+edits through undoable commands; keep the manual editor and recovery acceptance gates open.
+
+## M2.3 package authored path data — 29 September 2026
+
+- `EngineProjectPackage` now includes all top-level cell `*.paths.json` graphs and optional
+  `world-paths.json` files from both `Paths` and `Navigation`. The package preserves their relative
+  locations, so worlds authored by either the existing RPG content or CharacterStudio remain
+  readable after relocation.
+- The package relocation regression fixture now contains one graph in each folder and a world-path
+  file. It moves the output, validates the moved manifest, and confirms both cell graphs load.
+- M2.3 is **In progress**. The engine package service still needs automatic audio/sequence dependency
+  closure, an approachable editor build panel, actionable missing-dependency checks, and a relocated
+  playable-output walkthrough.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `EngineProjectPackageTests` Release run | PASS — 7 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 336 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| Relocated package content | PASS — both path graphs load and `WorldProjectValidator` reports no diagnostics after moving the package directory |
+
+Next: inspect sequence/audio references and project metadata for automatic package dependency closure.

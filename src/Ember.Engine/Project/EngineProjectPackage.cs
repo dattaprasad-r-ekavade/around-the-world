@@ -78,13 +78,10 @@ public static class EngineProjectPackage
                 CollectSceneGlbAssets(project, cellScene, assetsById);
             }
 
-            // Also check for optional world-paths.json beside the manifest
-            var manifestDir = Path.GetDirectoryName(manifestPath)!;
-            var worldPaths = Path.Combine(manifestDir, "Paths", "world-paths.json");
-            if (File.Exists(worldPaths))
+            foreach (var pathFile in EnumerateWorldPathFiles(manifest.RootDirectory))
             {
-                var rel = Path.GetRelativePath(project.RootDirectory, worldPaths).Replace('\\', '/');
-                AddPackageFile(filesByPath, rel, worldPaths);
+                var rel = Path.GetRelativePath(project.RootDirectory, pathFile).Replace('\\', '/');
+                AddPackageFile(filesByPath, rel, pathFile);
             }
         }
 
@@ -300,6 +297,21 @@ public static class EngineProjectPackage
             return;
         }
         files.Add(normalizedPath, new PackageFile(normalizedPath, fullPath));
+    }
+
+    private static IEnumerable<string> EnumerateWorldPathFiles(string worldRoot)
+    {
+        foreach (var directoryName in new[] { "Paths", "Navigation" })
+        {
+            var directory = Path.Combine(worldRoot, directoryName);
+            if (!Directory.Exists(directory)) continue;
+            foreach (var path in Directory.EnumerateFiles(directory, "*.paths.json", SearchOption.TopDirectoryOnly)
+                         .OrderBy(value => value, StringComparer.OrdinalIgnoreCase))
+                yield return path;
+
+            var worldNetworkPath = Path.Combine(directory, "world-paths.json");
+            if (File.Exists(worldNetworkPath)) yield return worldNetworkPath;
+        }
     }
 
     private static void CopyRelativeFile(string sourcePath, string packageRoot, string projectRelativePath)

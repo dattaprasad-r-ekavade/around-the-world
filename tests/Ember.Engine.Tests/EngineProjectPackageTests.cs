@@ -308,6 +308,27 @@ public sealed class EngineProjectPackageTests
             """;
             File.WriteAllText(manifestPath, manifestJson);
 
+            var exteriorPathGraph = new CellPathGraph
+            {
+                CellId = exteriorCellId,
+                Kind = WorldCellKind.Exterior,
+                Nodes = [new CellPathNode(Guid.NewGuid(), new NavigationPoint(0f, 0f, 0f))]
+            };
+            var interiorPathGraph = new CellPathGraph
+            {
+                CellId = interiorCellId,
+                Kind = WorldCellKind.Interior,
+                Nodes = [new CellPathNode(Guid.NewGuid(), new NavigationPoint(2f, 1f, 3f))]
+            };
+            var pathsDirectory = Path.Combine(sourceRoot, "Content", "World", "Paths");
+            var editorNavigationDirectory = Path.Combine(sourceRoot, "Content", "World", "Navigation");
+            CellPathGraphFile.SaveAtomic(Path.Combine(pathsDirectory, $"{exteriorCellId:N}.paths.json"),
+                exteriorPathGraph);
+            CellPathGraphFile.SaveAtomic(Path.Combine(editorNavigationDirectory, $"{interiorCellId:N}.paths.json"),
+                interiorPathGraph);
+            WorldPathNetworkFile.SaveAtomic(Path.Combine(pathsDirectory, "world-paths.json"),
+                new WorldPathNetwork());
+
             var rpgContentPath = Path.Combine(sourceRoot, "Content", "RpgContent.json");
             File.WriteAllText(rpgContentPath, "{\"version\": 1}");
 
@@ -330,6 +351,9 @@ public sealed class EngineProjectPackageTests
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "world.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Scenes", "Exterior_0_0.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Interiors", "House_A.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Paths", $"{exteriorCellId:N}.paths.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Paths", "world-paths.json")));
+            Assert.True(File.Exists(Path.Combine(packagePath, "Content", "World", "Navigation", $"{interiorCellId:N}.paths.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "RpgContent.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Effects", "TestEffect.fx")));
@@ -342,6 +366,9 @@ public sealed class EngineProjectPackageTests
             Assert.Equal("Content/World/world.json", movedProject.WorldManifestPath);
             var movedManifest = WorldManifest.Load(movedProject.ResolveWorldManifestPath()!);
             Assert.Equal(2, movedManifest.Cells.Count);
+            var movedValidation = WorldProjectValidator.Validate(movedProject.ResolveWorldManifestPath()!);
+            Assert.True(movedValidation.IsValid, string.Join(Environment.NewLine, movedValidation.Diagnostics));
+            Assert.Equal(2, movedValidation.PathGraphs.Count);
 
             var movedExterior = SceneFile.Load(movedManifest.ResolveScenePath(exteriorCellId));
             Assert.Equal(heroId, Assert.Single(movedExterior.Objects).Id);
