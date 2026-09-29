@@ -171,6 +171,65 @@ public sealed class AuthoredProjectRecoveryServiceTests
         }
     }
 
+    [Fact]
+    public void FailedRecoveryApplyRollsBackEarlierFilesAndCleansTemporaryFiles()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(directory, "Project");
+            var worldDirectory = Path.Combine(projectRoot, "World");
+            var scenesDirectory = Path.Combine(worldDirectory, "Scenes");
+            var contentDirectory = Path.Combine(projectRoot, "Content");
+            var recoveryDirectory = Path.Combine(directory, "Local", "Ember", "Recovery");
+            Directory.CreateDirectory(scenesDirectory);
+            Directory.CreateDirectory(contentDirectory);
+
+            var cellId = Guid.NewGuid();
+            var scenePath = Path.Combine(scenesDirectory, "Exterior.json");
+            SceneFile.SaveAtomic(new SceneGraph(), scenePath);
+            var manifestPath = Path.Combine(worldDirectory, "world.json");
+            WorldManifest.SaveAtomic(manifestPath, 32f,
+            [
+                new WorldCellDefinition
+                {
+                    Id = cellId,
+                    Kind = WorldCellKind.Exterior,
+                    ExteriorCoordinate = new ExteriorCellCoordinate(0, 0),
+                    ScenePath = "Scenes/Exterior.json"
+                }
+            ]);
+            var rpgContentPath = Path.Combine(contentDirectory, "RpgContent.json");
+            RpgContentJson.SaveAtomic(rpgContentPath, new RpgContentSet());
+
+            AuthoredProjectRecoveryService.Capture(manifestPath, rpgContentPath, recoveryDirectory);
+            File.WriteAllText(manifestPath, "original source manifest sentinel");
+            File.WriteAllText(scenePath, "original source scene sentinel");
+            File.WriteAllText(rpgContentPath, "original source content sentinel");
+            var sourceBeforeApply = new[] { manifestPath, scenePath, rpgContentPath }
+                .ToDictionary(path => path, File.ReadAllBytes, StringComparer.OrdinalIgnoreCase);
+
+            var staging = AuthoredProjectRecoveryService.RestoreLatestToStaging(
+                manifestPath, rpgContentPath, recoveryDirectory);
+            using (new FileStream(rpgContentPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                var failure = Assert.Throws<IOException>(() =>
+                    AuthoredProjectRecoveryService.ApplyValidatedStaging(staging));
+
+                Assert.Contains("source files were rolled back", failure.Message, StringComparison.Ordinal);
+                foreach (var (path, bytes) in sourceBeforeApply)
+                    Assert.Equal(bytes, File.ReadAllBytes(path));
+            }
+
+            Assert.Empty(Directory.GetFiles(projectRoot, "*.recovery.tmp", SearchOption.AllDirectories));
+            Assert.Empty(Directory.GetFiles(projectRoot, "*.rollback.tmp", SearchOption.AllDirectories));
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static Guid Id(string value) => Guid.Parse(value);
 
     private static bool IsWithin(string root, string path)

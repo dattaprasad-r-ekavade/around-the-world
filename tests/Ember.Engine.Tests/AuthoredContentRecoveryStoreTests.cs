@@ -107,6 +107,42 @@ public sealed class AuthoredContentRecoveryStoreTests
         }
     }
 
+    [Fact]
+    public void FailedSnapshotReplacementPreservesPreviousSnapshotAndCleansTemporaryFile()
+    {
+        var directory = TemporaryDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(directory, "project");
+            var recoveryDirectory = Path.Combine(directory, "recovery");
+            Directory.CreateDirectory(projectRoot);
+            var originalContent = Encoding.UTF8.GetBytes("saved recovery version one");
+            var original = AuthoredContentRecoveryStore.SaveLatest(projectRoot, recoveryDirectory,
+                [new AuthoredRecoveryFile("Scenes/Start.json", originalContent)]);
+            var snapshotPath = Path.Combine(recoveryDirectory, AuthoredContentRecoveryStore.SnapshotFileName);
+            var previousSnapshot = File.ReadAllBytes(snapshotPath);
+
+            using (new FileStream(snapshotPath, FileMode.Open, FileAccess.Read, FileShare.Read))
+            {
+                var failure = Record.Exception(() => AuthoredContentRecoveryStore.SaveLatest(
+                    projectRoot, recoveryDirectory,
+                    [new AuthoredRecoveryFile("Scenes/Start.json", Encoding.UTF8.GetBytes("new recovery version"))]));
+
+                Assert.NotNull(failure);
+                Assert.Equal(previousSnapshot, File.ReadAllBytes(snapshotPath));
+                Assert.Empty(Directory.GetFiles(recoveryDirectory, "*.tmp", SearchOption.TopDirectoryOnly));
+            }
+
+            var loaded = AuthoredContentRecoveryStore.LoadLatest(projectRoot, recoveryDirectory);
+            Assert.Equal(original.SnapshotId, loaded.SnapshotId);
+            Assert.Equal(originalContent, Assert.Single(loaded.Files).Content);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static int ReadVersion(string snapshotPath)
     {
         var document = JsonNode.Parse(File.ReadAllText(snapshotPath))!;

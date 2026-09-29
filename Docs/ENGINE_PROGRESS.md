@@ -2685,3 +2685,28 @@ edits through undoable commands; keep the manual editor and recovery acceptance 
 | Relocated package content | PASS — both path graphs load and `WorldProjectValidator` reports no diagnostics after moving the package directory |
 
 Next: inspect sequence/audio references and project metadata for automatic package dependency closure.
+
+## M0.4 failed persistence and recovery-apply injection — 29 September 2026
+
+- A recovery snapshot replacement is now exercised with the current snapshot held open against
+  replacement. The failed write must preserve the previous valid snapshot and remove its temporary
+  file.
+- A multi-file recovery apply is now exercised with the final RPG-content destination held open.
+  Earlier manifest/scene replacements occur before that injected failure; the apply must roll them
+  back to their exact source bytes and leave no recovery or rollback temporary files.
+- M0.4 remains **In progress**. These automated failure cases strengthen the persistence evidence;
+  interactive save/reopen/play-stop and recovery-dialog checks are still open because desktop input
+  could not initialize in this environment.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Authored recovery store and project-service focused tests | PASS — 6 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 339 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+| Interactive save/reopen and recovery workflow | NOT RUN — desktop helper failed before initialization with missing kernel assets |
+
+Next: use the editor's visible recovery review/apply flow when desktop input is available; continue
+M1.1/UX.1–UX.5 workflow verification without treating automated tests as UI evidence.
