@@ -47,9 +47,9 @@ is at most 782 lines.
 | Home, Film starter and Release A showcase captures | PASS — each exited 0 at 1280×720; stderr files empty; visually match the prior captures |
 | After artifacts | `%TEMP%/Ember/ManualGraphicsGate/after-e2-panels-14dd799776324e1aa422afaca113701b/` (`home.png`, `starter-scene.png`, `showcase-scene.png`, logs) |
 | Max editor source file | PASS — 782 lines (`CharacterStudioEditorUi.World.cs`) |
+| Hosted Windows CI | PASS — [run 36584401989](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36584401989) for `6c98dc5` |
 
 E.2 remains **In progress**. Workspace, World, scene and inspector UI still live on the shared
 `CharacterStudioEditorUi` host. `CharacterStudioGame` still coordinates play start/stop and runtime
 updates around the extracted controller. Finish those boundaries, then rerun the same checks before
-marking E.2 Passed. This local work is not included in hosted CI run 36580281473, which covered the
-prior pushed E.1 state. The manual desktop interaction gate remains unverified under M0.4.
+marking E.2 Passed. The manual desktop interaction gate remains unverified under M0.4.
