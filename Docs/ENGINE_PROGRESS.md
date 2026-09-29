@@ -2770,8 +2770,9 @@ M1.1 and UX.1–UX.5 open until the complete authoring loop is observed.
   isolated Play-mode scene copy retain collider data.
 - Template placement records collider defaults. Explicit template updates refresh unchanged defaults,
   retain local collider overrides, save the new baseline, and include collider state in undo/redo.
-- M2.1 remains **In progress**. Physics integration, trigger events, player/camera settings, input
-  actions, behavior assignment UI, and beginner action presets have not been implemented.
+- At this data-only stage, M2.1 remained **In progress**; runtime physics integration, trigger
+  events, player/camera settings, input actions, behavior assignment UI, and beginner action presets
+  had not been implemented.
 
 ### Verification evidence
 
@@ -2782,5 +2783,29 @@ M1.1 and UX.1–UX.5 open until the complete authoring loop is observed.
 | Release solution build | PASS — 0 warnings, 0 errors |
 | RPG content save/load check | PASS — `[OK] save then load equals original` |
 
-Next: make persisted colliders visible and editable in the Inspector, then connect static colliders
-to runtime physics and implement trigger overlap events; continue to keep the full M2.1 gate open.
+Next at this stage: make persisted colliders visible and editable in the Inspector, then connect
+static colliders to runtime physics and implement trigger overlap events.
+
+## M2.1 runtime static collider snapshot — 29 September 2026
+
+- `SceneStaticColliderSet` turns enabled scene box colliders into removable static boxes in the
+  existing `PhysicsWorld`, applying scene hierarchy position, rotation and scale. It excludes
+  disabled objects, counts but skips trigger volumes until overlap callbacks exist, and rejects
+  sheared world transforms with the owning object's name and ID.
+- Disposal removes every collider created by the snapshot. The scene and physics world keep their
+  existing independent ownership; callers rebuild the snapshot after changing scene transforms or
+  collider components.
+- M2.1 remains **In progress**. Trigger overlaps, editor inspection/authoring, player/camera
+  settings, input actions and behavior assignments remain open.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `SceneStaticColliderSetTests` Release run | PASS — 2 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 349 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+| RPG content save/load check | PASS — `[OK] save then load equals original` |
+
+Next: expose collider editing and visual feedback in the existing Inspector, then add trigger overlap
+events without treating skipped triggers as functional interactions.

@@ -227,8 +227,10 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 M2.1 now has its first data and authoring-command slice: scene version 15 stores validated local-space
 box colliders with trigger flags, and older scenes load without colliders. Template baselines preserve
 collider defaults and local overrides across explicit updates; undo/redo, duplication and Play-mode
-cloning retain the component. Runtime collision and trigger evaluation, player/camera settings,
-input actions, behavior assignments, and visible Inspector/What happens? controls remain open.
+cloning retain the component. `SceneStaticColliderSet` builds removable static PhysicsWorld boxes
+from enabled scene objects and their world transforms; it reports sheared transforms and skips
+trigger volumes pending overlap support. Runtime trigger evaluation, player/camera settings, input
+actions, behavior assignments, and visible Inspector/What happens? controls remain open.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.
