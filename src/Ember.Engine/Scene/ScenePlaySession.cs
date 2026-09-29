@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Ember.Physics;
 
 namespace Ember.Scene;
 
@@ -28,6 +29,30 @@ public sealed class ScenePlaySession : IDisposable
     public SceneGraph RuntimeScene { get; }
     public SceneBehaviourRuntime Behaviours { get; }
     public bool IsDisposed => _disposed;
+
+    /// <summary>Routes physics trigger transitions to behaviours on the trigger scene object.</summary>
+    /// <returns>The number of behaviour callbacks invoked for enabled trigger owners.</returns>
+    public int DispatchTriggerEvents(IEnumerable<SceneTriggerEvent> triggerEvents)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        ArgumentNullException.ThrowIfNull(triggerEvents);
+
+        var callbacksInvoked = 0;
+        foreach (var triggerEvent in triggerEvents)
+        {
+            var action = triggerEvent.Transition switch
+            {
+                PhysicsTriggerTransition.Entered => "TriggerEnter",
+                PhysicsTriggerTransition.Exited => "TriggerExit",
+                _ => throw new ArgumentOutOfRangeException(nameof(triggerEvents), triggerEvent.Transition,
+                    "Trigger transition is not supported.")
+            };
+            callbacksInvoked += Behaviours.Interact(triggerEvent.TriggerSceneObjectId, action,
+                physicsInstigatorId: triggerEvent.OtherPhysicsObjectId);
+        }
+
+        return callbacksInvoked;
+    }
 
     public void Dispose()
     {
@@ -76,7 +101,8 @@ public static class SceneGraphCloner
 }
 
 /// <summary>A single gameplay interaction sent to a scene object's compiled behaviour.</summary>
-public readonly record struct SceneInteraction(string Action, Guid? InstigatorId = null);
+public readonly record struct SceneInteraction(string Action, Guid? InstigatorId = null,
+    PhysicsObjectId? PhysicsInstigatorId = null);
 
 /// <summary>Context supplied when a compiled behaviour starts.</summary>
 public sealed class SceneBehaviourContext
@@ -183,13 +209,14 @@ public sealed class SceneBehaviourRuntime : IDisposable
     }
 
     /// <returns>The number of behavior callbacks invoked for the enabled owner.</returns>
-    public int Interact(Guid ownerId, string action, Guid? instigatorId = null)
+    public int Interact(Guid ownerId, string action, Guid? instigatorId = null,
+        PhysicsObjectId? physicsInstigatorId = null)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_started) throw new InvalidOperationException("Start the scene behaviour runtime before sending interactions.");
         if (string.IsNullOrWhiteSpace(action)) throw new ArgumentException("An interaction action is required.", nameof(action));
         if (_scene.Find(ownerId) is not { Enabled: true }) return 0;
-        var interaction = new SceneInteraction(action.Trim(), instigatorId);
+        var interaction = new SceneInteraction(action.Trim(), instigatorId, physicsInstigatorId);
         var callbacksInvoked = 0;
         foreach (var binding in _bindings)
         {

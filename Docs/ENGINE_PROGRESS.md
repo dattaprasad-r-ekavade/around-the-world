@@ -2854,3 +2854,25 @@ settings, input actions and behavior assignments.
 
 Next: verify the complete physics and scene test suites, then connect trigger transitions to authored
 interaction actions while preserving the unfinished M2.1 acceptance criteria.
+
+## M2.1 physics trigger behaviour dispatch — 29 September 2026
+
+- `ScenePlaySession.DispatchTriggerEvents` forwards scene-mapped trigger enter/exit transitions to
+  behaviours registered on each trigger object. Enter and exit arrive as `TriggerEnter` and
+  `TriggerExit` interactions, with the other physics body's runtime ID available to the callback.
+- A scene-play integration test moves a physics character through a scene trigger, verifies both
+  callbacks, and confirms the trigger remains nonblocking.
+- This is runtime plumbing only. Behaviour registration is still supplied by code; scene-persisted
+  assignments, character identity mapping, player/camera settings, input actions, beginner action
+  presets and visible editor authoring remain open. M2.1 stays **In progress**.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Focused `ScenePlaySessionTests` Release run | PASS — 7 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 351 passed, 0 failed |
+| Release solution build | PASS — 0 warnings, 0 errors |
+
+Next: add validated, persisted scene behaviour assignments and map runtime characters to stable scene
+identity before exposing the beginner What happens? action cards.

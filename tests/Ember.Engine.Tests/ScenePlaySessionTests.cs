@@ -1,5 +1,6 @@
 using System;
 using Ember.Audio;
+using Ember.Physics;
 using Ember.Scene;
 using Ember.World;
 using Microsoft.Xna.Framework;
@@ -9,6 +10,47 @@ namespace Ember.Engine.Tests;
 
 public sealed class ScenePlaySessionTests
 {
+    [Fact]
+    public void PhysicsTriggerTransitionsDispatchToTriggerBehaviourWithPhysicsInstigator()
+    {
+        var triggerId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(triggerId, "Finish trigger")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, new Vector3(2f, 2f, 2f), isTrigger: true),
+            Transform = new Transform { Position = new Vector3(0f, 1f, 0f) }
+        });
+        using var physics = new PhysicsWorld(Vector3.Zero);
+        using var colliders = new SceneStaticColliderSet(scene, physics);
+        using var player = new PhysicsCharacterController(physics, new Vector3(-3.5f, 1f, 0f));
+        var probe = new ProbeBehaviour();
+        using var session = new ScenePlaySession(scene, (_, runtime) => runtime.Add(triggerId, probe));
+        player.SetMoveInput(Vector3.Right);
+        var dispatchedCallbacks = 0;
+
+        for (var step = 0; step < 72; step++)
+        {
+            physics.Step(1f / 60f);
+            dispatchedCallbacks += session.DispatchTriggerEvents(colliders.TriggerEvents);
+        }
+
+        Assert.True(player.Pose.Position.X > 1f);
+        Assert.Equal(2, dispatchedCallbacks);
+        Assert.Collection(probe.Interactions,
+            entered =>
+            {
+                Assert.Equal("TriggerEnter", entered.Action);
+                Assert.Equal(player.PhysicsBodyId, entered.PhysicsInstigatorId);
+                Assert.Null(entered.InstigatorId);
+            },
+            exited =>
+            {
+                Assert.Equal("TriggerExit", exited.Action);
+                Assert.Equal(player.PhysicsBodyId, exited.PhysicsInstigatorId);
+                Assert.Null(exited.InstigatorId);
+            });
+    }
+
     [Fact]
     public void CompiledBehaviourStartsStopsAndReceivesEnabledOwnerInteractionsOnce()
     {
@@ -180,9 +222,14 @@ public sealed class ScenePlaySessionTests
         public int StartCount { get; private set; }
         public int StopCount { get; private set; }
         public System.Collections.Generic.List<string> Actions { get; } = new();
+        public System.Collections.Generic.List<SceneInteraction> Interactions { get; } = new();
 
         protected override void OnStart(SceneBehaviourContext context) => StartCount++;
-        protected override void OnInteract(SceneInteraction interaction) => Actions.Add(interaction.Action);
+        protected override void OnInteract(SceneInteraction interaction)
+        {
+            Actions.Add(interaction.Action);
+            Interactions.Add(interaction);
+        }
         protected override void OnStop() => StopCount++;
     }
 

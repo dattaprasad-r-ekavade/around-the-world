@@ -229,10 +229,12 @@ box colliders with trigger flags, and older scenes load without colliders. Templ
 collider defaults and local overrides across explicit updates; undo/redo, duplication and Play-mode
 cloning retain the component. `SceneStaticColliderSet` builds removable static PhysicsWorld boxes
 from enabled scene objects and their world transforms; it reports sheared transforms and maps
-nonblocking trigger enter/exit events back to scene-object IDs. Player/camera settings, input
-actions, behavior assignments and the beginner What happens? presets remain open. The existing
-Inspector now has optional box-collider add/remove and center/size/trigger controls; live editor
-interaction and viewport collider visualization still need verification and implementation.
+nonblocking trigger enter/exit events back to scene-object IDs. `ScenePlaySession` can forward those
+transitions to per-object behaviour callbacks, but callback registration remains code-configured.
+Persisted behaviour assignments, player/camera settings, input actions and the beginner What happens?
+presets remain open. The existing Inspector now has optional box-collider add/remove and
+center/size/trigger controls; live editor interaction and viewport collider visualization still need
+verification and implementation.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
 files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.
