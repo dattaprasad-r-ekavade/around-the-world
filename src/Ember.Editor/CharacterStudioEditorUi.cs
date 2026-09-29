@@ -273,6 +273,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             _io = ImGui.GetIO();
             unsafe { _io.NativePtr->IniFilename = null; }
             _io.DisplaySize = new NumericsVector2(_logicalWidth, _logicalHeight);
+            var editorFontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "SourceSans3-Regular.ttf");
+            if (!File.Exists(editorFontPath))
+                throw new FileNotFoundException("The editor's readable UI font was not deployed.", editorFontPath);
+            var editorFont = _io.Fonts.AddFontFromFileTTF(editorFontPath, 16f);
+            unsafe { _io.NativePtr->FontDefault = editorFont.NativePtr; }
             _renderer = new ImGuiMonoGameRenderer(device);
         }
         catch

@@ -366,3 +366,26 @@ persistence coverage and continuing the code work that does not require mouse in
 
 Next: verify the Add library search and project model preview/import workflow through the visible editor;
 continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as interactive evidence.
+
+## UX.3 readable editor UI font — 29 September 2026
+
+- Replaced ImGui's pixel-style default with the bundled Source Sans 3 regular font at 16 px, so
+  editor labels and help text use a tooling-oriented typeface. The font and its SIL Open Font
+  License are copied to build and publish outputs; the editor reports a clear startup error if the
+  font asset is missing. The font was sourced from the Campaign sample's existing licensed asset.
+- A Release capture shows the new typography in CharacterStudio at 1280×720. UX.3 remains **In
+  progress**: 100%/150% scaling, keyboard focus, message behavior and non-color-only states still
+  need live checks.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| `dotnet test Ember.sln --configuration Release --no-build --no-restore --nologo` | PASS — 370 passed, 0 failed, 0 skipped |
+| `EditorUiAssetsTests.ReadableEditorFontAndLicenseAreCopiedBesideTheHost` | PASS — font and license are present in test output; Release build also copied them beside CharacterStudio |
+| CharacterStudio Release scene capture | PASS — exit 0, stderr empty; `%TEMP%/Ember/UxReadableFont/98c1aa22e0b44c03a7c4b86e17ed43db/starter-scene.png` |
+| Interactive typography and DPI checks | NOT RUN — 100%/150% scaling and keyboard focus were not exercised |
+
+Next: complete the live UX.1–UX.4 workflow checks, including readable typography at both required
+scales; do not treat the 1280×720 capture as evidence for DPI scaling.
