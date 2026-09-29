@@ -2975,3 +2975,32 @@ continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as in
 Next: expose Collect and ReachGoal in the editor's What happens? controls, then implement Open and the
 remaining player/camera and input-action settings. Keep editor interaction verification as a separate
 gate from source and test coverage.
+
+## M2.1 What happens? authoring and Play trigger integration — 29 September 2026
+
+- CharacterStudio's Inspector now has a beginner-facing What happens? section with Nothing, Collect
+  and Reach goal choices. It guides the creator to add a trigger collider or convert an existing box
+  before assigning an action. Action changes use scene undo/redo; an assigned action prevents the
+  collider from being switched back or removed until the action is cleared.
+- Play-mode path-following characters now share a scene-static collider snapshot. Their physics bodies
+  are bound to scene object IDs, each fixed physics step forwards trigger transitions into
+  `ScenePlaySession`, and action events update the editor's Play status with the character and goal or
+  collectible name. This connects the saved actions to the existing collision-aware path workflow.
+- The Release capture shows the selected goal and its action in the Inspector without scrolling. It is
+  a visual capture only; selecting choices, save/reopen, Play movement and the trigger-to-status flow
+  have not been manually exercised. The desktop input helper has remained unavailable, so those
+  interaction gates remain open. Free keyboard movement/player-camera settings and Open are not part
+  of this slice; M2.1 remains **In progress**.
+
+### Verification evidence
+
+| Check | Result |
+| --- | --- |
+| Full `Ember.Engine.Tests` Release run | PASS — 358 passed, 0 failed |
+| Release solution build after editor and Play wiring | PASS — 0 warnings, 0 errors |
+| CharacterStudio trigger-action Inspector capture | PASS — 1280×720, editor exited 0 |
+| Manual action selection, save/reopen and Play trigger workflow | NOT RUN — input interaction unavailable |
+
+Next: add directly controllable Play-mode character movement and camera follow, then implement the
+Open action using a saved, validated door interaction. Verify the full editor workflow when desktop
+input is available.

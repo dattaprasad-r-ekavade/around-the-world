@@ -236,11 +236,13 @@ completion once per goal object. The runtime raises a typed action event with th
 scene-character IDs. Physics characters are bound to scene identity through `ScenePlaySession`, while
 unbound physics bodies remain available by physics ID. Actions require a trigger box collider, execute
 only while their owner is enabled, and invalid assignments name their owner. Save/load, template
-baselines and updates, duplication, undo/redo and Play-mode cloning preserve the assignment. M2.1
-remains **In progress**: the editor has no beginner
-What happens? panel yet, Open is not a built-in action, and player/camera settings, input actions,
-custom code-behaviour registration, viewport collider visualization and live editor interaction still
-need implementation or verification. The existing Inspector already has optional box-collider
+baselines and updates, duplication, undo/redo and Play-mode cloning preserve the assignment. The
+Inspector's What happens? panel offers Nothing, Collect and Reach goal, and can add a trigger collider
+or convert an existing box. Play-mode path-following characters share the scene collider snapshot,
+bind their physics bodies to scene IDs, and dispatch resulting trigger events to saved actions; the
+editor reports the resulting action. M2.1 remains **In progress**: directly controllable player
+movement and camera/input settings, Open, custom code-behaviour registration, collider visualization
+and manual interaction verification remain open. The Inspector also has optional box-collider
 add/remove and center/size/trigger controls.
 
 M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network

@@ -2051,6 +2051,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         if (ImGui.Button("Delete")) Delete(scene, selected.Id);
 
         ImGui.Separator();
+        DrawWhatHappensControls(scene, selected);
+
+        ImGui.Separator();
         ImGui.Text("Change this object");
         if (ImGui.RadioButton("Move", _transformTool == TransformTool.Move))
             _transformTool = TransformTool.Move;
@@ -2600,21 +2603,115 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
         collider = selected.BoxCollider ?? collider;
         var isTrigger = collider.IsTrigger;
+        var canChangeTriggerMode = selected.TriggerAction is null;
+        if (!canChangeTriggerMode) ImGui.BeginDisabled();
         if (ImGui.Checkbox("Use as trigger", ref isTrigger))
         {
             var replacement = new SceneBoxColliderComponent(collider.Center, collider.Size, isTrigger);
             TrackBoxColliderInput(scene, selected, collider, changed: true, replacement);
         }
+        if (!canChangeTriggerMode) ImGui.EndDisabled();
+        if (!canChangeTriggerMode)
+            ImGui.TextWrapped("Remove the saved action before changing this trigger back into a blocking collider.");
         if (isTrigger)
-            ImGui.TextWrapped("Trigger volumes are saved, but overlap events are not active yet.");
+            ImGui.TextWrapped("Trigger volumes detect overlap in Play mode without blocking movement.");
 
+        if (selected.TriggerAction is not null) ImGui.BeginDisabled();
         if (ImGui.Button("Remove box collider", new NumericsVector2(-1f, 30f)))
         {
             CommitActiveBoxColliderEdit(scene);
             _history.Execute(scene, new EditBoxColliderCommand(selected.Id, selected.BoxCollider, null));
             _projectWorkspaceStatus = $"Removed the box collider from {selected.Name}.";
         }
+        if (selected.TriggerAction is not null)
+        {
+            ImGui.EndDisabled();
+            ImGui.TextWrapped("Remove the saved action before removing this collider.");
+        }
         ImGui.TreePop();
+    }
+
+    private void DrawWhatHappensControls(SceneGraph scene, SceneObject selected)
+    {
+        ImGui.Separator();
+        if (!ImGui.TreeNodeEx("What happens?", ImGuiTreeNodeFlags.DefaultOpen)) return;
+
+        ImGui.TextWrapped("Choose what this object does when a character enters its trigger.");
+        if (_isPlaying())
+        {
+            ImGui.TextWrapped("Stop Play to change saved scene actions.");
+            ImGui.TreePop();
+            return;
+        }
+
+        var collider = selected.BoxCollider;
+        if (collider is null || !collider.IsTrigger)
+        {
+            ImGui.TextWrapped("Add a trigger box collider first. It detects overlap without blocking movement.");
+            if (collider is null)
+            {
+                if (ImGui.Button("Add trigger collider", new NumericsVector2(-1f, 30f)))
+                {
+                    CommitActiveBoxColliderEdit(scene);
+                    var trigger = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true);
+                    _history.Execute(scene, new EditBoxColliderCommand(selected.Id, null, trigger));
+                    _projectWorkspaceStatus = $"Added a trigger collider to {selected.Name}.";
+                }
+            }
+            else
+            {
+                if (ImGui.Button("Use box as trigger", new NumericsVector2(-1f, 30f)))
+                {
+                    CommitActiveBoxColliderEdit(scene);
+                    var trigger = new SceneBoxColliderComponent(collider.Center, collider.Size, isTrigger: true);
+                    _history.Execute(scene, new EditBoxColliderCommand(selected.Id, collider, trigger));
+                    _projectWorkspaceStatus = $"Changed {selected.Name}'s box collider to a trigger.";
+                }
+            }
+            ImGui.TreePop();
+            return;
+        }
+
+        var currentKind = selected.TriggerAction?.Kind;
+        var currentLabel = currentKind switch
+        {
+            SceneTriggerActionKind.Collect => "Collect",
+            SceneTriggerActionKind.ReachGoal => "Reach goal",
+            null => "Nothing yet",
+            _ => "Unsupported action"
+        };
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.BeginCombo("On trigger enter", currentLabel))
+        {
+            DrawTriggerActionOption(scene, selected, currentKind, null, "Nothing yet");
+            DrawTriggerActionOption(scene, selected, currentKind,
+                SceneTriggerActionKind.Collect, "Collect");
+            DrawTriggerActionOption(scene, selected, currentKind,
+                SceneTriggerActionKind.ReachGoal, "Reach goal");
+            ImGui.EndCombo();
+        }
+
+        if (currentKind == SceneTriggerActionKind.Collect)
+            ImGui.TextWrapped("On entry, this object is hidden for the rest of Play. The saved scene stays unchanged.");
+        else if (currentKind == SceneTriggerActionKind.ReachGoal)
+            ImGui.TextWrapped("On entry, Play marks this goal complete once. The saved scene stays unchanged.");
+        else
+            ImGui.TextWrapped("Choose an action, or leave this set to Nothing yet.");
+        ImGui.TreePop();
+    }
+
+    private void DrawTriggerActionOption(SceneGraph scene, SceneObject selected,
+        SceneTriggerActionKind? currentKind, SceneTriggerActionKind? nextKind, string label)
+    {
+        if (!ImGui.Selectable(label, currentKind == nextKind)) return;
+        if (currentKind == nextKind) return;
+        CommitActiveBoxColliderEdit(scene);
+        var before = selected.TriggerAction;
+        var after = nextKind is { } kind ? new SceneTriggerActionComponent(kind) : null;
+        _history.Execute(scene, new EditSceneTriggerActionCommand(selected.Id, before, after));
+        _projectWorkspaceStatus = after is null
+            ? $"Removed the saved trigger action from {selected.Name}."
+            : $"Set {selected.Name} to {label.ToLowerInvariant()} when its trigger is entered.";
     }
 
     private void TrackBoxColliderInput(SceneGraph scene, SceneObject selected,

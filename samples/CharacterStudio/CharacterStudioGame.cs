@@ -165,6 +165,7 @@ public sealed class CharacterStudioGame : EngineHost
     private readonly Dictionary<Guid, bool> _farLodByObjectId = new();
     private readonly Dictionary<Guid, PathPreviewAgent> _pathPreviewAgents = new();
     private PhysicsWorld? _pathPreviewWorld;
+    private SceneStaticColliderSet? _playSceneColliders;
     private PhysicsFixedStepper? _pathPreviewStepper;
     private MouseState _lastMouse;
     private Vector2 _viewportClickOrigin;
@@ -1874,6 +1875,18 @@ public sealed class CharacterStudioGame : EngineHost
                 foreach (var item in runtimeScene.Objects)
                     behaviours.Add(item.Id, new PlayAudioOnInteractionBehaviour(interactionClip));
             });
+            candidate.AuthoredActionExecuted += action =>
+            {
+                var actor = action.InstigatorId is { } actorId
+                    ? CurrentScene.Find(actorId)?.Name ?? "A character"
+                    : "A character";
+                _reimportStatus = action.Kind switch
+                {
+                    SceneTriggerActionKind.Collect => $"{actor} collected {action.SceneObjectName}.",
+                    SceneTriggerActionKind.ReachGoal => $"{actor} reached goal: {action.SceneObjectName}.",
+                    _ => $"{actor} triggered {action.SceneObjectName}."
+                };
+            };
             var cleanupError = _preview.Reload(() => PreviewResources.Load(
                 GraphicsDevice, ResolveSceneAssets(candidate.RuntimeScene), candidate.RuntimeScene));
             _playSession = candidate;
@@ -1951,6 +1964,7 @@ public sealed class CharacterStudioGame : EngineHost
             {
                 _pathPreviewWorld = new PhysicsWorld();
                 _pathPreviewWorld.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(2000f, 1f, 2000f));
+                _playSceneColliders = new SceneStaticColliderSet(CurrentScene, _pathPreviewWorld);
                 _pathPreviewStepper = new PhysicsFixedStepper();
             }
 
@@ -1960,10 +1974,12 @@ public sealed class CharacterStudioGame : EngineHost
             try
             {
                 var follower = new PhysicsCharacterPathFollower(controller, graph, route);
+                _playSession.BindPhysicsCharacter(controller.PhysicsBodyId, objectId);
                 _pathPreviewAgents.Add(objectId, new PathPreviewAgent(controller, follower));
             }
             catch
             {
+                _playSession?.UnbindPhysicsCharacter(controller.PhysicsBodyId);
                 controller.Dispose();
                 throw;
             }
@@ -1981,7 +1997,11 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void StopPathFollow(Guid objectId)
     {
-        if (_pathPreviewAgents.Remove(objectId, out var agent)) agent.Controller.Dispose();
+        if (_pathPreviewAgents.Remove(objectId, out var agent))
+        {
+            _playSession?.UnbindPhysicsCharacter(agent.Controller.PhysicsBodyId);
+            agent.Controller.Dispose();
+        }
         if (_pathPreviewAgents.Count == 0) DisposePathPhysics();
     }
 
@@ -1992,6 +2012,8 @@ public sealed class CharacterStudioGame : EngineHost
         {
             foreach (var agent in _pathPreviewAgents.Values) agent.Follower.Advance(delta);
             _pathPreviewWorld.Step(delta);
+            if (_playSession is { } session && _playSceneColliders is { } colliders)
+                session.DispatchTriggerEvents(colliders.TriggerEvents);
         });
         foreach (var (objectId, agent) in _pathPreviewAgents.ToArray())
         {
@@ -2008,8 +2030,14 @@ public sealed class CharacterStudioGame : EngineHost
 
     private void DisposePathPhysics()
     {
-        foreach (var agent in _pathPreviewAgents.Values) agent.Controller.Dispose();
+        foreach (var agent in _pathPreviewAgents.Values)
+        {
+            _playSession?.UnbindPhysicsCharacter(agent.Controller.PhysicsBodyId);
+            agent.Controller.Dispose();
+        }
         _pathPreviewAgents.Clear();
+        _playSceneColliders?.Dispose();
+        _playSceneColliders = null;
         _pathPreviewWorld?.Dispose();
         _pathPreviewWorld = null;
         _pathPreviewStepper = null;
