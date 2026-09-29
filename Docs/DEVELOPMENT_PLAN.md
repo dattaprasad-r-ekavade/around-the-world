@@ -25,13 +25,13 @@ and neither does this plan. Items marked *(new)* are proposals not yet in the ro
 
 | Phase | Goal | Main roadmap IDs | Size | Release point |
 | --- | --- | --- | --- | --- |
-| P0 | Close baseline and persistence checks | M0.4 | S | — |
-| P1 | Move the editor into its own project | *(new)* E.1–E.3 | M | — |
+| P0 | Close baseline and persistence checks | M0.4, M0.5 | S | — |
+| P1 | Move the editor into its own project | E.1–E.3 | M | — |
 | P2 | Verify the editor workflow with novices | UX.1–UX.5, M1.1–M1.4 | M | — |
 | P3 | Lesson data, codex and mission tooling | L.1, L.5 | M | — |
 | P4 | Playable game loop in the editor | M2.1–M2.3, UX.6 | L | — |
 | P5 | Career shell and Stage 1 | C.1 | L | Internal alpha |
-| P6 | Visual rules and Stage 2 | L.2, C.2 | L | *(new)* Early access |
+| P6 | Visual rules and Stage 2 | L.2, C.2, EA.1–EA.2 | L | Early access |
 | P7 | C# behaviours and Stage 3 | L.3, L.4, C.3 | XL | Early access update |
 | P8 | Film, generation and Stage 4 | M3, M4, C.4, M5 | XL | First full release (M5) |
 | P9 | Collaboration and Stage 5 | C.5 | L | Expansion |
@@ -44,11 +44,11 @@ Goal: a trusted starting point before structural changes.
 
 - Finish M0.4 interactive checks: resize, save/reopen, Play/Stop, recovery cancel/apply/close.
 - Rerun Windows CI on the current commit.
-- *(new)* Split ENGINE_PROGRESS.md into per-milestone evidence files so the log stays readable.
+- M0.5: split ENGINE_PROGRESS.md into per-milestone evidence files so the log stays readable.
 
-Exit: M0.4 **Passed** with recorded evidence. CI green.
+Exit: M0.4 and M0.5 **Passed** with recorded evidence. CI green.
 
-## P1 — Move the editor into its own project *(new)*
+## P1 — Move the editor into its own project
 
 Goal: the editor stops being a sample, so later phases can build on clean boundaries.
 Do this before P2's manual verification, so that manual evidence is recorded against the
@@ -132,7 +132,7 @@ Goal: the first public release: Stages 1–2 plus Free Create.
 - *(new)* Contracts v1: "Fix my broken game" and "Build to spec", used as spaced review.
 - C.2: jam theme draw, scope picker, story-time budget, playtest recorder, jam ratings.
 - *(new)* "One game grows with you": the jam project carries into Stage 3.
-- *(new)* Early access release: package, installer, known issues, feedback channel. This
+- EA.1–EA.2: early access package, installer, known issues and feedback channel. This
   release does not require M3/M4; M5 remains the full release definition.
 
 Exit: C.2 gate; early access checklist passed (clean install, relocated run, novice test).

@@ -64,7 +64,7 @@ adapters; they are not prerequisites for the local tool.
 ## Status and evidence policy
 
 M0.1 through M0.3 have passed; M0.4, M1.1–M1.4, M2.1, M2.3 and UX.1–UX.4 are **In progress**; UX.5–UX.6,
-M2.2, L.1–L.5, C.1–C.9 and M3 onward remain **Not started** against their new acceptance criteria. Existing
+M0.5, E.1–E.3, M2.2, L.1–L.5, C.1–C.9, EA.1–EA.2 and M3 onward remain **Not started** against their new acceptance criteria. Existing
 components are reusable foundations, not a reason to repeat their implementation.
 Documentation reset is complete. Review at `3c9620e`: M0.1–M0.3 have recorded passes;
 M0.4 remains open despite a commit title saying it was closed. Its Windows workflow now
@@ -101,8 +101,10 @@ the selected object's local axes. Optional position-grid, angle and scale snappi
 Live drag verification, undo/redo interaction, and save/reopen evidence remain open.
 Preserve completed reliability work.
 
-Execution order: complete M0.4's interactive verification and continue UX.1–UX.4 alongside
-completion of M1.1. Do not add more default panels while this work is pending. UX.5 novice
+Execution order: complete M0.4's interactive verification, then move the editor into its own
+project (E.1–E.3) before the remaining UX.1–UX.4 and M1 interactive verification, so manual
+evidence is recorded against the final editor structure. [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md)
+gives the full phase order. Do not add more default panels while this work is pending. UX.5 novice
 observation is required for the M1 gate; UX.6 follows the first M2 interaction. Work may proceed while
 manual evidence is pending, but do not call dependent release gates Passed.
 
@@ -122,6 +124,7 @@ Dependency: none. Prioritize this before adding features.
 | M0.2 | Run live lifecycle coverage. | At least 50 transitions spanning two interiors and exterior boundaries, plus repeated scene reload and play/stop; compare like-for-like resource counts after warmup. Exercise delayed/failed loads and retry, save/restart, and unique identities. No unexplained growth or swallowed errors. Keep this separate from a longer timed soak. | **Passed** |
 | M0.3 | Establish performance and distribution evidence. | Run a minimum 30-minute mixed editor/runtime session on a named PC; record frame tails, owned resources, memory and dependency/package size. Set explicit reference-scene budgets. Reproduce a relocated build with no checkout dependency; separately record whether an SDK-free machine was tested. | **Passed** |
 | M0.4 | Audit persistence and add repeatable validation. | Recheck old data-safety findings against current code; cover atomic restore, failed writes, interrupted save, cancellation cleanup and schema errors. Add [Windows build/CPU-test CI](../.github/workflows/windows-engine.yml) and a documented [graphics/manual gate](MANUAL_GRAPHICS_GATE.md); keep RPG checks separate. | **In progress** |
+| M0.5 | Split progress evidence by milestone. | Move ENGINE_PROGRESS.md evidence into one file per milestone under `Docs/progress/`, keeping every record, commit reference and artifact path. ENGINE_PROGRESS.md becomes a short index. New evidence goes into the matching milestone file. | Not started |
 
 Recovery staging has a cancellable asynchronous API with file progress and cleanup. CharacterStudio's
 recovery review now runs staging and validation off the render loop, displays progress, and offers
@@ -146,6 +149,21 @@ initial guardrails derived from the recorded run, not guarantees for other hardw
 Gate: corrected machine-readable evidence supports the small-scene baseline. Regional
 expansion remains unapproved. A longer soak establishes bounded behavior for its run,
 not proof that no leak exists under any workload.
+
+## E — Editor project extraction
+
+Dependency: M0.4. Complete before the remaining UX.1–UX.4 and M1 interactive verification.
+This is a behaviour-preserving restructure: no new editor features, and no change to project
+or scene file formats. Record tests and Release captures before and after each step.
+
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| E.1 | Create `src/Ember.Editor` and move the editor out of `samples/CharacterStudio`. | Editor UI, tools, play control and project session live in `Ember.Editor`. CharacterStudio is a thin sample that starts the editor with its showcase scene. All tests pass; Release captures of Home, starter scene and showcase scene match the pre-move captures. | Not started |
+| E.2 | Split `CharacterStudioGame.cs` and `CharacterStudioEditorUi.cs`. | Separate panels, tools, play controller and project session types; no source file over about 800 lines. Behaviour, command history and saved data are unchanged; tests and captures match. | Not started |
+| E.3 | Remove the `Ember.Authoring` → `Ember.Rpg` reference. | RPG authoring moves to an optional module. Generic authoring and the editor build and start without Ember.Rpg. RpgSlice, Campaign and the RPG check still build and pass. | Not started |
+
+Gate: the editor is a separate project with clear boundaries, and no user-visible behaviour
+changed. Manual UX and M1 verification then runs against this structure.
 
 ## UX — Beginner creation experience (required, early)
 
@@ -315,6 +333,20 @@ expansions and each needs a playable prototype before full content.
 Gate for each stage: observed novices complete the stage project and its transfer checks,
 and most choose to continue to the next stage.
 
+## EA — Early access release
+
+Dependency: C.2 gate (which requires M2, L.1 and L.2). M3 and M4 are not required. This
+release makes career Stages 1–2 and Free Create public before the full release. M5 remains
+the full release definition.
+
+| ID | Work | Acceptance | Status |
+| --- | --- | --- | --- |
+| EA.1 | Early access package and installation. | Self-contained Windows installer or archive with the editor, Stage 1–2 content, starters and Free Create. Clean install on a machine without the SDK or checkout; career save and projects survive an update. Publish supported features, known issues and licenses. | Not started |
+| EA.2 | Early access feedback and evidence. | In-app way to report a problem with an optional project attachment, chosen by the user. Re-run the Stage 1–2 novice sessions on the packaged build; record completion, transfer, crashes and whether players continue. Fix blockers before publishing. | Not started |
+
+Gate: a packaged early access build passes clean installation and observed novice sessions
+for Stages 1–2. Film, generation and later stages remain clearly marked as not yet available.
+
 ## M3 — Author and export cutscenes
 
 Dependency: M1; runtime-triggered sequence proof also depends on M2.2.
@@ -362,11 +394,11 @@ until M0 identifies the reliability work and M1 establishes editor integration c
 ## Working rules and next handoff
 
 1. Read this roadmap and BUILDING_BLOCKS.md; inspect existing implementations before adding one.
-2. Continue M0.4's interactive checks and finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls. Selected-model reload and invalid-replacement preservation are already implemented and have an asset-ownership test; exercise a valid reload and a corrupt replacement through visible editor controls, confirming the prior scene preview stays active and the recovery message explains the next action. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 has Move/Turn/Size viewport gizmos and optional position, angle and scale snapping. Exercise all three tools, parent selection and reparenting through visible controls; verify hover/drag, one-step undo/redo, and save/reopen preserve transforms, IDs, hierarchy and appearance. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
+2. Continue M0.4's interactive checks, then complete E.1–E.3 before the manual UX/M1 checks below. Finish UX.1–UX.4 with the M1.1 workflow. The local M1.1 slice catalogs persisted project GLBs and supports preview-before-placement; verify project pickers and Browse → preview → Add/Cancel through visible controls. Selected-model reload and invalid-replacement preservation are already implemented and have an asset-ownership test; exercise a valid reload and a corrupt replacement through visible editor controls, confirming the prior scene preview stays active and the recovery message explains the next action. Also verify empty-scene actions, More tools panel switching, scene-view picking, layout reset, resize, DPI, edit/save/play actions, and the first-creation lesson through its final reopen and replay before closing any gate. Run the UX.5 novice observation before accepting the M1 gate. M1.2 has Move/Turn/Size viewport gizmos and optional position, angle and scale snapping. Exercise all three tools, parent selection and reparenting through visible controls; verify hover/drag, one-step undo/redo, and save/reopen preserve transforms, IDs, hierarchy and appearance. Rerun Windows CI after later code changes. Follow the dependency order above; do not skip early usability for advanced systems. Split large tasks into independently verifiable changes before coding.
 3. Keep scope tied to the milestone gate; do not resume archived RPG expansion automatically.
 4. Run relevant tests and solution build for code changes, plus UI/graphics/audio checks
    when the acceptance requires them. Record limitations and failed checks honestly.
-5. Append evidence to ENGINE_PROGRESS.md and update only the current milestone status.
+5. Append evidence to ENGINE_PROGRESS.md (to the matching milestone file once M0.5 is done) and update only the current milestone status.
 6. Preserve user content; do not commit, push or publish unless requested.
 
 ## After the first release — career expansion
