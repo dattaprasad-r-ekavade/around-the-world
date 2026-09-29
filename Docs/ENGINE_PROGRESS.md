@@ -2666,6 +2666,10 @@ edits through undoable commands; keep the manual editor and recovery acceptance 
   readable after relocation.
 - The package relocation regression fixture now contains one graph in each folder and a world-path
   file. It moves the output, validates the moved manifest, and confirms both cell graphs load.
+- Before staging a package, `EngineProjectPackage` now runs `WorldProjectValidator`. Invalid cell
+  scenes, path graphs or world connections stop publication with the validator diagnostics; the new
+  regression test confirms a missing cell scene is reported before the output or its parent folder
+  is created.
 - M2.3 is **In progress**. The engine package service still needs automatic audio/sequence dependency
   closure, an approachable editor build panel, actionable missing-dependency checks, and a relocated
   playable-output walkthrough.
@@ -2674,9 +2678,10 @@ edits through undoable commands; keep the manual editor and recovery acceptance 
 
 | Check | Result |
 | --- | --- |
-| `EngineProjectPackageTests` Release run | PASS — 7 passed, 0 failed |
-| Full `Ember.Engine.Tests` Release run | PASS — 336 passed, 0 failed |
+| `EngineProjectPackageTests` Release run | PASS — 8 passed, 0 failed |
+| Full `Ember.Engine.Tests` Release run | PASS — 337 passed, 0 failed |
 | Release solution build | PASS — 0 warnings, 0 errors |
+| Invalid-world package preflight | PASS — missing cell scene blocks package and reports the scene path and cell ID without creating output directories |
 | Relocated package content | PASS — both path graphs load and `WorldProjectValidator` reports no diagnostics after moving the package directory |
 
 Next: inspect sequence/audio references and project metadata for automatic package dependency closure.

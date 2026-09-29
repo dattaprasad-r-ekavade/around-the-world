@@ -65,7 +65,14 @@ public static class EngineProjectPackage
         if (project.WorldManifestPath is not null)
         {
             var manifestPath = project.ResolveWorldManifestPath()!;
-            var manifest = WorldManifest.Load(manifestPath);
+            var validation = WorldProjectValidator.Validate(manifestPath);
+            if (!validation.IsValid)
+                throw new InvalidDataException(
+                    $"Cannot package project because world validation failed:{Environment.NewLine}" +
+                    string.Join(Environment.NewLine, validation.Diagnostics));
+
+            var manifest = validation.Manifest
+                ?? throw new InvalidDataException($"World validation did not load manifest '{manifestPath}'.");
             AddPackageFile(filesByPath, project.WorldManifestPath, manifestPath);
 
             foreach (var cell in manifest.Cells)

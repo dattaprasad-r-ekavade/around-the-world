@@ -224,6 +224,47 @@ public sealed class EngineProjectPackageTests
     }
 
     [Fact]
+    public void PackageRejectsInvalidWorldBeforeCreatingOutputAndReportsCellScene()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var manifestPath = Path.Combine(sourceRoot, "Content", "World", "world.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(manifestPath)!);
+            var cellId = Guid.NewGuid();
+            var manifestJson = $$"""
+            {
+              "version": 2,
+              "exteriorCellWidth": 32,
+              "cells": [
+                { "id": "{{cellId}}", "kind": "Exterior", "exteriorCoordinate": { "x": 0, "z": 0 }, "scenePath": "Scenes/Missing.json" }
+              ]
+            }
+            """;
+            File.WriteAllText(manifestPath, manifestJson);
+
+            var projectFilePath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectFilePath, startupScenePath: null,
+                worldManifestPath: "Content/World/world.json");
+            var packagePath = Path.Combine(root, "output", "BrokenWorld");
+
+            var error = Assert.Throws<InvalidDataException>(() =>
+                EngineProjectPackage.Create(projectFilePath, packagePath));
+
+            Assert.Contains("world validation failed", error.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Missing.json", error.Message, StringComparison.Ordinal);
+            Assert.Contains(cellId.ToString(), error.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(packagePath));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(packagePath)));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void PackageRejectsGlbDependencyThatEscapesProjectRoot()
     {
         var root = NewDirectory();

@@ -217,9 +217,10 @@ Dependency: M1. Reuse existing controller, physics, behavior, audio, and packagi
 | M2.2 | Complete play/pause/stop and game–sequence handoff. | Repeated play/stop restores the scene and input/audio ownership; trigger a cutscene, then return control to the correct player/camera without duplicate behaviors. | Not started |
 | M2.3 | Build panel and dependency-complete runtime output. | Validate and publish a self-contained Windows game with referenced scenes, assets, audio and sequences. Move output outside the checkout and play it; missing dependencies block publication with useful diagnostics. | **In progress** |
 
-M2.3 packaging now carries cell path graphs and world-path network files from both `Paths` and
-`Navigation`. Relocation tests reopen the packaged world and validate its graphs; asset/audio/sequence
-closure, the user-facing build panel and a relocated playable game remain open.
+M2.3 packaging now validates worlds before staging, carries cell path graphs and world-path network
+files from both `Paths` and `Navigation`, and rejects invalid cell scenes with actionable diagnostics.
+Relocation tests reopen the packaged world and validate its graphs; asset/audio/sequence closure, the
+user-facing build panel and a relocated playable game remain open.
 
 Gate: an editor-authored 3–5 minute interaction demo starts, plays, saves/reloads its
 small state, and exits from a relocated package. No sample-specific source wiring is
