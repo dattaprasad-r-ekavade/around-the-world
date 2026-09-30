@@ -58,7 +58,7 @@ public sealed class SceneFileTests
         var loaded = SceneFile.FromJson(json);
         var savedCollider = loaded.Find(objectId)!.BoxCollider!;
 
-        Assert.Contains("\"Version\": 17", json, StringComparison.Ordinal);
+        Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", json, StringComparison.Ordinal);
         Assert.Equal(collider.Center, savedCollider.Center);
         Assert.Equal(collider.Size, savedCollider.Size);
         Assert.True(savedCollider.IsTrigger);
@@ -78,7 +78,7 @@ public sealed class SceneFileTests
         var json = SceneFile.ToJson(scene);
         var loaded = SceneFile.FromJson(json);
 
-        Assert.Contains("\"Version\": 17", json, StringComparison.Ordinal);
+        Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", json, StringComparison.Ordinal);
         Assert.Equal(SceneTriggerActionKind.ReachGoal, loaded.Find(objectId)!.TriggerAction!.Kind);
         Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(
             "{\"Version\":15,\"Objects\":[{\"Id\":\"10101010-1010-1010-1010-101010101010\",\"Name\":\"Old\",\"BoxCollider\":{\"Center\":[0,0,0],\"Size\":[1,1,1],\"IsTrigger\":true},\"TriggerAction\":{\"Kind\":1},\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}"));

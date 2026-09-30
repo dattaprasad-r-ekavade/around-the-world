@@ -86,14 +86,14 @@ steps, fixture, configuration, hardware where relevant, result and artifact loca
 
 Passed: M0.1, M0.2, M0.3, M0.5, E.1, E.2, E.3. Every task not listed here or in the table is **Not started**.
 
-The [30 September review](#review-of-the-current-build--30-september-2026) checks the pulled
-code at `c13749b`. The runtime and editor foundations are substantial, but the complete
-beginner workflow and deliverable game/film gates remain open. No acceptance status was
-promoted by this review.
+The [30 September review](#review-of-the-current-build--30-september-2026) checks `c13749b`;
+its [latest-checkout follow-up](#review-of-latest-synchronized-code--30-september-2026) checks
+`5d13487`. The runtime and editor foundations are substantial, but the complete beginner
+workflow and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Windows CI (hosted run [36604834954](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36604834954) passed on `c13749b`); fresh local Release build and 370 CPU tests pass; atomic writes; failure injection for locked snapshot replacement, multi-file apply rollback and path collisions; cancellable recovery staging bound to the active world and RPG content | Interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Windows CI [36604834954](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36604834954) passed on `c13749b`; run [36696334028](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36696334028) at `5d13487` exposed two stale version assertions, now changed to use `SceneFile.CurrentVersion`; fresh local Release build passes | Verify the corrected assertions in Windows CI; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -113,8 +113,9 @@ promoted by this review.
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
-   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. Rerun Windows CI.
+1. **M0.4:** confirm the corrected scene-version assertions in Windows CI, then run the
+   interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
+   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
@@ -426,10 +427,10 @@ milestones or permission to skip M0/UX/M1 dependencies.
   close-cancel and lesson replay. Fix observed failures within these tasks.
 - [ ] **UX.5:** observe three first-time users and the later unaided repeat; retain timings,
   confusion and transfer results. Keep the gate pending until participants exist.
-- [ ] **M2.1, after M1:** first add saved player identity and invalid-reference diagnostics;
-  next collider visualization; next a saved Open action; then custom behaviour assignments.
-  Each change needs undo/redo, save/reopen, duplicate/template handling and Play isolation
-  checks where applicable, plus its visible workflow.
+- [ ] **M2.1, after M1:** saved player identity and missing/invalid-reference diagnostics are
+  implemented. Verify player choice, delete/undo, template guard, movement and triggers in the
+  visible workflow; then complete collider visualization, a saved Open action and custom
+  behaviour assignments with undo/redo, save/reopen, duplicate/template and Play-isolation checks.
 - [ ] **M2.2:** implement game pause and one saved cutscene trigger; verify repeated handoff
   restores player/camera/input/audio ownership and Stop restores authored data.
 - [ ] **M2.3:** complete dependency collection and failure diagnostics before the build panel;
@@ -443,3 +444,50 @@ was confirmed successful at the reviewed commit. Fresh interactive graphics, aud
 novice sessions, no-RPG publish/startup, soak and relocated-install checks were **not run**.
 Detailed review evidence is in [progress/roadmap-changes.md](progress/roadmap-changes.md),
 with current build/CI evidence in [progress/M0.md](progress/M0.md).
+
+## Review of latest synchronized code — 30 September 2026
+
+Fetched `origin` and confirmed the clean local `master` already matched `origin/master` at
+`5d134877604d4f7677dcb1998e905bd41f9a6a10`; there were no newer commits to pull. Reviewed
+the changes since `c13749b`, the current status table, source paths, milestone records and
+the latest hosted Windows workflow. This review did not run local tests.
+
+### Current implementation and roadmap state
+
+- **Passed:** M0.1–M0.3 and M0.5, plus editor extraction E.1–E.3, retain their recorded
+  acceptance evidence. This review did not re-run their soak, distribution or no-RPG gates.
+- **In progress:** M0.4, UX.1–UX.4, M1.1–M1.4, M2.1 and M2.3 have implementation foundations,
+  but their acceptance columns still list missing checks. The 30 September UX.3 glyph fix
+  adds explicit punctuation ranges; current Home and scene captures render ellipses correctly.
+- **M2.1 update:** scene version 18 persists an explicit player object ID alongside movement,
+  camera and input settings. Play uses that saved choice independently of Inspector selection;
+  old scenes migrate to a stable eligible actor/character where available. Missing or invalid
+  assignments report an object-specific problem. Deleting the player clears the choice in the
+  same undoable edit, and template updates that would remove it are refused. The Release build
+  and legacy-scene capture are recorded in [M2 evidence](progress/M2.md). Dropdown interaction,
+  save/reopen, Play control, delete/undo and template-update behavior remain unverified manually.
+- **Still open in M2.1:** collider visualization, the saved Open action, custom behaviour
+  registration, and visible end-to-end verification. M2.2 remains Not started. M2.3 stages and
+  validates referenced project content, but audio/sequence dependency closure, the build panel,
+  executable publication and a relocated playable game remain open.
+- **Later work remains Not started:** UX.5–UX.6, L.1–L.5, C.1–C.9, EA.1–EA.2 and M3–M5.
+  The coded first-creation lesson is not the declarative mission system or career mode; sequence
+  runtime/export foundations are not an editable film timeline.
+
+### Latest verification and issue
+
+| Check | Result |
+| --- | --- |
+| `git fetch origin` and branch comparison | PASS — clean worktree; `master` equals `origin/master` at `5d13487`; no pull was needed |
+| Release solution build | PASS — latest hosted job's build step succeeded; the local Release build is also recorded in [M2 evidence](progress/M2.md) |
+| Hosted Windows CI [36696334028](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36696334028) | FAIL — 368/370 tests passed; two `SceneFileTests` expected version 17 while current scene serialization writes version 18. The workflow's subsequent solution build succeeded. |
+| Corrective change and local Release build | PASS — both assertions now compare against `SceneFile.CurrentVersion`; `dotnet build Ember.sln --configuration Release --no-restore --nologo` succeeded with 0 warnings and 0 errors |
+| Manual editor, DPI, recovery and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
+| Local test suite | NOT RUN — per the user's instruction; the hosted run was triggered by the earlier push |
+
+The CI failures came from stale expected-version checks in
+`SceneFileTests.SaveAndLoadPreservesBoxColliderLocalShapeAndTriggerFlag` and
+`SceneFileTests.SaveAndLoadPreservesTriggerActionAndRequiresTriggerCollider`; both now follow
+`SceneFile.CurrentVersion`. Hosted verification of this correction is pending. The native app
+inventory returned no open windows, so the M0.4 manual checks remain unavailable here. M0.4
+remains In progress, and no acceptance status was promoted by this review.
