@@ -1,6 +1,6 @@
 # Ember roadmap: teaching game engine and career game
 
-Updated: 29 September 2026. This is the **only active roadmap** and the only place where task
+Updated: 30 September 2026. This is the **only active roadmap** and the only place where task
 status is kept. Read [AGENTS.md](../AGENTS.md) first for how to work in this repository.
 
 How to use this file:
@@ -86,21 +86,26 @@ steps, fixture, configuration, hardware where relevant, result and artifact loca
 
 Passed: M0.1, M0.2, M0.3, M0.5, E.1, E.2, E.3. Every task not listed here or in the table is **Not started**.
 
+The [30 September review](#review-of-the-current-build--30-september-2026) checks the pulled
+code at `c13749b`. The runtime and editor foundations are substantial, but the complete
+beginner workflow and deliverable game/film gates remain open. No acceptance status was
+promoted by this review.
+
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Windows CI (hosted run [36603972718](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36603972718) passed on `fad1f66`); atomic writes; failure injection for locked snapshot replacement, multi-file apply rollback and path collisions; cancellable recovery staging with a review UI | Interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Windows CI (hosted run [36604834954](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36604834954) passed on `c13749b`); fresh local Release build and 370 CPU tests pass; atomic writes; failure injection for locked snapshot replacement, multi-file apply rollback and path collisions; cancellable recovery staging bound to the active world and RPG content | Interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
-| UX.3 | In progress | Inspector explanations; next actions for an empty scene and an empty model list; pending-preview state; error recovery hints; bundled 16 px Source Sans 3 tooling font | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
+| UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
 | UX.4 | In progress | Optional action-driven first-creation lesson (`FirstCreationLesson`) with Why?, two hint levels, replay and a project-local completion record | Button-driven walkthrough through the final reopen and replay | [UX](progress/UX.md) |
 | M1.1 | In progress | Project create/open/recent; GLB import with rollback; stable asset catalog; project GLBs in the Add library; reload with replacement validation; world-only projects open | Browse → preview → Add/Cancel, a valid reload and a corrupt reload through visible controls; relocate and reopen through the UI | [M1](progress/M1.md) |
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
-| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink (scene version 15); Scene Templates tool | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
-| M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery | Manual close-cancel, Save As and project switch; interrupted-work recovery; service boundaries (see E.3) | [M1](progress/M1.md) |
+| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 17 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
+| M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; controllable Play character; saved Play settings (scene version 17) | Saved player choice; Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
-| M2.3 | In progress | World validation before packaging; path data packaged; relocation tests reopen packaged worlds | Asset/audio/sequence closure; build panel; relocated playable game | [M2](progress/M2.md) |
+| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
-| E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; no editor source file over 800 lines | — | [E](progress/E.md) |
+| E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
 | E.3 | Passed | Generic authoring and `Ember.Editor` have no RPG assembly references; RPG validation, recovery and Placement/Dialogue/Quest authoring load from the optional module; CharacterStudio builds and starts with that module disabled | — | [E](progress/E.md) |
 
 ## Next actions
@@ -119,8 +124,10 @@ new default editor panels until the M1 gate passes.
    - Scene Templates: two instances, one override, reload;
    - close-cancel, Save As and project-switch prompts;
    - the first-creation lesson through its final reopen and replay.
-4. **UX.5:** run three novice sessions. Fix blockers and repeat the affected task.
-5. Then continue the remaining M2.1 work, M2.2 and M2.3 (phase P4).
+3. **UX.5:** run three novice sessions. Fix blockers and repeat the affected task.
+4. Then continue the remaining M2.1 work, M2.2 and M2.3 (phase P4). Use the
+   [review's bounded follow-up checks](#recommended-follow-up-checks) to avoid treating
+   existing runtime APIs as completed editor workflows.
 
 ## M0 — Establish a trustworthy baseline
 
@@ -353,3 +360,85 @@ formats and runtime; keep Free Create available and teach transferable game-deve
 concepts. Prototype each later stage (C.5–C.9) with one playable session before writing its
 full content. Real online services, social features and an immersive UI rewrite are not
 required for the first release.
+
+## Review of the current build — 30 September 2026
+
+Reviewed `c13749b6de5a60be6cbdc78b958a3a7b18131e28` after a clean fast-forward pull
+from `16d92cf`. This review covers source, project references, milestone evidence and
+live hosted CI results. Its UX.3 follow-up below records a concrete font rendering defect
+found in a saved capture and fixed afterward.
+
+### What is built
+
+| Area | Source-backed findings | What that enables today |
+| --- | --- | --- |
+| Runtime and rendering | `Ember.Engine` owns the host, static/skinned GLB import, animation playback/crossfade, attachments, lighting/shadows, LOD/culling/instancing, terrain/water, input and audio. Supported import restrictions remain documented in BUILDING_BLOCKS.md. | Code-driven scenes and existing character/rendering samples. This does not establish full PBR, arbitrary character rigs or large-map capacity. |
+| Physics and game interactions | BEPU world, fixed stepping, capsule controller, input maps and collision-aware path following exist. `SceneStaticColliderSet` and `ScenePlaySession` dispatch saved Collect/ReachGoal actions. Scene version 17 persists movement, capsule, camera and key settings. | The editor can preview a controllable actor and simple trigger interactions on a runtime scene copy. |
+| World and optional RPG | Cell streaming/travel, exterior loading, world identities, navigation and persistence exist. Optional RPG code supplies inventory/equipment, dialogue/quests, stats, combat, schedules, trade and related systems; RpgSlice and Campaign remain consumers. | Reusable mechanics and integration fixtures. A smaller Morrowind-style game remains a capacity/content experiment, not a verified editor-authored product. Archived RPG expansion stays closed. |
+| Editor architecture | CharacterStudio's Program is a thin launcher. `Ember.Editor` has separate panels, project session and Play controller. Generic engine/authoring/editor references exclude RPG and samples; `Ember.Scripting` has no MonoGame dependency. RPG tools load through an optional module. | E.1–E.3 foundations are present. Historical capture and no-RPG startup/publish evidence is in progress/E.md. |
+| Scene/project authoring | Home starters, native pickers, asset catalog/import/reload, hierarchy, gizmos, snapping, templates/overrides/relink, undo/redo, dirty state and recovery are implemented. The tooling font is bundled with its license. | Most of the first editing loop has code and CPU coverage. Full mouse/button use, DPI and loss-prevention acceptance still need observation. |
+| Teaching | `FirstCreationLesson` detects actual editing/Play/save/reopen actions. Why?, hints, replay and project-local learning progress exist. | A coded first-creation lesson foundation; it is not the declarative mission system or career mode. |
+| Film and export foundations | Sequence evaluation, camera tracks/cuts, file serialization, playback/seek and numbered PNG export with a manifest exist. `BuildSequencePreview` constructs a sequence from the first skinned actor and fixed Wide/Close camera tracks. | Generated sequence previews and frame-export plumbing. The Film starter does not establish an editable multi-actor timeline or the M3 film gate. |
+| Packaging foundations | `EngineProjectPackage` stages validated scenes/worlds, referenced GLBs/LOD assets and their external buffers/images, path files and explicit extra content. | Relocatable project content. This service does not itself publish a playable executable or discover every audio/sequence dependency. |
+
+### Findings that affect the next work
+
+1. **The current bottleneck is workflow evidence.** M0.4, UX.1–UX.4 and M1 have
+   implementations but incomplete interactive acceptance. Additional screenshots or CPU
+   tests cannot close resize/DPI/focus, undo/save/reopen, recovery or novice-observation gates.
+   E extraction is finished work; its M0.4 dependency and the overall release gate remain open.
+2. **Player selection is still transient.** `CharacterStudioPlayController.FindPlayCharacter`
+   uses selection and scene order, with a GLB fallback. Changing editor selection can change
+   the controlled object, and a static GLB can become the fallback player. Persist and validate
+   an explicit player ID before treating the scene as a reproducible game setup.
+3. **M2 needs a complete game loop.** Open/custom behaviours and collider visualization are
+   missing. Play/Stop exists, but game pause and a saved trigger → cutscene → correct
+   player/camera handoff are not established. Sequence pause alone does not meet M2.2.
+4. **Content packaging is ahead of game delivery.** The GLB dependency work should be reused,
+   not reimplemented. M2.3 still needs audio/sequence closure, visible build diagnostics,
+   executable publication and a relocated game that plays without sample-specific wiring.
+5. **Film, generation and teaching are different levels of readiness.** M3 has runtime/export
+   foundations but no editable timeline. M4 recipes and generators remain planned work.
+   L.1–L.5, C.1–C.9 and EA.1–EA.2 remain planned work: the coded lesson and console router
+   do not constitute visual rules, reloadable project C# behaviours or career stages.
+6. **Capacity claims remain narrow.** M0.2/M0.3 have recorded historical lifecycle and
+   performance evidence. This review did not rerun the long soak, GPU captures or package
+   installation. The paired-Fox budgets above do not predict a dense town, regional map or
+   many animated NPCs. Repeat final-scene measurements under M5 before publishing limits.
+7. **Font coverage needed more than a font file.** The Home capture showed question marks
+   where the source used ellipses. ImGui's default glyph range omitted several punctuation
+   characters used by editor labels. UX.3 now loads those explicit ranges; fresh Home and
+   scene captures show the ellipses. Interactive DPI and focus checks remain open.
+
+### Recommended follow-up checks
+
+Follow Next actions first. These are small checkpoints within existing tasks, not new
+milestones or permission to skip M0/UX/M1 dependencies.
+
+- [ ] **M0.4:** perform one temporary-project save/reopen/resize/PlayStop session, then
+  recovery cancel/apply/close/reopen and a project/world switch during review. Retain logs
+  and exact steps; verify no stale recovery is applied to another target.
+- [ ] **UX.1/UX.3:** measure scene area at 1280×720; check reset/resize, 100%/150% DPI,
+  keyboard focus and readable error/disabled states. Record each result separately.
+- [ ] **UX.2/UX.4/M1:** run the visible starter → import/preview → Add → transform → undo
+  → Play/Stop → save → relocate/reopen loop; test corrupt reimport, template instances,
+  close-cancel and lesson replay. Fix observed failures within these tasks.
+- [ ] **UX.5:** observe three first-time users and the later unaided repeat; retain timings,
+  confusion and transfer results. Keep the gate pending until participants exist.
+- [ ] **M2.1, after M1:** first add saved player identity and invalid-reference diagnostics;
+  next collider visualization; next a saved Open action; then custom behaviour assignments.
+  Each change needs undo/redo, save/reopen, duplicate/template handling and Play isolation
+  checks where applicable, plus its visible workflow.
+- [ ] **M2.2:** implement game pause and one saved cutscene trigger; verify repeated handoff
+  restores player/camera/input/audio ownership and Stop restores authored data.
+- [ ] **M2.3:** complete dependency collection and failure diagnostics before the build panel;
+  then publish and play a 3–5 minute editor-authored demo outside the checkout. Test missing
+  dependencies and keep valid output safe on failure.
+
+Review validation: local Release build passed with 0 warnings/errors; all **370 CPU tests**
+passed with 0 failed/skipped; the separate RPG save/load check passed. Hosted Windows CI
+[36604834954](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36604834954)
+was confirmed successful at the reviewed commit. Fresh interactive graphics, audio, DPI,
+novice sessions, no-RPG publish/startup, soak and relocated-install checks were **not run**.
+Detailed review evidence is in [progress/roadmap-changes.md](progress/roadmap-changes.md),
+with current build/CI evidence in [progress/M0.md](progress/M0.md).

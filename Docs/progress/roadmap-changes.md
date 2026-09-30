@@ -82,3 +82,34 @@ M1.2 now has a nested selectable object hierarchy, command-based world-preservin
 viewport Move/Turn/Size gizmos. Move is world-aligned with parent-aware placement; Turn and Size use
 the selected object's local axes. Optional position-grid, angle and scale snapping are implemented.
 Live drag verification, undo/redo interaction, and save/reopen evidence remain open.
+
+## Source review and roadmap reconciliation — 30 September 2026
+
+Reviewed pulled commit `c13749b6de5a60be6cbdc78b958a3a7b18131e28` against the active
+roadmap and milestone evidence. Added a dated findings section and bounded follow-up
+checks to ENGINE_ROADMAP.md. Refreshed the hosted CI reference, corrected the skipped
+Next actions numbering, clarified the active scene format, removed already-extracted
+service boundaries from remaining work, and distinguished content packaging from
+executable publication. Engine code and acceptance statuses were left unchanged.
+
+| Check | Result |
+| --- | --- |
+| Source inspection: project references and launcher | CONFIRMED — Engine has no RPG/sample project reference; generic Authoring and Editor reference Engine/Authoring only; Scripting has no MonoGame dependency; CharacterStudio Program starts `Ember.Editor.CharacterStudioGame` |
+| Source inspection: editor split | CONFIRMED — largest current top-level `src/Ember.Editor/*.cs` file is `CharacterStudioEditorUi.Inspector.cs`, 690 lines; project and Play ownership live in `EditorProjectSession` and `CharacterStudioPlayController` |
+| Source inspection: persistence and recovery | CONFIRMED — `SceneFile.CurrentVersion` is 17; recovery completion and apply compare active world/RPG file paths against staged targets; boundary, recovery-target and font-copy regression tests exist |
+| Source inspection: unfinished game/film workflows | CONFIRMED — `FindPlayCharacter` derives the player from editor selection/scene order with a GLB fallback; `EngineProjectPackage` creates content folders; `BuildSequencePreview` creates fixed Wide/Close camera tracks for the first skinned actor |
+| Build, CPU tests, separate RPG check and live hosted CI | PASS — fresh results recorded in [M0.md](M0.md); 370 CPU tests, clean Release build, RPG round-trip and CI at the reviewed commit |
+| Documentation consistency | CONFIRMED — Current status and Next actions retain M0/UX/M1 gates; review findings distinguish runtime foundations, implemented editor controls and unverified workflows |
+
+Still open: all live editor, novice, film/game delivery and final capacity gates described
+in the roadmap. Existing E and M0 passes retain their recorded evidence; this review
+does not turn historical captures, soaks or module-disabled startup checks into fresh runs.
+
+## UX.3 font glyph coverage — 30 September 2026
+
+The saved Home screenshot showed a question mark in place of the ellipsis used in the source
+button labels. ImGui's default character range omitted editor punctuation even though Source
+Sans 3 was bundled. Added explicit ranges for Latin/Latin-1 and punctuation used by the editor.
+The editor and CharacterStudio Release builds pass, and fresh Home/scene captures render without
+the missing-glyph mark. This is capture evidence only; DPI, focus and input were not exercised.
+Detailed checks and artifact paths are in [UX.md](UX.md). UX.3 remains **In progress**.

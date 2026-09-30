@@ -390,3 +390,23 @@ continue the UX.1–UX.4 and M1.1 workflow gates without treating captures as in
 
 Next: complete the live UX.1–UX.4 workflow checks, including readable typography at both required
 scales; do not treat the 1280×720 capture as evidence for DPI scaling.
+
+## UX.3 explicit editor punctuation glyphs — 30 September 2026
+
+The saved Home capture showed question marks where Home buttons use an ellipsis. The Source Sans 3
+file was present, but ImGui's default font range did not include all punctuation used by Ember's
+labels. CharacterStudio now loads Basic Latin/Latin-1 plus the en/em dash, curly quotes, bullet,
+ellipsis and right arrow glyphs. This fixes the capture evidence for button labels and preserves the
+arrows/quotes used by other editor tools.
+
+| Check | Result |
+| --- | --- |
+| `dotnet build src/Ember.Editor/Ember.Editor.csproj --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| `dotnet build samples/CharacterStudio/CharacterStudio.csproj --configuration Release --no-restore --nologo` | PASS — 0 warnings, 0 errors |
+| CharacterStudio Home capture at 1280×720 | PASS — exit 0, empty stderr; “Choose a folder...” and “Open a project...” render with ellipses at `%TEMP%/Ember/UxGlyphRange/0cc562895e12465692bc4e9de3f0d43f/home.png` |
+| CharacterStudio ReleaseAShowcase capture at 1280×720 | PASS — exit 0, empty stderr; `%TEMP%/Ember/UxGlyphRange/0cc562895e12465692bc4e9de3f0d43f/scene.png` |
+| Automated test suite | NOT RUN — per the user's instruction |
+| Interactive 100%/150% DPI, focus and input checks | NOT RUN — a screenshot capture does not exercise these gates |
+
+Still open: live typography/DPI/focus checks and the full beginner workflow. UX.3 remains
+**In progress**.

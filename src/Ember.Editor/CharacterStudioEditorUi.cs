@@ -276,7 +276,24 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             var editorFontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "SourceSans3-Regular.ttf");
             if (!File.Exists(editorFontPath))
                 throw new FileNotFoundException("The editor's readable UI font was not deployed.", editorFontPath);
-            var editorFont = _io.Fonts.AddFontFromFileTTF(editorFontPath, 16f);
+            ushort[] editorGlyphRanges =
+            [
+                0x0020, 0x00FF, // Basic Latin and Latin-1 punctuation used across the editor.
+                0x2013, 0x2014, // En and em dashes.
+                0x2018, 0x2019, // Curly single quotes.
+                0x201C, 0x201D, // Curly double quotes.
+                0x2022, 0x2022, // Bullet.
+                0x2026, 0x2026, // Ellipsis.
+                0x2192, 0x2192, // Right arrow.
+                0
+            ];
+            ImFontPtr editorFont;
+            unsafe
+            {
+                fixed (ushort* ranges = editorGlyphRanges)
+                    editorFont = _io.Fonts.AddFontFromFileTTF(editorFontPath, 16f, default,
+                        (IntPtr)ranges);
+            }
             unsafe { _io.NativePtr->FontDefault = editorFont.NativePtr; }
             _renderer = new ImGuiMonoGameRenderer(device);
         }

@@ -11,7 +11,7 @@ roadmap milestone under [`progress/`](progress/). Task status is kept only in th
 | [progress/UX.md](progress/UX.md) | UX — Home, workspace, visual actions, help and lesson evidence |
 | [progress/M2.md](progress/M2.md) | M2 — colliders, triggers, Play settings and packaging evidence |
 | [progress/E.md](progress/E.md) | E — editor project extraction evidence |
-| [progress/roadmap-changes.md](progress/roadmap-changes.md) | Roadmap resets and direction decisions |
+| [progress/roadmap-changes.md](progress/roadmap-changes.md) | Roadmap resets, direction decisions and source reviews |
 | [progress/legacy-tasks-01-144.md](progress/legacy-tasks-01-144.md) | History of tasks 01–144 from the archived RPG roadmap (not current gates) |
 
 Create a new milestone file (for example `progress/E.md`, `progress/L.md`, `progress/C.md`)
