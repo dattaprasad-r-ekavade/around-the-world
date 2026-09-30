@@ -1,0 +1,2 @@
+# MonoGame content builds restore the same MGCB tool package; keep CLI solution builds serial.
+-maxcpucount:1

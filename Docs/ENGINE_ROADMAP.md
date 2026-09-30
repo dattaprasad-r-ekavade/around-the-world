@@ -93,7 +93,7 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Windows CI [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266) passed all 370 CPU tests; its parallel solution build hit concurrent MonoGame tool-restore contention; scene-version assertions now use `SceneFile.CurrentVersion`; a local serial Release build passes | Confirm a successful hosted solution build; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Windows CI [36702138994](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36702138994) passed 370 CPU tests and built successfully with one MGCB restore warning; scene-version assertions use `SceneFile.CurrentVersion`; `Directory.Build.rsp` serializes CLI builds and the ordinary local Release build is clean | Confirm a warning-free hosted build with the repository response setting; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -113,8 +113,8 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** confirm a successful Windows CI solution build after the test fix, then run the
-   interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
+1. **M0.4:** confirm the repository's serial-build response setting removes the MGCB warning in
+   Windows CI, then run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
    resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
@@ -484,7 +484,9 @@ the latest hosted Windows workflow. This review did not run local tests.
 | Hosted Windows CI [36696334028](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36696334028) | FAIL — 368/370 tests passed; two `SceneFileTests` expected version 17 while current scene serialization writes version 18. The workflow's subsequent solution build succeeded. |
 | Corrective change and local Release build | PASS — both assertions now compare against `SceneFile.CurrentVersion`; `dotnet build Ember.sln --configuration Release --no-restore --nologo` succeeded with 0 warnings and 0 errors |
 | Hosted Windows CI [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266) | TESTS PASS — 370/370; BUILD FAIL — concurrent `dotnet tool restore` calls contended for `dotnet-mgcb.3.8.5.1.nupkg` while building RpgSlice |
-| Serial-build diagnostic | PASS locally — `dotnet build Ember.sln --configuration Release --no-restore --nologo -m:1` succeeded with 0 warnings and 0 errors; tracked workflow remains unchanged |
+| Hosted Windows CI [36702138994](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36702138994) | PASS — 370/370 tests; solution build succeeded with one MSB3073 warning for a concurrent MGCB tool restore, which completed successfully later in the build |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo -m:1` | PASS locally — 0 warnings and 0 errors |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` with `Directory.Build.rsp` | PASS locally — 0 warnings and 0 errors; hosted confirmation pending |
 | Manual editor, DPI, recovery and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
 | Local test suite | NOT RUN — per the user's instruction; the hosted run was triggered by the earlier push |
 
@@ -492,8 +494,9 @@ The first CI failure came from stale expected-version checks in
 `SceneFileTests.SaveAndLoadPreservesBoxColliderLocalShapeAndTriggerFlag` and
 `SceneFileTests.SaveAndLoadPreservesTriggerActionAndRequiresTriggerCollider`; both now follow
 `SceneFile.CurrentVersion`, and the next hosted run passed all 370 tests. That run's parallel
-solution build hit contention between MonoGame tool restores. A local serial build passes, but
-the tracked workflow remains unchanged and hosted build confirmation is pending.
+solution build hit contention between MonoGame tool restores. The repository now sets MSBuild
+maximum parallelism to one in `Directory.Build.rsp`; the ordinary local CI build command passes
+with 0 warnings and 0 errors. Hosted confirmation of that response setting is pending.
 The native app inventory returned no open
 windows, so the M0.4 manual checks remain unavailable here. M0.4 remains In progress, and no
 acceptance status was promoted by this review.
