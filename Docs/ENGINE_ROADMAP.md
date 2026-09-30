@@ -93,7 +93,7 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Hosted CI [36705346633](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36705346633) passed 370 CPU tests and built with 0 warnings/errors; follow-up run [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257) built successfully but exposed four stale scene-version assertions after the v19 bump; their expectations are corrected and CI rerun is pending. The earlier MGCB restore warning did not recur in 36705346633 | Interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen; monitor later builds for recurrence of MGCB restore warning | [M0](progress/M0.md) |
+| M0.4 | In progress | Hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681) passed all 373 CPU tests and built the solution with 0 errors; one intermittent MGCB restore warning recurred for RpgSlice. Run [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257) had four stale version-18 expectations after the v19 bump; commit `71e6888` corrected them and the rerun passed | Investigate intermittent MGCB tool-restore contention despite `-maxcpucount:1`; complete interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen checks | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -102,7 +102,7 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
 | M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 19 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open action requests its linked world-door destination (scene version 19); its new CI tests passed in run [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257), which also found four older tests still asserting version 18; those expectations are corrected and rerun is pending. What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | World-host cell-change handoff; custom behaviour registration; manual verification of collider bounds and the complete Play workflow | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open action requests its linked world-door destination (scene version 19); the action and complete 373-test suite pass hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | World-host cell-change handoff; custom behaviour registration; manual verification of collider bounds and the complete Play workflow | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -113,9 +113,12 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
-   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. The last hosted build
-   was warning-free; monitor later builds for recurrence of the earlier MGCB restore warning.
+1. **M0.4:** investigate the intermittent MonoGame content-tool restore warning. Hosted run
+   [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681)
+   reports that `dotnet-mgcb.3.8.5.1.nupkg` was in use by another process for `RpgSlice`, even
+   with `-maxcpucount:1`; the build and all tests still passed. Then run the interactive checks in
+   [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md): resize, save/reopen, Play/Stop, and recovery
+   cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
@@ -576,11 +579,12 @@ open.
 | Check | Result |
 | --- | --- |
 | `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — all solution projects, including tests, compiled with 0 warnings and 0 errors |
-| Open-action save/load, validation, runtime-event and template-update tests | PASS in hosted run [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257); the full suite failed 4 existing assertions pinned to scene version 18, now corrected to 19; rerun pending |
+| Open-action save/load, validation, runtime-event and template-update tests | PASS in hosted rerun [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681); all 373 tests passed after four existing version-18 assertions were corrected |
 | Manual Open selection, save/reopen, and cell travel | NOT RUN — desktop interaction and world-host handoff remain unverified |
 | M0.4 hosted check [36705346633](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36705346633) | PASS — 370/370 tests and warning-free Release build on the preceding documentation-only commit |
-| Follow-up hosted check [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257) | FAIL — 369/373 tests; the new Open-action tests passed, while four existing tests asserted scene version 18; fixed to expect version 19 and rerun is pending |
+| Follow-up hosted check [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257) | FAIL — 369/373 tests; the new Open-action tests passed, while four existing tests asserted scene version 18; commit `71e6888` corrected them |
 | Follow-up local Release build after correcting those expectations | PASS — 0 warnings and 0 errors; tests were not run locally |
+| Corrected hosted rerun [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681) | PASS — 373/373 tests; Release build succeeded with 0 errors and one intermittent MGCB restore warning for `RpgSlice` |
 
 No task status was promoted. Remaining M2.1 work is the world-host cell-change handoff, custom
 behaviour registration, and manual verification of collider editing and the Play workflow.
