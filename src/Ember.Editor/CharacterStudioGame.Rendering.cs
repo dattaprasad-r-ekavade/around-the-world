@@ -52,6 +52,7 @@ public sealed partial class CharacterStudioGame
         GraphicsDevice.SamplerStates[0] = SamplerState.LinearWrap;
         DrawShadowedScene(lightViewProjection);
         if (_playSession is null) DrawPendingAssetPlacementPreview();
+        DrawSelectedBoxCollider();
         DrawViewportTransformGizmo();
 
         if (_showDiagnostics)

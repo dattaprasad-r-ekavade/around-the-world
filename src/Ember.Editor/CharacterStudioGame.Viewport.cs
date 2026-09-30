@@ -27,6 +27,21 @@ namespace Ember.Editor;
 
 public sealed partial class CharacterStudioGame
 {
+    private static readonly Vector3[] BoxColliderCornerSigns =
+    [
+        new(-1f, -1f, -1f), new(1f, -1f, -1f),
+        new(1f, 1f, -1f), new(-1f, 1f, -1f),
+        new(-1f, -1f, 1f), new(1f, -1f, 1f),
+        new(1f, 1f, 1f), new(-1f, 1f, 1f)
+    ];
+
+    private static readonly (int Start, int End)[] BoxColliderWireframeEdges =
+    [
+        (0, 1), (1, 2), (2, 3), (3, 0),
+        (4, 5), (5, 6), (6, 7), (7, 4),
+        (0, 4), (1, 5), (2, 6), (3, 7)
+    ];
+
     private void ProcessViewportSelection(MouseState mouse, Vector2 logicalMouse, bool uiCapturesMouse)
     {
         var pointerDown = mouse.LeftButton == ButtonState.Pressed;
@@ -197,6 +212,33 @@ public sealed partial class CharacterStudioGame
             : Matrix.Identity;
         return ViewportTransformGizmoMath.CreateObjectAxisDirections(
             item.Transform.Rotation, parentWorld);
+    }
+
+    private void DrawSelectedBoxCollider()
+    {
+        if (_playSession is not null || _sequencePreviewEnabled
+            || _sequenceExportJob?.IsRunning == true
+            || _editorUi is not { IsHomeVisible: false } editorUi
+            || editorUi.SelectedObjectId is not { } objectId)
+            return;
+        if (_sceneData.Find(objectId)?.BoxCollider is not { } collider) return;
+
+        var halfSize = collider.Size * 0.5f;
+        var world = _sceneData.GetWorldMatrix(objectId);
+        Span<Vector3> corners = stackalloc Vector3[8];
+        for (var index = 0; index < corners.Length; index++)
+        {
+            var local = collider.Center + BoxColliderCornerSigns[index] * halfSize;
+            corners[index] = Vector3.Transform(local, world);
+        }
+
+        var color = collider.IsTrigger
+            ? new Color(255, 176, 64)
+            : new Color(68, 226, 164);
+        var vertices = new List<VertexPositionColor>(BoxColliderWireframeEdges.Length * 2);
+        foreach (var (start, end) in BoxColliderWireframeEdges)
+            AddGizmoLine(vertices, corners[start], corners[end], color);
+        DrawGizmoVertices(vertices);
     }
 
     private void DrawViewportTransformGizmo()

@@ -93,7 +93,7 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Windows CI [36604834954](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36604834954) passed on `c13749b`; run [36696334028](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36696334028) at `5d13487` exposed two stale version assertions, now changed to use `SceneFile.CurrentVersion`; fresh local Release build passes | Verify the corrected assertions in Windows CI; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Windows CI [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266) passed all 370 CPU tests; its parallel solution build hit concurrent MonoGame tool-restore contention; scene-version assertions now use `SceneFile.CurrentVersion`; a local serial Release build passes | Confirm a successful hosted solution build; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -102,7 +102,7 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
 | M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 18 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; selected-collider wireframe (solid and trigger colors); Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Open action; custom behaviour registration; manual verification of collider display and Play workflow | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -113,7 +113,7 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** confirm the corrected scene-version assertions in Windows CI, then run the
+1. **M0.4:** confirm a successful Windows CI solution build after the test fix, then run the
    interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
    resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
@@ -427,10 +427,10 @@ milestones or permission to skip M0/UX/M1 dependencies.
   close-cancel and lesson replay. Fix observed failures within these tasks.
 - [ ] **UX.5:** observe three first-time users and the later unaided repeat; retain timings,
   confusion and transfer results. Keep the gate pending until participants exist.
-- [ ] **M2.1, after M1:** saved player identity and missing/invalid-reference diagnostics are
-  implemented. Verify player choice, delete/undo, template guard, movement and triggers in the
-  visible workflow; then complete collider visualization, a saved Open action and custom
-  behaviour assignments with undo/redo, save/reopen, duplicate/template and Play-isolation checks.
+- [ ] **M2.1, after M1:** saved player identity, missing/invalid-reference diagnostics and
+  selected-collider wireframe are implemented. Verify player choice, collider display, delete/undo,
+  template guard, movement and triggers in the visible workflow; then implement a saved Open action
+  and custom behaviour assignments with undo/redo, save/reopen, duplicate/template and Play-isolation checks.
 - [ ] **M2.2:** implement game pause and one saved cutscene trigger; verify repeated handoff
   restores player/camera/input/audio ownership and Stop restores authored data.
 - [ ] **M2.3:** complete dependency collection and failure diagnostics before the build panel;
@@ -466,8 +466,9 @@ the latest hosted Windows workflow. This review did not run local tests.
   same undoable edit, and template updates that would remove it are refused. The Release build
   and legacy-scene capture are recorded in [M2 evidence](progress/M2.md). Dropdown interaction,
   save/reopen, Play control, delete/undo and template-update behavior remain unverified manually.
-- **Still open in M2.1:** collider visualization, the saved Open action, custom behaviour
-  registration, and visible end-to-end verification. M2.2 remains Not started. M2.3 stages and
+- **Still open in M2.1:** the selected-collider wireframe is implemented, but its visible behavior
+  remains unverified; the saved Open action and custom behaviour registration are also open.
+  M2.2 remains Not started. M2.3 stages and
   validates referenced project content, but audio/sequence dependency closure, the build panel,
   executable publication and a relocated playable game remain open.
 - **Later work remains Not started:** UX.5–UX.6, L.1–L.5, C.1–C.9, EA.1–EA.2 and M3–M5.
@@ -479,15 +480,20 @@ the latest hosted Windows workflow. This review did not run local tests.
 | Check | Result |
 | --- | --- |
 | `git fetch origin` and branch comparison | PASS — clean worktree; `master` equals `origin/master` at `5d13487`; no pull was needed |
-| Release solution build | PASS — latest hosted job's build step succeeded; the local Release build is also recorded in [M2 evidence](progress/M2.md) |
+| Release solution build | PASS locally; the latest hosted build failed on concurrent MGCB tool restoration (see run [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266)) |
 | Hosted Windows CI [36696334028](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36696334028) | FAIL — 368/370 tests passed; two `SceneFileTests` expected version 17 while current scene serialization writes version 18. The workflow's subsequent solution build succeeded. |
 | Corrective change and local Release build | PASS — both assertions now compare against `SceneFile.CurrentVersion`; `dotnet build Ember.sln --configuration Release --no-restore --nologo` succeeded with 0 warnings and 0 errors |
+| Hosted Windows CI [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266) | TESTS PASS — 370/370; BUILD FAIL — concurrent `dotnet tool restore` calls contended for `dotnet-mgcb.3.8.5.1.nupkg` while building RpgSlice |
+| Serial-build diagnostic | PASS locally — `dotnet build Ember.sln --configuration Release --no-restore --nologo -m:1` succeeded with 0 warnings and 0 errors; tracked workflow remains unchanged |
 | Manual editor, DPI, recovery and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
 | Local test suite | NOT RUN — per the user's instruction; the hosted run was triggered by the earlier push |
 
-The CI failures came from stale expected-version checks in
+The first CI failure came from stale expected-version checks in
 `SceneFileTests.SaveAndLoadPreservesBoxColliderLocalShapeAndTriggerFlag` and
 `SceneFileTests.SaveAndLoadPreservesTriggerActionAndRequiresTriggerCollider`; both now follow
-`SceneFile.CurrentVersion`. Hosted verification of this correction is pending. The native app
-inventory returned no open windows, so the M0.4 manual checks remain unavailable here. M0.4
-remains In progress, and no acceptance status was promoted by this review.
+`SceneFile.CurrentVersion`, and the next hosted run passed all 370 tests. That run's parallel
+solution build hit contention between MonoGame tool restores. A local serial build passes, but
+the tracked workflow remains unchanged and hosted build confirmation is pending.
+The native app inventory returned no open
+windows, so the M0.4 manual checks remain unavailable here. M0.4 remains In progress, and no
+acceptance status was promoted by this review.

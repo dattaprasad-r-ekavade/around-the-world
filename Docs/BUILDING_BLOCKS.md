@@ -747,10 +747,11 @@ play.Behaviours.Interact(switchObjectId, "Interact");
 `ScenePlaySession` deep-copies mutable scene state while retaining stable object and attachment
 IDs. It starts registered behavior instances once, then stops them and disposes their owned resources
 when the session ends. Runtime edits affect only `RuntimeScene`; disposing the session discards those
-edits. CharacterStudio demonstrates this with **P / Play on clone**, **E / Interact**, a volume
-slider, and **P / Stop and restore**. Its behavior hookup is sample code for now: behavior types and
-collider assignments are not yet serialized into scene JSON, and this editor preview does not yet
-wire the physics character controller into play mode.
+edits. CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
+actions to physics, and persists player, movement, camera, and keyboard settings. In edit mode, the
+selected object's box collider appears as a colored wireframe in the scene view. Custom behavior
+types still require game-code registration; authoring and compiling project C# behaviors from the
+editor remains future work.
 
 ---
 
