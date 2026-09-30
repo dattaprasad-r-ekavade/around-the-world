@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using Ember.Physics;
+using Ember.World;
 
 namespace Ember.Scene;
 
@@ -35,7 +36,7 @@ public sealed class ScenePlaySession : IDisposable
     public bool IsDisposed => _disposed;
     public bool HasReachedGoal => _reachedGoals.Count > 0;
 
-    /// <summary>Raised after a saved trigger action completes in this play session.</summary>
+    /// <summary>Raised when a saved trigger action runs or requests a world action.</summary>
     public event Action<SceneAuthoredActionEvent>? AuthoredActionExecuted;
 
     /// <summary>Associates a runtime physics body with its stable scene character identity.</summary>
@@ -102,6 +103,12 @@ public sealed class ScenePlaySession : IDisposable
                     AuthoredActionExecuted?.Invoke(new SceneAuthoredActionEvent(triggerAction.Kind,
                         owner.Id, owner.Name, instigatorId, physicsInstigatorId));
                 break;
+            case SceneTriggerActionKind.Open:
+                var door = owner.Door ?? throw new InvalidOperationException(
+                    $"Scene object {owner.Id} ({owner.Name}) lost its linked world door before its Open action ran.");
+                AuthoredActionExecuted?.Invoke(new SceneAuthoredActionEvent(triggerAction.Kind,
+                    owner.Id, owner.Name, instigatorId, physicsInstigatorId, door));
+                break;
             default:
                 throw new InvalidOperationException($"Scene object {owner.Id} has an unsupported trigger action.");
         }
@@ -114,6 +121,9 @@ public sealed class ScenePlaySession : IDisposable
             if (item.BoxCollider is not { IsTrigger: true })
                 throw new InvalidOperationException(
                     $"Scene object {item.Id} ({item.Name}) has a trigger action but no trigger box collider.");
+            if (item.TriggerAction?.Kind == SceneTriggerActionKind.Open && item.Door is null)
+                throw new InvalidOperationException(
+                    $"Scene object {item.Id} ({item.Name}) has an Open action but no linked world door.");
         }
     }
 
@@ -164,10 +174,11 @@ public static class SceneGraphCloner
 
 }
 
-/// <summary>Details of a saved scene action executed by a play session.</summary>
+/// <summary>Details of a saved scene action reported by a play session.</summary>
+/// <param name="Door">The linked destination for an Open action; null for other actions.</param>
 public readonly record struct SceneAuthoredActionEvent(SceneTriggerActionKind Kind,
     Guid SceneObjectId, string SceneObjectName, Guid? InstigatorId,
-    PhysicsObjectId PhysicsInstigatorId);
+    PhysicsObjectId PhysicsInstigatorId, WorldDoorComponent? Door = null);
 
 /// <summary>A single gameplay interaction sent to a scene object's compiled behaviour.</summary>
 public readonly record struct SceneInteraction(string Action, Guid? InstigatorId = null,

@@ -64,6 +64,8 @@ public sealed partial class CharacterStudioGame
                     {
                         SceneTriggerActionKind.Collect => $"{actor} collected {action.SceneObjectName}.",
                         SceneTriggerActionKind.ReachGoal => $"{actor} reached goal: {action.SceneObjectName}.",
+                        SceneTriggerActionKind.Open when action.Door is { } door =>
+                            $"{actor} requested {action.SceneObjectName} to cell {door.DestinationCellId}.",
                         _ => $"{actor} triggered {action.SceneObjectName}."
                     };
                 };

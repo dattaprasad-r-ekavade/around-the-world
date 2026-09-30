@@ -87,22 +87,22 @@ steps, fixture, configuration, hardware where relevant, result and artifact loca
 Passed: M0.1, M0.2, M0.3, M0.5, E.1, E.2, E.3. Every task not listed here or in the table is **Not started**.
 
 The [30 September build review](#review-of-the-current-build--30-september-2026) checks `c13749b`;
-the [latest synchronized-code review](#review-of-latest-code-at-ad88043--30-september-2026)
-checks `ad88043`. The runtime and editor foundations are substantial, but the complete beginner
-workflow and deliverable game/film gates remain open. No acceptance status was promoted.
+the [M2.1 Open-action review](#m21-open-action-slice-30-september-2026) records the current
+code slice. The runtime and editor foundations are substantial, but the complete beginner workflow
+and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Scene-version assertions use `SceneFile.CurrentVersion`; latest Windows CI [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933) passed 370 CPU tests and built successfully, but retained one MGCB restore warning despite `Directory.Build.rsp`; the recorded local Release build is clean | Diagnose the recurring MGCB restore warning and whether the repository serial-build setting helps; interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Scene-version assertions use `SceneFile.CurrentVersion`; hosted CI [36705346633](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36705346633) passed 370 CPU tests and built with 0 warnings/errors; the prior MGCB restore warning in [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933) did not recur on the next run with `Directory.Build.rsp` present | Interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen; watch for recurrence of the MGCB restore warning on later builds | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
 | UX.4 | In progress | Optional action-driven first-creation lesson (`FirstCreationLesson`) with Why?, two hint levels, replay and a project-local completion record | Button-driven walkthrough through the final reopen and replay | [UX](progress/UX.md) |
 | M1.1 | In progress | Project create/open/recent; GLB import with rollback; stable asset catalog; project GLBs in the Add library; reload with replacement validation; world-only projects open | Browse → preview → Add/Cancel, a valid reload and a corrupt reload through visible controls; relocate and reopen through the UI | [M1](progress/M1.md) |
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
-| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 18 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
+| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 19 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Manually verify collider selection and bounds after transforms, then complete the Play workflow; saved Open action; custom behaviour registration | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open action requests its linked world-door destination (scene version 19); What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | World-host cell-change handoff; custom behaviour registration; manual verification of collider bounds and the complete Play workflow | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -113,10 +113,9 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** investigate why the MGCB restore warning persists in Windows CI with
-   `Directory.Build.rsp`; update or remove the setting based on evidence. Then run the
-   interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md): resize,
-   save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
+1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
+   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. The last hosted build
+   was warning-free; monitor later builds for recurrence of the earlier MGCB restore warning.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
@@ -428,10 +427,11 @@ milestones or permission to skip M0/UX/M1 dependencies.
   close-cancel and lesson replay. Fix observed failures within these tasks.
 - [ ] **UX.5:** observe three first-time users and the later unaided repeat; retain timings,
   confusion and transfer results. Keep the gate pending until participants exist.
-- [ ] **M2.1, after M1:** saved player identity, missing/invalid-reference diagnostics and
-  selected-collider wireframe are implemented. Verify player choice, collider display, delete/undo,
-  template guard, movement and triggers in the visible workflow; then implement a saved Open action
-  and custom behaviour assignments with undo/redo, save/reopen, duplicate/template and Play-isolation checks.
+- [ ] **M2.1, after M1:** saved player identity, collider wireframe and the saved Open action are
+  implemented. Verify player choice, collider display, Open-action save/reopen, delete/undo,
+  template guard, movement and triggers in the visible workflow; connect the Open request to world
+  cell travel, then add custom behaviour assignments with undo/redo, duplicate/template and
+  Play-isolation checks.
 - [ ] **M2.2:** implement game pause and one saved cutscene trigger; verify repeated handoff
   restores player/camera/input/audio ownership and Stop restores authored data.
 - [ ] **M2.3:** complete dependency collection and failure diagnostics before the build panel;
@@ -503,7 +503,7 @@ The native app inventory returned no open
 windows, so the M0.4 manual checks remain unavailable here. M0.4 remains In progress, and no
 acceptance status was promoted by this review.
 
-## Review of latest code at ad88043 — 30 September 2026
+## Review of code at ad88043 — 30 September 2026
 
 Ran `git pull --ff-only`; `origin/master` was already current at `ad88043b`. The worktree was
 clean. Reviewed commits since `5d13487`, the affected source and progress records, the roadmap,
@@ -523,11 +523,17 @@ No local tests were run, and no acceptance status was promoted.
   repository `Directory.Build.rsp` sets `-maxcpucount:1`, but this hosted result shows that it
   did not remove the warning. The recorded ordinary local Release build is clean. Manual
   resize, save/reopen, Play/Stop, and recovery checks remain open.
-- **M2.1:** the saved player choice and stable migration remain as recorded in [M2 evidence](progress/M2.md).
-  The selected box-collider wireframe is implemented in the viewport and Release captures show
-  solid colliders in teal and triggers in orange at 1280×720. The bounds are transformed through
-  scene hierarchy. Manual selection and bounds checks after moving, rotating, and scaling remain
-  open, as do the saved Open action and custom behaviour registration.
+- **M2.1:** scene version 18 persists an explicit player object ID alongside movement, camera
+  and input settings. Play uses that saved choice independently of Inspector selection; old scenes
+  migrate to a stable eligible actor/character where available. Missing or invalid assignments
+  report an object-specific problem. Deleting the player clears the choice in the same undoable
+  edit, and template updates that would remove it are refused. Dropdown interaction, save/reopen,
+  Play control, delete/undo and template-update behavior remain unverified manually.
+- **Still open in M2.1:** the selected-collider wireframe is implemented, but its visible behavior
+  remains unverified; the saved Open action and custom behaviour registration are also open.
+  M2.2 remains Not started. M2.3 stages and validates referenced project content, but
+  audio/sequence dependency closure, the build panel, executable publication and a relocated
+  playable game remain open.
 - **Other in-progress tasks:** UX.1–UX.4, M1.1–M1.4, and M2.3 retain code foundations but
   have incomplete acceptance. Their remaining interaction, recovery, novice, dependency-closure,
   build-panel, and relocated-playable-game checks are listed in the status table and milestone
@@ -542,14 +548,37 @@ No local tests were run, and no acceptance status was promoted.
 | --- | --- |
 | `git pull --ff-only` and branch state | PASS — already up to date; clean `master` at `ad88043`, equal to `origin/master` |
 | Hosted Windows CI [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933) | PASS — 370/370 CPU tests; Release solution build succeeded with one MSB3073 `dotnet tool restore` warning for `RpgSlice` |
-| `Directory.Build.rsp` effect | Warning persists in hosted CI despite `-maxcpucount:1`; do not treat the setting as a fix for the MGCB restore contention |
+| Hosted Windows CI [36705346633](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36705346633) | PASS — 370/370 CPU tests; Release solution build succeeded with 0 warnings and 0 errors |
+| `Directory.Build.rsp` effect | The warning did not recur in the next hosted run; retain the earlier warning as an intermittent issue to monitor, not as a current build failure |
 | Local Release solution build with the repository response file | PASS in the recorded M0 evidence — 0 warnings, 0 errors; not repeated in this review |
 | Selected solid and trigger collider Release captures | PASS in [M2 evidence](progress/M2.md) — both 1280×720 captures visually show the expected wireframes |
 | Manual editor, DPI, recovery, collider-interaction, and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
 | Local test suite | NOT RUN — per the user's instruction; hosted tests ran automatically in CI |
 
-The serial-build response setting needs diagnosis: determine why the MGCB target's tool restore
-still contends, then either record a fix that removes the warning or revise the setting if it does
-not help. Keep M0.4 In progress until its manual workflow checks are also recorded. The collider
-captures establish that the overlay renders, not that editor selection and transform updates work.
-The next actions above reflect these remaining checks.
+The MGCB restore warning occurred in run 36703285933 but did not recur in 36705346633. Keep the
+repository response setting and monitor later builds for recurrence. M0.4 remains open for its
+manual workflow checks. The collider captures establish that the overlay renders, not that editor
+selection and transform updates work. The next actions above reflect these remaining checks.
+
+## M2.1 Open action slice 30 September 2026
+
+The saved Open action uses the trigger owner's existing `WorldDoorComponent`. Scene format version
+19 accepts this action only when the trigger has a linked door; older-version documents and invalid
+orphaned template baselines are rejected. Template updates and undo/redo preserve both the action and
+its door destination.
+
+On trigger entry, `ScenePlaySession` reports the stable trigger and character identities plus the
+linked destination to the world host through `SceneAuthoredActionEvent`. The What happens? Inspector
+offers **Open door** only after a link is present, and CharacterStudio reports the request during its
+single-scene preview. It does not switch cells; integrating a world host with editor Play remains
+open.
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — all solution projects, including tests, compiled with 0 warnings and 0 errors |
+| Open-action save/load, validation, runtime-event and template-update tests | ADDED — not run locally per the user's instruction; remote CI pending for this code change |
+| Manual Open selection, save/reopen, and cell travel | NOT RUN — desktop interaction and world-host handoff remain unverified |
+| M0.4 latest hosted check [36705346633](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36705346633) | PASS — 370/370 tests and warning-free Release build on the preceding documentation-only commit |
+
+No task status was promoted. Remaining M2.1 work is the world-host cell-change handoff, custom
+behaviour registration, and manual verification of collider editing and the Play workflow.

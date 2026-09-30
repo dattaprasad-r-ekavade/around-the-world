@@ -106,7 +106,8 @@ public sealed class SceneBoxColliderComponent
 public enum SceneTriggerActionKind
 {
     Collect = 0,
-    ReachGoal = 1
+    ReachGoal = 1,
+    Open = 2
 }
 
 /// <summary>A validated, persisted action run when this object's trigger is entered.</summary>

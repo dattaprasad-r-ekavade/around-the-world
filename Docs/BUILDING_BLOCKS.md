@@ -748,10 +748,12 @@ play.Behaviours.Interact(switchObjectId, "Interact");
 IDs. It starts registered behavior instances once, then stops them and disposes their owned resources
 when the session ends. Runtime edits affect only `RuntimeScene`; disposing the session discards those
 edits. CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
-actions to physics, and persists player, movement, camera, and keyboard settings. In edit mode, the
-selected object's box collider appears as a colored wireframe in the scene view. Custom behavior
-types still require game-code registration; authoring and compiling project C# behaviors from the
-editor remains future work.
+actions to physics, and persists player, movement, camera, and keyboard settings. A saved Open
+action emits the linked world-door destination through `SceneAuthoredActionEvent`; a world host
+handles the cell change. CharacterStudio's single-scene preview reports the request without
+switching cells. In edit mode, the selected object's box collider appears as a colored wireframe in
+the scene view. Custom behavior types still require game-code registration; authoring and compiling
+project C# behaviors from the editor remains future work.
 
 ---
 

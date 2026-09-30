@@ -232,9 +232,11 @@ public sealed class SceneTemplateInstanceSystemTests
         var path = TemporaryTemplatePath();
         try
         {
+            var firstDestinationCellId = Guid.NewGuid();
             var root = new SceneObject(Guid.NewGuid(), "Goal")
             {
                 BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+                Door = new WorldDoorComponent(firstDestinationCellId, Guid.NewGuid(), Quaternion.Identity),
                 TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Collect)
             };
             var source = new SceneGraph();
@@ -246,19 +248,25 @@ public sealed class SceneTemplateInstanceSystemTests
             var instanceId = wrapper.TemplateInstance!.ObjectMappings.Single().InstanceObjectId;
             Assert.Equal(SceneTriggerActionKind.Collect, scene.Find(instanceId)!.TriggerAction!.Kind);
 
-            root.TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal);
+            var secondDestinationCellId = Guid.NewGuid();
+            root.Door = new WorldDoorComponent(secondDestinationCellId, Guid.NewGuid(), Quaternion.Identity);
+            root.TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Open);
             var secondRevision = SceneTemplateFile.Save(source, root.Id, "Goal", path);
             var history = new SceneCommandHistory();
             var command = new UpdateSceneTemplateCommand(wrapper.Id, secondRevision);
             history.Execute(scene, command);
-            Assert.Equal(SceneTriggerActionKind.ReachGoal, scene.Find(instanceId)!.TriggerAction!.Kind);
-            Assert.Equal(SceneTriggerActionKind.ReachGoal,
-                SceneFile.FromJson(SceneFile.ToJson(scene)).Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(SceneTriggerActionKind.Open, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(secondDestinationCellId, scene.Find(instanceId)!.Door!.DestinationCellId);
+            var reopenedInstance = SceneFile.FromJson(SceneFile.ToJson(scene)).Find(instanceId)!;
+            Assert.Equal(SceneTriggerActionKind.Open, reopenedInstance.TriggerAction!.Kind);
+            Assert.Equal(secondDestinationCellId, reopenedInstance.Door!.DestinationCellId);
 
             Assert.True(history.Undo(scene));
             Assert.Equal(SceneTriggerActionKind.Collect, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(firstDestinationCellId, scene.Find(instanceId)!.Door!.DestinationCellId);
             Assert.True(history.Redo(scene));
-            Assert.Equal(SceneTriggerActionKind.ReachGoal, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(SceneTriggerActionKind.Open, scene.Find(instanceId)!.TriggerAction!.Kind);
+            Assert.Equal(secondDestinationCellId, scene.Find(instanceId)!.Door!.DestinationCellId);
         }
         finally
         {

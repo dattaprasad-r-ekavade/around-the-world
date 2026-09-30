@@ -531,6 +531,7 @@ internal sealed partial class CharacterStudioEditorUi
         {
             SceneTriggerActionKind.Collect => "Collect",
             SceneTriggerActionKind.ReachGoal => "Reach goal",
+            SceneTriggerActionKind.Open => "Open door",
             null => "Nothing yet",
             _ => "Unsupported action"
         };
@@ -542,6 +543,9 @@ internal sealed partial class CharacterStudioEditorUi
                 SceneTriggerActionKind.Collect, "Collect");
             DrawTriggerActionOption(scene, selected, currentKind,
                 SceneTriggerActionKind.ReachGoal, "Reach goal");
+            if (selected.Door is not null)
+                DrawTriggerActionOption(scene, selected, currentKind,
+                    SceneTriggerActionKind.Open, "Open door");
             ImGui.EndCombo();
         }
 
@@ -549,6 +553,10 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.TextWrapped("On entry, this object is hidden for the rest of Play. The saved scene stays unchanged.");
         else if (currentKind == SceneTriggerActionKind.ReachGoal)
             ImGui.TextWrapped("On entry, Play marks this goal complete once. The saved scene stays unchanged.");
+        else if (currentKind == SceneTriggerActionKind.Open)
+            ImGui.TextWrapped("On entry, the runtime requests this linked door destination. This single-scene preview reports the request; a world host handles cell travel.");
+        else if (selected.Door is null)
+            ImGui.TextWrapped("To add Open door, link this object to a destination cell and spawn in More tools > World.");
         else
             ImGui.TextWrapped("Choose an action, or leave this set to Nothing yet.");
         ImGui.TreePop();

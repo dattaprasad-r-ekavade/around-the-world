@@ -92,6 +92,40 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesOpenDoorActionAndRequiresSceneVersionNineteen()
+    {
+        var objectId = Guid.NewGuid();
+        var destinationCellId = Guid.NewGuid();
+        var destinationSpawnId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(objectId, "Interior door")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            Door = new WorldDoorComponent(destinationCellId, destinationSpawnId, Quaternion.Identity),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Open)
+        });
+
+        var json = SceneFile.ToJson(scene);
+        var loaded = SceneFile.FromJson(json).Find(objectId)!;
+        var olderVersionJson = json.Replace($"\"Version\": {SceneFile.CurrentVersion}",
+            "\"Version\": 18", StringComparison.Ordinal);
+
+        Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", json, StringComparison.Ordinal);
+        Assert.Equal(SceneTriggerActionKind.Open, loaded.TriggerAction!.Kind);
+        Assert.Equal(destinationCellId, loaded.Door!.DestinationCellId);
+        Assert.Equal(destinationSpawnId, loaded.Door.DestinationSpawnId);
+        Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(olderVersionJson));
+
+        var missingDoorScene = new SceneGraph();
+        missingDoorScene.Add(new SceneObject(Guid.NewGuid(), "Unlinked door")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Open)
+        });
+        Assert.Throws<InvalidDataException>(() => SceneFile.ToJson(missingDoorScene));
+    }
+
+    [Fact]
     public void VersionFourteenLoadsWithoutColliderAndColliderDataRequiresVersionFifteen()
     {
         const string legacyJson = "{\"Version\":14,\"Objects\":[{\"Id\":\"10101010-1010-1010-1010-101010101010\",\"Name\":\"Legacy\",\"Position\":[0,0,0],\"Rotation\":[0,0,0,1],\"Scale\":[1,1,1]}]}";

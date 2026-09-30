@@ -15,7 +15,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 18;
+    public const int CurrentVersion = 19;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -781,10 +781,20 @@ public static class SceneFile
             || data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
                 && (baseline.HasTriggerActionBaseline is not null || baseline.TriggerAction is not null)) == true))
             throw new InvalidDataException($"Object {data.Id} trigger action data requires scene version 16.");
+        var hasOpenAction = data.TriggerAction?.Kind == SceneTriggerActionKind.Open
+            || data.TemplateInstance?.ObjectBaselines?.Any(baseline =>
+                baseline?.TriggerAction?.Kind == SceneTriggerActionKind.Open) == true;
+        if (documentVersion < 19 && hasOpenAction)
+            throw new InvalidDataException($"Object {data.Id} Open trigger action data requires scene version 19.");
         _ = ToBoxColliderComponent(data.BoxCollider);
         _ = ToTriggerActionComponent(data.TriggerAction);
         if (data.TriggerAction is not null && data.BoxCollider is not { IsTrigger: true })
             throw new InvalidDataException($"Object {data.Id} has a trigger action but no trigger box collider.");
+        if (data.TriggerAction?.Kind == SceneTriggerActionKind.Open && data.Door is null)
+            throw new InvalidDataException($"Object {data.Id} has an Open trigger action but no linked world door.");
+        if (data.TemplateInstance?.ObjectBaselines?.Any(baseline =>
+                baseline?.TriggerAction?.Kind == SceneTriggerActionKind.Open && baseline.Door is null) == true)
+            throw new InvalidDataException($"Object {data.Id} has an Open trigger baseline but no linked world door baseline.");
         if (!Enum.IsDefined(data.ResetPolicy))
             throw new InvalidDataException($"Object {data.Id} has unknown reset policy value {(int)data.ResetPolicy}.");
         if (documentVersion < 4 && data.ResetPolicy != WorldInstanceResetPolicy.Preserve)

@@ -117,6 +117,54 @@ public sealed class ScenePlaySessionTests
     }
 
     [Fact]
+    public void SavedOpenActionRaisesLinkedDoorRequestForTheBoundCharacter()
+    {
+        var triggerId = Guid.NewGuid();
+        var characterId = Guid.NewGuid();
+        var physicsId = new PhysicsObjectId(43);
+        var door = new WorldDoorComponent(Guid.NewGuid(), Guid.NewGuid(), Quaternion.Identity);
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(triggerId, "House door")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            Door = door,
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Open)
+        });
+        scene.Add(new SceneObject(characterId, "Player"));
+        using var session = new ScenePlaySession(scene);
+        session.BindPhysicsCharacter(physicsId, characterId);
+        SceneAuthoredActionEvent? executed = null;
+        session.AuthoredActionExecuted += value => executed = value;
+
+        session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Entered)
+        });
+
+        Assert.NotNull(executed);
+        Assert.Equal(SceneTriggerActionKind.Open, executed!.Value.Kind);
+        Assert.Equal(triggerId, executed.Value.SceneObjectId);
+        Assert.Equal(characterId, executed.Value.InstigatorId);
+        Assert.Same(door, executed.Value.Door);
+    }
+
+    [Fact]
+    public void OpenActionWithoutWorldDoorNamesItsOwningObject()
+    {
+        var item = new SceneObject(Guid.NewGuid(), "Unlinked house door")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.Open)
+        };
+        var scene = new SceneGraph();
+        scene.Add(item);
+
+        var exception = Assert.Throws<InvalidOperationException>(() => new ScenePlaySession(scene));
+        Assert.Contains(item.Id.ToString(), exception.Message, StringComparison.Ordinal);
+        Assert.Contains(item.Name, exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void InvalidSavedTriggerActionNamesItsOwningObject()
     {
         var item = new SceneObject(Guid.NewGuid(), "Broken goal")
