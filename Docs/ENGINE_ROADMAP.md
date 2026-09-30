@@ -100,9 +100,9 @@ promoted by this review.
 | UX.4 | In progress | Optional action-driven first-creation lesson (`FirstCreationLesson`) with Why?, two hint levels, replay and a project-local completion record | Button-driven walkthrough through the final reopen and replay | [UX](progress/UX.md) |
 | M1.1 | In progress | Project create/open/recent; GLB import with rollback; stable asset catalog; project GLBs in the Add library; reload with replacement validation; world-only projects open | Browse → preview → Add/Cancel, a valid reload and a corrupt reload through visible controls; relocate and reopen through the UI | [M1](progress/M1.md) |
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
-| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 17 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
+| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 18 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; controllable Play character; saved Play settings (scene version 17) | Saved player choice; Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Open action; custom behaviour registration; collider visualization; manual verification | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -373,7 +373,7 @@ found in a saved capture and fixed afterward.
 | Area | Source-backed findings | What that enables today |
 | --- | --- | --- |
 | Runtime and rendering | `Ember.Engine` owns the host, static/skinned GLB import, animation playback/crossfade, attachments, lighting/shadows, LOD/culling/instancing, terrain/water, input and audio. Supported import restrictions remain documented in BUILDING_BLOCKS.md. | Code-driven scenes and existing character/rendering samples. This does not establish full PBR, arbitrary character rigs or large-map capacity. |
-| Physics and game interactions | BEPU world, fixed stepping, capsule controller, input maps and collision-aware path following exist. `SceneStaticColliderSet` and `ScenePlaySession` dispatch saved Collect/ReachGoal actions. Scene version 17 persists movement, capsule, camera and key settings. | The editor can preview a controllable actor and simple trigger interactions on a runtime scene copy. |
+| Physics and game interactions | BEPU world, fixed stepping, capsule controller, input maps and collision-aware path following exist. `SceneStaticColliderSet` and `ScenePlaySession` dispatch saved Collect/ReachGoal actions. Scene version 18 persists the selected player object alongside movement, capsule, camera and key settings. | The editor can preview a selected or deterministic first character and simple trigger interactions on a runtime scene copy. |
 | World and optional RPG | Cell streaming/travel, exterior loading, world identities, navigation and persistence exist. Optional RPG code supplies inventory/equipment, dialogue/quests, stats, combat, schedules, trade and related systems; RpgSlice and Campaign remain consumers. | Reusable mechanics and integration fixtures. A smaller Morrowind-style game remains a capacity/content experiment, not a verified editor-authored product. Archived RPG expansion stays closed. |
 | Editor architecture | CharacterStudio's Program is a thin launcher. `Ember.Editor` has separate panels, project session and Play controller. Generic engine/authoring/editor references exclude RPG and samples; `Ember.Scripting` has no MonoGame dependency. RPG tools load through an optional module. | E.1–E.3 foundations are present. Historical capture and no-RPG startup/publish evidence is in progress/E.md. |
 | Scene/project authoring | Home starters, native pickers, asset catalog/import/reload, hierarchy, gizmos, snapping, templates/overrides/relink, undo/redo, dirty state and recovery are implemented. The tooling font is bundled with its license. | Most of the first editing loop has code and CPU coverage. Full mouse/button use, DPI and loss-prevention acceptance still need observation. |
@@ -387,10 +387,11 @@ found in a saved capture and fixed afterward.
    implementations but incomplete interactive acceptance. Additional screenshots or CPU
    tests cannot close resize/DPI/focus, undo/save/reopen, recovery or novice-observation gates.
    E extraction is finished work; its M0.4 dependency and the overall release gate remain open.
-2. **Player selection is still transient.** `CharacterStudioPlayController.FindPlayCharacter`
-   uses selection and scene order, with a GLB fallback. Changing editor selection can change
-   the controlled object, and a static GLB can become the fallback player. Persist and validate
-   an explicit player ID before treating the scene as a reproducible game setup.
+2. **Player selection now persists.** Scene version 18 stores a selected object ID; Play no
+   longer changes the controlled character when Inspector selection changes. Older scenes choose
+   a stable actor/character ID where available. The Play setup lets creators choose an animated
+   character/actor or use automatic stable-ID order; static GLBs are excluded from automatic control.
+   Open/custom actions, collider visualization and interactive verification remain open.
 3. **M2 needs a complete game loop.** Open/custom behaviours and collider visualization are
    missing. Play/Stop exists, but game pause and a saved trigger → cutscene → correct
    player/camera handoff are not established. Sequence pause alone does not meet M2.2.

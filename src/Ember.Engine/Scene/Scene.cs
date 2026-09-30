@@ -60,6 +60,8 @@ public sealed class SceneGraph
     public bool Remove(Guid id)
     {
         if (!_objects.Remove(id, out _)) return false;
+        if (_playSettings.PlayerObjectId == id)
+            _playSettings = _playSettings with { PlayerObjectId = null };
 
         foreach (var child in _objects.Values)
             if (child.ParentId == id) child.ParentId = null;

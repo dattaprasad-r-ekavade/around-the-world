@@ -78,7 +78,7 @@ public sealed partial class CharacterStudioGame
                 _owner._editorUi?.SetHistory(History);
                 _owner.BuildSequencePreview();
                 var controls = CharacterController is null
-                    ? "Play clone started. Follow a path to move an actor; P stops and restores."
+                    ? "Play clone started. Choose an enabled character in Play setup to control it; P stops and restores."
                     : "Play clone started. Configured move keys move; the configured jump key jumps; E interacts; P stops and restores.";
                 _owner._reimportStatus = cleanupError is null
                     ? controls
@@ -144,26 +144,24 @@ public sealed partial class CharacterStudioGame
 
         private Guid? FindPlayCharacter(SceneGraph scene)
         {
-            bool IsCharacter(SceneObject item) => item.Enabled && item.TriggerAction is null
+            bool IsPlayableCharacter(SceneObject item) => item.Enabled && item.TriggerAction is null
                 && (item.CharacterSettings is not null
                     || item.WorldEntity?.Kind == WorldEntityKind.Actor
-                    || item.GltfAsset is not null);
+                    || _owner._preview?.Current?.IsSkinnedObject(item) == true);
 
-            bool IsAuthoredActor(SceneObject item) => item.Enabled && item.TriggerAction is null
-                && (item.CharacterSettings is not null || item.WorldEntity?.Kind == WorldEntityKind.Actor);
+            if (scene.PlaySettings.PlayerObjectId is { } assignedId)
+            {
+                var assigned = scene.Find(assignedId)
+                    ?? throw new InvalidOperationException(
+                        $"Saved Play player {assignedId} is missing. Choose a character in Play setup.");
+                if (!IsPlayableCharacter(assigned))
+                    throw new InvalidOperationException(
+                        $"Saved Play player '{assigned.Name}' ({assigned.Id}) is disabled or is not an animated character/actor. Choose another character.");
+                return assigned.Id;
+            }
 
-            if (_owner._editorUi?.SelectedObjectId is { } selectedId
-                && scene.Find(selectedId) is { } selected && IsAuthoredActor(selected))
-                return selected.Id;
-
-            return scene.Objects.FirstOrDefault(item => item.Enabled
-                       && item.TriggerAction is null && item.WorldEntity?.Kind == WorldEntityKind.Actor)?.Id
-                ?? scene.Objects.FirstOrDefault(item => item.Enabled
-                    && item.TriggerAction is null && item.CharacterSettings is not null)?.Id
-                ?? (_owner._editorUi?.SelectedObjectId is { } fallbackId
-                    && scene.Find(fallbackId) is { } fallback && IsCharacter(fallback)
-                        ? fallback.Id
-                        : scene.Objects.FirstOrDefault(IsCharacter)?.Id);
+            return scene.Objects.Where(IsPlayableCharacter).OrderBy(item => item.Id)
+                .Select(item => (Guid?)item.Id).FirstOrDefault();
         }
 
         private void CreatePathPhysicsWorld(SceneGraph scene, Guid? dynamicCharacterId = null)

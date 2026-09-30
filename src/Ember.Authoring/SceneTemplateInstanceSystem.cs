@@ -363,9 +363,26 @@ public static class SceneTemplateInstanceSystem
                     : wrapper.Id;
                 destination.SetParent(mappings[sourceObject.Id], parentId);
             }
-            foreach (var removedId in OrderBySceneDepth(destination,
-                removedInstanceIds.Except(retainedRemovedIds), descending: true))
+            var objectsToRemove = OrderBySceneDepth(destination,
+                removedInstanceIds.Except(retainedRemovedIds), descending: true);
+            if (destination.PlaySettings.PlayerObjectId is { } removedPlayerId
+                && objectsToRemove.Contains(removedPlayerId))
+                throw new InvalidOperationException(
+                    $"This template update removes the saved Play player {removedPlayerId}. " +
+                    "Choose another character or use automatic selection before updating the template.");
+            foreach (var removedId in objectsToRemove)
                 destination.Remove(removedId);
+
+            if (destination.PlaySettings.PlayerObjectId is { } playerId)
+            {
+                var player = destination.Find(playerId);
+                if (player is null || !player.Enabled || player.TriggerAction is not null
+                    || (player.CharacterSettings is null && player.WorldEntity?.Kind != WorldEntityKind.Actor
+                        && player.GltfAsset is null))
+                    throw new InvalidOperationException(
+                        $"This template update removes or disables the saved Play player {playerId}. " +
+                        "Choose another character or use automatic selection before updating the template.");
+            }
 
             var objectMappings = mappings.OrderBy(pair => pair.Key)
                 .Select(pair => new SceneTemplateObjectMapping(pair.Key, pair.Value)).ToArray();
@@ -416,7 +433,7 @@ public static class SceneTemplateInstanceSystem
                 item.Door, item.SpawnPoint, item.WorldEntity, item.BoxCollider, item.TriggerAction,
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
-        return new SceneTemplateInstanceState(wrapperId, objects);
+        return new SceneTemplateInstanceState(wrapperId, scene.PlaySettings, objects);
     }
 
     internal static void RestoreState(SceneGraph scene, SceneTemplateInstanceState state)
@@ -459,6 +476,7 @@ public static class SceneTemplateInstanceSystem
         }
         foreach (var item in state.Objects)
             scene.SetParent(item.Object.Id, item.ParentId);
+        scene.PlaySettings = state.PlaySettings;
     }
 
     private static SceneObject CreateClone(SceneObject source, Guid id,
@@ -863,7 +881,8 @@ public static class SceneTemplateInstanceSystem
     }
 }
 
-internal sealed record SceneTemplateInstanceState(Guid WrapperId, IReadOnlyList<SceneTemplateObjectState> Objects);
+internal sealed record SceneTemplateInstanceState(Guid WrapperId, ScenePlaySettings PlaySettings,
+    IReadOnlyList<SceneTemplateObjectState> Objects);
 
 internal sealed record SceneTemplateObjectState(SceneObject Object, string Name, bool Enabled,
     Transform Transform, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,

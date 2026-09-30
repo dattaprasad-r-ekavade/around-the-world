@@ -1,4 +1,5 @@
 using Ember.Scene;
+using Ember.World;
 using ImGuiNET;
 using Microsoft.Xna.Framework.Input;
 using System;
@@ -41,6 +42,8 @@ internal sealed partial class CharacterStudioEditorUi
 
         var settings = scene.PlaySettings;
         ImGui.TextWrapped("These settings are saved with this scene and used when you press Play.");
+        DrawPlayerCharacter(scene, settings);
+        settings = scene.PlaySettings;
         DrawPlaySettingsSlider(scene, "Move speed", settings.MoveSpeed, 0f, 12f,
             value => settings with { MoveSpeed = value }, "%.1f m/s");
         DrawPlaySettingsSlider(scene, "Jump speed", settings.JumpSpeed, 0.5f, 12f,
@@ -93,6 +96,43 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.TextColored(new NumericsVector4(1f, 0.45f, 0.35f, 1f), _playSettingsError);
         ImGui.TreePop();
     }
+
+    private void DrawPlayerCharacter(SceneGraph scene, ScenePlaySettings settings)
+    {
+        var selected = settings.PlayerObjectId is { } playerId ? scene.Find(playerId) : null;
+        var currentLabel = selected?.Name
+            ?? (settings.PlayerObjectId is { } missingId
+                ? $"Missing character ({missingId.ToString("N")[..8]})"
+                : "First enabled character (automatic)");
+        ImGui.SetNextItemWidth(-1f);
+        if (ImGui.BeginCombo("Player character", currentLabel))
+        {
+            if (ImGui.Selectable("First enabled character (automatic)", settings.PlayerObjectId is null))
+                ApplyPlaySettingsChoice(scene, scene.PlaySettings with { PlayerObjectId = null });
+            foreach (var item in scene.Objects.Where(IsPlayableCharacterCandidate))
+            {
+                var label = $"{item.Name} · {item.Id.ToString("N")[..8]}";
+                var isSelected = settings.PlayerObjectId == item.Id;
+                if (ImGui.Selectable(label, isSelected))
+                    ApplyPlaySettingsChoice(scene, scene.PlaySettings with { PlayerObjectId = item.Id });
+                if (isSelected) ImGui.SetItemDefaultFocus();
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.TextWrapped("Choose which character receives movement input. Automatic picks the first enabled character by stable scene ID.");
+        if (settings.PlayerObjectId is { } missingPlayerId && selected is null)
+            ImGui.TextColored(new NumericsVector4(1f, 0.45f, 0.35f, 1f),
+                $"Saved player {missingPlayerId} is missing. Choose a character or use automatic selection.");
+        else if (selected is not null && !IsPlayableCharacterCandidate(selected))
+            ImGui.TextColored(new NumericsVector4(1f, 0.45f, 0.35f, 1f),
+                $"'{selected.Name}' is disabled or is no longer a character. Choose another player.");
+    }
+
+    private bool IsPlayableCharacterCandidate(SceneObject item) => item.Enabled
+        && item.TriggerAction is null
+        && (item.CharacterSettings is not null
+            || item.WorldEntity?.Kind == WorldEntityKind.Actor
+            || _owner._getCharacterInfo(item.Id) is not null);
 
     private void DrawPlaySettingsSlider(SceneGraph scene, string label, float value,
         float minimum, float maximum, Func<float, ScenePlaySettings> replace, string format)

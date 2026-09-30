@@ -5,9 +5,10 @@ using Microsoft.Xna.Framework.Input;
 
 namespace Ember.Scene;
 
-/// <summary>Persisted movement, camera, and keyboard defaults for a scene's Play session.</summary>
+/// <summary>Persisted player selection, movement, camera, and keyboard defaults for Play.</summary>
 public sealed record ScenePlaySettings
 {
+    public Guid? PlayerObjectId { get; init; }
     public float CapsuleRadius { get; init; } = 0.45f;
     public float CapsuleCylinderLength { get; init; } = 0.9f;
     public float MoveSpeed { get; init; } = 3.5f;
@@ -29,6 +30,8 @@ public sealed record ScenePlaySettings
 
     public ScenePlaySettings ValidatedCopy()
     {
+        if (PlayerObjectId == Guid.Empty)
+            throw new ArgumentException("A player character must use a valid scene object ID.", nameof(PlayerObjectId));
         if (!float.IsFinite(CapsuleRadius) || CapsuleRadius < 0.05f || CapsuleRadius > 5f)
             throw new ArgumentOutOfRangeException(nameof(CapsuleRadius), "Character capsule radius must be between 0.05 and 5 metres.");
         if (!float.IsFinite(CapsuleCylinderLength) || CapsuleCylinderLength < 0f || CapsuleCylinderLength > 20f)

@@ -15,7 +15,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 17;
+    public const int CurrentVersion = 18;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -80,12 +80,14 @@ public static class SceneFile
             throw new InvalidDataException("Scene object list is missing.");
         if (document.Version < 17 && document.PlaySettings is not null)
             throw new InvalidDataException("Scene play settings require scene version 17.");
+        if (document.Version < 18 && document.PlaySettings?.PlayerObjectId is not null)
+            throw new InvalidDataException("Scene player assignment requires scene version 18.");
         foreach (var data in document.Objects) ValidateData(data, document.Version);
         ValidateAssetReferences(document.Objects);
         ValidateAttachmentIds(document.Objects);
         ValidateWorldEntityInstanceIds(document.Objects);
 
-        var scene = new SceneGraph { PlaySettings = ToPlaySettings(document.PlaySettings) };
+        var scene = new SceneGraph();
         var parents = new Dictionary<Guid, Guid?>();
         foreach (var data in document.Objects)
         {
@@ -123,6 +125,17 @@ public static class SceneFile
                 throw new InvalidDataException($"Invalid hierarchy at object {id}: {exception.Message}", exception);
             }
         }
+
+        var playSettings = ToPlaySettings(document.PlaySettings);
+        if (document.Version < 18 && playSettings.PlayerObjectId is null)
+        {
+            var defaultPlayer = scene.Objects.Where(IsAuthoredPlayerCandidate).OrderBy(item => item.Id)
+                .FirstOrDefault();
+            if (defaultPlayer is not null)
+                playSettings = playSettings with { PlayerObjectId = defaultPlayer.Id };
+        }
+        scene.PlaySettings = playSettings;
+        ValidatePlayerAssignment(scene, playSettings);
 
         ValidateTemplateInstances(scene);
 
@@ -171,6 +184,7 @@ public static class SceneFile
         ValidateWorldEntityInstanceIds(objects);
         ValidateAcyclic(objects);
         ValidateTemplateInstances(scene);
+        ValidatePlayerAssignment(scene, scene.PlaySettings);
         return new SceneDocument
         {
             Version = CurrentVersion,
@@ -193,6 +207,7 @@ public static class SceneFile
                 CameraTargetOffsetY = data.CameraTargetOffsetY,
                 CameraDistance = data.CameraDistance,
                 CameraOrbitSensitivity = data.CameraOrbitSensitivity,
+                PlayerObjectId = data.PlayerObjectId,
                 MoveForward = data.MoveForward,
                 MoveForwardAlternate = data.MoveForwardAlternate,
                 MoveBackward = data.MoveBackward,
@@ -224,6 +239,7 @@ public static class SceneFile
             CameraTargetOffsetY = settings.CameraTargetOffsetY,
             CameraDistance = settings.CameraDistance,
             CameraOrbitSensitivity = settings.CameraOrbitSensitivity,
+            PlayerObjectId = settings.PlayerObjectId,
             MoveForward = settings.MoveForward,
             MoveForwardAlternate = settings.MoveForwardAlternate,
             MoveBackward = settings.MoveBackward,
@@ -235,6 +251,25 @@ public static class SceneFile
             Jump = settings.Jump,
             JumpAlternate = settings.JumpAlternate
         };
+    }
+
+    private static bool IsAuthoredPlayerCandidate(SceneObject item) => item.Enabled
+        && item.TriggerAction is null
+        && (item.CharacterSettings is not null || item.WorldEntity?.Kind == WorldEntityKind.Actor);
+
+    private static void ValidatePlayerAssignment(SceneGraph scene, ScenePlaySettings settings)
+    {
+        if (settings.PlayerObjectId is not { } playerId) return;
+        var player = scene.Find(playerId);
+        if (player is null)
+            throw new InvalidDataException($"Play player assignment refers to missing scene object {playerId}.");
+        if (!player.Enabled)
+            throw new InvalidDataException($"Play player object '{player.Name}' ({player.Id}) is disabled. Choose an enabled character.");
+        if (player.TriggerAction is not null)
+            throw new InvalidDataException($"Play player object '{player.Name}' ({player.Id}) is a trigger action owner, not a character.");
+        if (player.CharacterSettings is null && player.WorldEntity?.Kind != WorldEntityKind.Actor
+            && player.GltfAsset is null)
+            throw new InvalidDataException($"Play player object '{player.Name}' ({player.Id}) has no character asset or actor component.");
     }
 
     private static GltfCharacterSettings? ToCharacterSettings(SceneCharacterData? data)
@@ -889,6 +924,7 @@ public static class SceneFile
 
     private sealed class ScenePlaySettingsData
     {
+        public Guid? PlayerObjectId { get; set; }
         public float CapsuleRadius { get; set; } = 0.45f;
         public float CapsuleCylinderLength { get; set; } = 0.9f;
         public float MoveSpeed { get; set; } = 3.5f;

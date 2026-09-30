@@ -494,12 +494,13 @@ public sealed class WorldDoorEditCommand : ISceneCommand
     }
 }
 
-/// <summary>Removes an object; undo restores its ID, references, parent, and direct-child links.</summary>
+/// <summary>Removes an object; undo restores its ID, player assignment, parent, and child links.</summary>
 public sealed class DeleteSceneObjectCommand : ISceneCommand
 {
     private readonly Guid _objectId;
     private SceneObject? _snapshot;
     private Guid[]? _childIds;
+    private ScenePlaySettings? _previousPlaySettings;
 
     public DeleteSceneObjectCommand(Guid objectId)
     {
@@ -511,10 +512,20 @@ public sealed class DeleteSceneObjectCommand : ISceneCommand
     {
         var item = scene.Find(_objectId)
             ?? throw new InvalidOperationException($"Cannot delete missing scene object {_objectId}.");
-        _snapshot ??= SceneObjectCopy.Copy(item);
-        _childIds ??= scene.Objects.Where(child => child.ParentId == _objectId).Select(child => child.Id).ToArray();
+        if (_snapshot is null)
+        {
+            _snapshot = SceneObjectCopy.Copy(item);
+            _childIds = scene.Objects.Where(child => child.ParentId == _objectId).Select(child => child.Id).ToArray();
+            _previousPlaySettings = scene.PlaySettings;
+        }
+        var playSettingsBeforeDelete = scene.PlaySettings;
+        if (playSettingsBeforeDelete.PlayerObjectId == _objectId)
+            scene.PlaySettings = scene.PlaySettings with { PlayerObjectId = null };
         if (!scene.Remove(_objectId))
+        {
+            scene.PlaySettings = playSettingsBeforeDelete;
             throw new InvalidOperationException($"Could not delete scene object {_objectId}.");
+        }
     }
 
     public void Revert(SceneGraph scene)
@@ -524,6 +535,7 @@ public sealed class DeleteSceneObjectCommand : ISceneCommand
         scene.Add(SceneObjectCopy.Copy(_snapshot));
         foreach (var childId in _childIds)
             if (scene.Find(childId) is not null) scene.SetParent(childId, _objectId);
+        if (_previousPlaySettings is { } settings) scene.PlaySettings = settings;
     }
 }
 

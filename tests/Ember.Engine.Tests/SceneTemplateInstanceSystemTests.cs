@@ -482,7 +482,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal(45f, overriddenLod.ExitFarDistance);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(17, SceneFile.CurrentVersion);
+            Assert.Equal(18, SceneFile.CurrentVersion);
             var baselines = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .ToDictionary(baseline => baseline.SourceObjectId);
             Assert.True(baselines[updatedAssetObject.Id].HasGltfAssetBaseline);
@@ -597,7 +597,7 @@ public sealed class SceneTemplateInstanceSystemTests
             Assert.Equal("prop_joint", remappedPropAttachment.BoneName);
 
             var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
-            Assert.Equal(17, SceneFile.CurrentVersion);
+            Assert.Equal(18, SceneFile.CurrentVersion);
             var characterBaseline = reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines
                 .Single(baseline => baseline.SourceObjectId == root.Id).CharacterSettingsBaseline!;
             Assert.Equal("Walk", characterBaseline.ClipName);

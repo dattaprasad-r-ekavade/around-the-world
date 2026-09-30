@@ -161,10 +161,12 @@ var view = camera.View;
 
 `InputActionMap` supplies named `MoveForward`, `MoveBackward`, `MoveLeft`, `MoveRight`, and `Jump`
 actions, with WASD/arrow/space defaults. `ScenePlaySettings.ApplyInputBindings` installs a scene's
-saved primary and optional alternate keys into a fresh map. Scene version 17 also stores capsule
-dimensions, movement/jump speed and orbit-camera follow settings; CharacterStudio exposes them in its
-collapsed Play setup Inspector section and Play reads them from the runtime scene copy. Sample the map
-once per render frame with both window-focus and UI-keyboard-capture state. Captured or unfocused input
+saved primary and optional alternate keys into a fresh map. Scene version 18 also stores the selected
+player object ID beside the capsule dimensions, movement/jump speed and orbit-camera follow settings.
+The collapsed Play setup Inspector lets you choose an enabled animated character/actor; automatic
+selection uses the first enabled candidate by stable scene ID, so changing Inspector selection does not
+change the controlled player. Versions 1–17 migrate to a stable actor/character ID when one exists.
+Sample the map once per render frame with both window-focus and UI-keyboard-capture state. Captured or unfocused input
 is neutral, and keys held through either state stay suppressed until release. Apply the movement result
 every render frame, including its zero value while input is blocked. Use `ConsumePressed(Jump)` before
 fixed-step advance: the press remains pending until consumed and can be consumed only once, even if the

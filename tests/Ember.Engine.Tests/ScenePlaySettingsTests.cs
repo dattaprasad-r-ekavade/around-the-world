@@ -38,7 +38,7 @@ public sealed class ScenePlaySettingsTests
         var json = SceneFile.ToJson(scene);
         var loaded = SceneFile.FromJson(json);
 
-        Assert.Contains("\"Version\": 17", json, StringComparison.Ordinal);
+        Assert.Contains("\"Version\": 18", json, StringComparison.Ordinal);
         Assert.Equal(settings, loaded.PlaySettings);
         Assert.Equal(new ScenePlaySettings(), SceneFile.FromJson("{\"Version\":16,\"Objects\":[]}").PlaySettings);
         Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(
