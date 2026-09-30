@@ -86,14 +86,14 @@ steps, fixture, configuration, hardware where relevant, result and artifact loca
 
 Passed: M0.1, M0.2, M0.3, M0.5, E.1, E.2, E.3. Every task not listed here or in the table is **Not started**.
 
-The [30 September review](#review-of-the-current-build--30-september-2026) checks `c13749b`;
-its [latest-checkout follow-up](#review-of-latest-synchronized-code--30-september-2026) checks
-`5d13487`. The runtime and editor foundations are substantial, but the complete beginner
+The [30 September build review](#review-of-the-current-build--30-september-2026) checks `c13749b`;
+the [latest synchronized-code review](#review-of-latest-code-at-ad88043--30-september-2026)
+checks `ad88043`. The runtime and editor foundations are substantial, but the complete beginner
 workflow and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Windows CI [36702138994](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36702138994) passed 370 CPU tests and built successfully with one MGCB restore warning; scene-version assertions use `SceneFile.CurrentVersion`; `Directory.Build.rsp` serializes CLI builds and the ordinary local Release build is clean | Confirm a warning-free hosted build with the repository response setting; interactive resize, save/reopen and Play/Stop checks; visible recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
+| M0.4 | In progress | Scene-version assertions use `SceneFile.CurrentVersion`; latest Windows CI [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933) passed 370 CPU tests and built successfully, but retained one MGCB restore warning despite `Directory.Build.rsp`; the recorded local Release build is clean | Diagnose the recurring MGCB restore warning and whether the repository serial-build setting helps; interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -102,7 +102,7 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
 | M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 18 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; selected-collider wireframe (solid and trigger colors); Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Open action; custom behaviour registration; manual verification of collider display and Play workflow | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal trigger actions (scene version 16); What happens? panel; saved Play settings and stable player object choice (scene version 18); selection-independent character control | Manually verify collider selection and bounds after transforms, then complete the Play workflow; saved Open action; custom behaviour registration | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -113,9 +113,10 @@ workflow and deliverable game/film gates remain open. No acceptance status was p
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** confirm the repository's serial-build response setting removes the MGCB warning in
-   Windows CI, then run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
-   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
+1. **M0.4:** investigate why the MGCB restore warning persists in Windows CI with
+   `Directory.Build.rsp`; update or remove the setting based on evidence. Then run the
+   interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md): resize,
+   save/reopen, Play/Stop, and recovery cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
@@ -445,7 +446,7 @@ novice sessions, no-RPG publish/startup, soak and relocated-install checks were 
 Detailed review evidence is in [progress/roadmap-changes.md](progress/roadmap-changes.md),
 with current build/CI evidence in [progress/M0.md](progress/M0.md).
 
-## Review of latest synchronized code — 30 September 2026
+## Review of synchronized code at 5d13487 — 30 September 2026
 
 Fetched `origin` and confirmed the clean local `master` already matched `origin/master` at
 `5d134877604d4f7677dcb1998e905bd41f9a6a10`; there were no newer commits to pull. Reviewed
@@ -486,7 +487,7 @@ the latest hosted Windows workflow. This review did not run local tests.
 | Hosted Windows CI [36697453266](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36697453266) | TESTS PASS — 370/370; BUILD FAIL — concurrent `dotnet tool restore` calls contended for `dotnet-mgcb.3.8.5.1.nupkg` while building RpgSlice |
 | Hosted Windows CI [36702138994](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36702138994) | PASS — 370/370 tests; solution build succeeded with one MSB3073 warning for a concurrent MGCB tool restore, which completed successfully later in the build |
 | `dotnet build Ember.sln --configuration Release --no-restore --nologo -m:1` | PASS locally — 0 warnings and 0 errors |
-| `dotnet build Ember.sln --configuration Release --no-restore --nologo` with `Directory.Build.rsp` | PASS locally — 0 warnings and 0 errors; hosted confirmation pending |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` with `Directory.Build.rsp` | PASS locally — 0 warnings and 0 errors; hosted confirmation was pending at this historical review point (see latest review below) |
 | Manual editor, DPI, recovery and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
 | Local test suite | NOT RUN — per the user's instruction; the hosted run was triggered by the earlier push |
 
@@ -496,7 +497,59 @@ The first CI failure came from stale expected-version checks in
 `SceneFile.CurrentVersion`, and the next hosted run passed all 370 tests. That run's parallel
 solution build hit contention between MonoGame tool restores. The repository now sets MSBuild
 maximum parallelism to one in `Directory.Build.rsp`; the ordinary local CI build command passes
-with 0 warnings and 0 errors. Hosted confirmation of that response setting is pending.
+with 0 warnings and 0 errors. At this review point, hosted confirmation was pending; see the
+latest review below.
 The native app inventory returned no open
 windows, so the M0.4 manual checks remain unavailable here. M0.4 remains In progress, and no
 acceptance status was promoted by this review.
+
+## Review of latest code at ad88043 — 30 September 2026
+
+Ran `git pull --ff-only`; `origin/master` was already current at `ad88043b`. The worktree was
+clean. Reviewed commits since `5d13487`, the affected source and progress records, the roadmap,
+and hosted Windows CI [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933).
+No local tests were run, and no acceptance status was promoted.
+
+### Current implementation and roadmap state
+
+- **Passed evidence remains unchanged:** M0.1–M0.3 and M0.5, plus E.1–E.3, retain their
+  recorded acceptance evidence. This review did not repeat the soak, distribution, or no-RPG
+  startup checks. The earlier [build review](#review-of-the-current-build--30-september-2026)
+  records the wider runtime, editor, teaching, film, packaging, and capacity findings.
+- **M0.4:** the two scene serialization assertions now follow `SceneFile.CurrentVersion`;
+  hosted CI passes 370 CPU tests and completes the Release solution build. However, run
+  36703285933 still reports one MSB3073 warning: MonoGame's `dotnet tool restore` exits 1 for
+  `RpgSlice`, while another restore later succeeds and the solution build finishes. The
+  repository `Directory.Build.rsp` sets `-maxcpucount:1`, but this hosted result shows that it
+  did not remove the warning. The recorded ordinary local Release build is clean. Manual
+  resize, save/reopen, Play/Stop, and recovery checks remain open.
+- **M2.1:** the saved player choice and stable migration remain as recorded in [M2 evidence](progress/M2.md).
+  The selected box-collider wireframe is implemented in the viewport and Release captures show
+  solid colliders in teal and triggers in orange at 1280×720. The bounds are transformed through
+  scene hierarchy. Manual selection and bounds checks after moving, rotating, and scaling remain
+  open, as do the saved Open action and custom behaviour registration.
+- **Other in-progress tasks:** UX.1–UX.4, M1.1–M1.4, and M2.3 retain code foundations but
+  have incomplete acceptance. Their remaining interaction, recovery, novice, dependency-closure,
+  build-panel, and relocated-playable-game checks are listed in the status table and milestone
+  files. M2.2, UX.5–UX.6, L.1–L.5, C.1–C.9, EA.1–EA.2, and M3–M5 remain Not started.
+- **Release boundary:** the current code has useful runtime and authoring foundations, but there
+  is not yet evidence for the complete beginner workflow or a packaged editor-authored game or
+  film. The paired-Fox performance budget does not establish dense-town or regional-world capacity.
+
+### Latest verification
+
+| Check | Result |
+| --- | --- |
+| `git pull --ff-only` and branch state | PASS — already up to date; clean `master` at `ad88043`, equal to `origin/master` |
+| Hosted Windows CI [36703285933](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36703285933) | PASS — 370/370 CPU tests; Release solution build succeeded with one MSB3073 `dotnet tool restore` warning for `RpgSlice` |
+| `Directory.Build.rsp` effect | Warning persists in hosted CI despite `-maxcpucount:1`; do not treat the setting as a fix for the MGCB restore contention |
+| Local Release solution build with the repository response file | PASS in the recorded M0 evidence — 0 warnings, 0 errors; not repeated in this review |
+| Selected solid and trigger collider Release captures | PASS in [M2 evidence](progress/M2.md) — both 1280×720 captures visually show the expected wireframes |
+| Manual editor, DPI, recovery, collider-interaction, and novice checks | NOT RUN — no new interactive acceptance evidence was gathered |
+| Local test suite | NOT RUN — per the user's instruction; hosted tests ran automatically in CI |
+
+The serial-build response setting needs diagnosis: determine why the MGCB target's tool restore
+still contends, then either record a fix that removes the warning or revise the setting if it does
+not help. Keep M0.4 In progress until its manual workflow checks are also recorded. The collider
+captures establish that the overlay renders, not that editor selection and transform updates work.
+The next actions above reflect these remaining checks.
