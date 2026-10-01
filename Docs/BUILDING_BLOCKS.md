@@ -560,6 +560,12 @@ tracks, and optional Reach goal trigger. Missing or ambiguous references stop pu
 the output directory is created. New projects create `Assets/Audio`; package creation copies every
 file there, plus any audio file directly referenced by a packaged scene.
 
+Call `EngineProjectPackage.Validate(projectFilePath)` to check dependency readiness without creating
+files. It returns either the referenced GLB and package-file counts or the first actionable
+dependency diagnostic. It does not check an output destination; the caller must validate that
+separately. `Create()` repeats dependency preflight before staging and only publishes when the
+complete dependency graph is valid.
+
 Scene audio references are package metadata, not a playback component. Register them with
 `scene.SetAudioAssets([new SceneAudioAssetReference(assetId, "Assets/Audio/step.wav")])`; playback
 still uses `ImportedAudioClip` and a `SceneBehaviour` until editor audio authoring is implemented.

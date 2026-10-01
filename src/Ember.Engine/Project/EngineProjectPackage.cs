@@ -14,6 +14,29 @@ namespace Ember.Project;
 /// <summary>Creates a relocatable project folder containing its scenes, world manifests, extra content, and referenced GLBs.</summary>
 public static class EngineProjectPackage
 {
+    /// <summary>Checks package dependencies without creating or modifying files.</summary>
+    public static EngineProjectPackageValidationResult Validate(string projectFilePath)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(projectFilePath);
+        try
+        {
+            var project = EngineProjectFile.Load(projectFilePath);
+            var contents = CollectPackageContent(project);
+            return new EngineProjectPackageValidationResult(
+                contents.GlbAssetCount, contents.Files.Count, Array.Empty<string>());
+        }
+        catch (Exception exception) when (exception is IOException
+                                           or InvalidDataException
+                                           or UnauthorizedAccessException
+                                           or ArgumentException
+                                           or InvalidOperationException
+                                           or NotSupportedException)
+        {
+            return new EngineProjectPackageValidationResult(
+                null, null, [exception.Message]);
+        }
+    }
+
     public static EngineProjectPackageResult Create(string projectFilePath, string destinationDirectory)
     {
         var project = EngineProjectFile.Load(projectFilePath);
@@ -529,3 +552,22 @@ public sealed record EngineProjectPackageResult(
     int GlbAssetCount,
     string? WorldManifestPath = null,
     int PackagedFileCount = 0);
+
+/// <summary>Read-only package preflight details for an editor or command-line publish flow.</summary>
+public sealed class EngineProjectPackageValidationResult
+{
+    internal EngineProjectPackageValidationResult(int? glbAssetCount, int? packagedFileCount,
+        IReadOnlyList<string> diagnostics)
+    {
+        GlbAssetCount = glbAssetCount;
+        PackagedFileCount = packagedFileCount;
+        Diagnostics = Array.AsReadOnly(diagnostics.ToArray());
+    }
+
+    public int? GlbAssetCount { get; }
+    public int? PackagedFileCount { get; }
+    public IReadOnlyList<string> Diagnostics { get; }
+
+    /// <summary>True when content dependency preflight found no blockers; destination validity is separate.</summary>
+    public bool IsValid => Diagnostics.Count == 0;
+}

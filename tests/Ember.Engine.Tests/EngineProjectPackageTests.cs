@@ -66,6 +66,11 @@ public sealed class EngineProjectPackageTests
             var project = EngineProjectFile.Load(projectFilePath)
                 .RegisterExtraContentPath(sequenceRelativePath);
 
+            var validation = EngineProjectPackage.Validate(projectFilePath);
+            Assert.True(validation.IsValid, string.Join(Environment.NewLine, validation.Diagnostics));
+            Assert.Equal(1, validation.GlbAssetCount);
+            Assert.True(validation.PackagedFileCount > 0);
+
             var result = EngineProjectPackage.Create(projectFilePath, packagePath);
 
             Assert.Equal(packagePath, result.DirectoryPath);
@@ -289,6 +294,13 @@ public sealed class EngineProjectPackageTests
             EngineProjectFile.SaveAtomic(Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName),
                 "Content/Scenes/Start.json");
 
+            var validation = EngineProjectPackage.Validate(
+                Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName));
+            Assert.False(validation.IsValid);
+            var diagnostic = Assert.Single(validation.Diagnostics);
+            Assert.Contains(assetId.ToString(), diagnostic, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Assets/Audio/Missing.wav", diagnostic, StringComparison.Ordinal);
+
             var exception = Assert.Throws<FileNotFoundException>(() =>
                 EngineProjectPackage.Create(Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName), packagePath));
 
@@ -296,6 +308,33 @@ public sealed class EngineProjectPackageTests
             Assert.Contains("Assets/Audio/Missing.wav", exception.Message, StringComparison.Ordinal);
             Assert.False(Directory.Exists(packagePath));
             Assert.False(Directory.Exists(Path.GetDirectoryName(packagePath)!));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PackagePreflightReturnsDiagnosticForInvalidSceneData()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var scenePath = Path.Combine(sourceRoot, "Content", "Scenes", "Start.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+            File.WriteAllText(scenePath, "not a scene document");
+            var projectPath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectPath, "Content/Scenes/Start.json");
+
+            var validation = EngineProjectPackage.Validate(projectPath);
+
+            Assert.False(validation.IsValid);
+            Assert.Null(validation.GlbAssetCount);
+            Assert.Null(validation.PackagedFileCount);
+            Assert.Contains("Scene JSON is invalid", Assert.Single(validation.Diagnostics),
+                StringComparison.Ordinal);
         }
         finally
         {
