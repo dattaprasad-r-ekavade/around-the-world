@@ -1,6 +1,6 @@
 # Ember roadmap: teaching game engine and career game
 
-Updated: 30 September 2026. This is the **only active roadmap** and the only place where task
+Updated: 1 October 2026. This is the **only active roadmap** and the only place where task
 status is kept. Read [AGENTS.md](../AGENTS.md) first for how to work in this repository.
 
 How to use this file:
@@ -93,7 +93,7 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681) passed all 373 CPU tests and built the solution with 0 errors; one intermittent MGCB restore warning recurred for RpgSlice. Run [36708152257](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708152257) had four stale version-18 expectations after the v19 bump; commit `71e6888` corrected them and the rerun passed | Investigate intermittent MGCB tool-restore contention despite `-maxcpucount:1`; complete interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen checks | [M0](progress/M0.md) |
+| M0.4 | In progress | Hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681) passed all 373 CPU tests and built the solution with 0 errors, but one MGCB restore warning recurred. The workflow now restores the root MGCB tool once and disables per-project auto-restore; the local Release build passes with this setting, and hosted confirmation is pending | Confirm hosted builds no longer report MGCB restore contention; complete interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen checks | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -113,10 +113,8 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** investigate the intermittent MonoGame content-tool restore warning. Hosted run
-   [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681)
-   reports that `dotnet-mgcb.3.8.5.1.nupkg` was in use by another process for `RpgSlice`, even
-   with `-maxcpucount:1`; the build and all tests still passed. Then run the interactive checks in
+1. **M0.4:** verify the updated hosted workflow, which restores the MGCB tool once and disables
+   the MonoGame target's per-project restore. If the build is clean, run the interactive checks in
    [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md): resize, save/reopen, Play/Stop, and recovery
    cancel/apply/close/reopen.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:

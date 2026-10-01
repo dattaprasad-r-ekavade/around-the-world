@@ -16,15 +16,18 @@ jobs:
       - uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 9.0.x
+      - name: Restore MonoGame content-builder tool
+        run: dotnet tool restore
       - name: Restore solution
         id: restore
-        run: dotnet restore Ember.sln --nologo
+        run: dotnet restore Ember.sln --nologo -p:AutoRestoreMGCBTool=false
       - name: Run CPU test suite
         shell: pwsh
         run: |
           $resultsDirectory = Join-Path $env:RUNNER_TEMP 'EmberEngineTestResults'
           New-Item -ItemType Directory -Path $resultsDirectory -Force | Out-Null
           dotnet test Ember.sln --configuration Release --no-restore --nologo `
+            -p:AutoRestoreMGCBTool=false `
             --logger 'console;verbosity=normal' `
             --logger 'trx;LogFileName=cpu-tests.trx' `
             --results-directory $resultsDirectory
@@ -49,4 +52,4 @@ jobs:
           }
       - name: Build solution
         if: always() && steps.restore.outcome == 'success'
-        run: dotnet build Ember.sln --configuration Release --no-restore --nologo
+        run: dotnet build Ember.sln --configuration Release --no-restore --nologo -p:AutoRestoreMGCBTool=false
