@@ -104,7 +104,7 @@ was promoted.
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open actions request linked world-door destinations and CharacterStudio Play resolves cells/spawns, carries the controlled character, and returns to the authored starting cell on Stop; optional editor modules register stable-ID behaviours with creator-facing names and owner-specific diagnostics; scene version 20 saves assignments with undo/redo, Inspector choices, Play resolution, clone/placement and template-update baselines; template updates merge source assignments, preserve local overrides, retain removed overridden objects as orphans, and support undo/redo; the earlier Open-action slice and complete 373-test suite passed hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Manual verification of door travel, collider bounds, template behaviour overrides, behaviour choices, and the complete Play workflow; current editor travel loads a single destination cell synchronously | [M2](progress/M2.md) |
 | M2.2 | In progress | CharacterStudio pauses gameplay input, physics, interactions, animation advancement and its interaction-audio voice; SequenceFile v2 saves an optional stable-ID Reach goal trigger with version-1 migration; the existing sequence tool assigns, opens and saves sequences; reaching the bound trigger in Play starts the sequence on the runtime scene copy and restores the previous player pose and camera when it ends | Run the saved open/reopen, trigger playback, player/camera restore, repeated Play/Pause/Stop and interaction-audio checks; verify no duplicate behaviour callbacks | [M2](progress/M2.md) |
-| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; registered sequences are reference-validated; scene version 21 stores stable-ID audio references; read-only preflight returns counts or the first dependency diagnostic; every file under `Assets/Audio` is included automatically | Build panel and executable publication; relocated playable game; run the authored package checks and visible publish workflow | [M2](progress/M2.md) |
+| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; registered sequences are reference-validated; scene version 21 stores stable-ID audio references; read-only preflight and `--validate-package` return scene/GLB/audio/sequence/file counts or the first dependency diagnostic; every file under `Assets/Audio` is included automatically | Build panel and executable publication; relocated playable game; run the authored package checks and visible publish workflow | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
 | E.3 | Passed | Generic authoring and `Ember.Editor` have no RPG assembly references; RPG validation, recovery and Placement/Dialogue/Quest authoring load from the optional module; CharacterStudio builds and starts with that module disabled | — | [E](progress/E.md) |
@@ -653,8 +653,9 @@ slice establishes persisted asset references and dependency validation only.
 ## M2.3 read-only package preflight — 1 October 2026
 
 `EngineProjectPackage.Validate(projectFilePath)` now runs the package collector without creating a
-destination. A valid result contains GLB and package-file counts; an invalid result contains the first
-actionable dependency diagnostic. Destination validity remains a separate caller responsibility.
+destination. A valid result contains scene, GLB, unique referenced-audio, sequence and package-file
+counts; an invalid result contains the first actionable dependency diagnostic. Destination validity
+remains a separate caller responsibility.
 `Create()` remains the publishing boundary and independently runs the same preflight before staging
 files. Regression coverage exercises both a valid audio/sequence
 project and a missing referenced-audio diagnostic, and confirms that failure leaves the package
@@ -665,6 +666,7 @@ before enabling publication; this API does not add editor UI or claim full diagn
 | --- | --- |
 | Release solution build to a temporary output directory | PASS — all projects compiled with 0 warnings and 0 errors; tests remain deferred to the owner |
 | Valid and invalid read-only preflight regression coverage | NOT RUN — test source is authored; execution is deferred to the owner |
+| MinimalGame `--validate-package` output and exit-code smoke | NOT RUN — the command was compiled but not launched; its process-level behavior remains unverified |
 | Visible Build-panel preview and publish workflow | NOT RUN — no panel was added before the M1 interaction gate |
 
 M2.3 remains In progress. Next: use this backend from the creator-facing Build panel after the M1

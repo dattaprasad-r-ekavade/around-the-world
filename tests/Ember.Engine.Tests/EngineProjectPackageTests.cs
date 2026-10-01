@@ -68,13 +68,19 @@ public sealed class EngineProjectPackageTests
 
             var validation = EngineProjectPackage.Validate(projectFilePath);
             Assert.True(validation.IsValid, string.Join(Environment.NewLine, validation.Diagnostics));
+            Assert.Equal(1, validation.SceneCount);
             Assert.Equal(1, validation.GlbAssetCount);
+            Assert.Equal(1, validation.AudioAssetCount);
+            Assert.Equal(1, validation.SequenceCount);
             Assert.True(validation.PackagedFileCount > 0);
 
             var result = EngineProjectPackage.Create(projectFilePath, packagePath);
 
             Assert.Equal(packagePath, result.DirectoryPath);
+            Assert.Equal(1, result.SceneCount);
             Assert.Equal(1, result.GlbAssetCount);
+            Assert.Equal(1, result.AudioAssetCount);
+            Assert.Equal(1, result.SequenceCount);
             Assert.True(File.Exists(Path.Combine(packagePath, EngineProjectFile.DefaultFileName)));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Scenes", "Start.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));

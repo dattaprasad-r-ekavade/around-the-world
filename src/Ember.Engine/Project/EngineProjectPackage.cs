@@ -23,7 +23,8 @@ public static class EngineProjectPackage
             var project = EngineProjectFile.Load(projectFilePath);
             var contents = CollectPackageContent(project);
             return new EngineProjectPackageValidationResult(
-                contents.GlbAssetCount, contents.Files.Count, Array.Empty<string>());
+                contents.SceneCount, contents.GlbAssetCount, contents.AudioAssetCount,
+                contents.SequenceCount, contents.Files.Count, Array.Empty<string>());
         }
         catch (Exception exception) when (exception is IOException
                                            or InvalidDataException
@@ -33,7 +34,7 @@ public static class EngineProjectPackage
                                            or NotSupportedException)
         {
             return new EngineProjectPackageValidationResult(
-                null, null, [exception.Message]);
+                null, null, null, null, null, [exception.Message]);
         }
     }
 
@@ -70,7 +71,8 @@ public static class EngineProjectPackage
         }
 
         return new EngineProjectPackageResult(destination, project.StartupScenePath,
-            contents.GlbAssetCount, project.WorldManifestPath, contents.Files.Count);
+            contents.GlbAssetCount, project.WorldManifestPath, contents.Files.Count,
+            contents.SceneCount, contents.AudioAssetCount, contents.SequenceCount);
     }
 
     private static PackageContents CollectPackageContent(EngineProjectFile project)
@@ -177,7 +179,10 @@ public static class EngineProjectPackage
         var files = filesByPath.Values
             .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
-        return new PackageContents(files, assetsById.Count);
+        var sequenceCount = files.Count(file =>
+            file.ProjectRelativePath.EndsWith(".sequence.json", StringComparison.OrdinalIgnoreCase));
+        return new PackageContents(files, scenesByPath.Count, assetsById.Count,
+            audioPathsById.Count, sequenceCount);
     }
 
     private static IEnumerable<string> EnumerateProjectAudioFiles(EngineProjectFile project)
@@ -543,7 +548,8 @@ public static class EngineProjectPackage
 
     private sealed record PackageAsset(GltfAssetReference Reference, string FullPath, Guid ObjectId);
     private sealed record PackageFile(string ProjectRelativePath, string FullPath);
-    private sealed record PackageContents(IReadOnlyList<PackageFile> Files, int GlbAssetCount);
+    private sealed record PackageContents(IReadOnlyList<PackageFile> Files, int SceneCount,
+        int GlbAssetCount, int AudioAssetCount, int SequenceCount);
 }
 
 public sealed record EngineProjectPackageResult(
@@ -551,20 +557,31 @@ public sealed record EngineProjectPackageResult(
     string? StartupScenePath,
     int GlbAssetCount,
     string? WorldManifestPath = null,
-    int PackagedFileCount = 0);
+    int PackagedFileCount = 0,
+    int SceneCount = 0,
+    int AudioAssetCount = 0,
+    int SequenceCount = 0);
 
 /// <summary>Read-only package preflight details for an editor or command-line publish flow.</summary>
 public sealed class EngineProjectPackageValidationResult
 {
-    internal EngineProjectPackageValidationResult(int? glbAssetCount, int? packagedFileCount,
+    internal EngineProjectPackageValidationResult(int? sceneCount, int? glbAssetCount,
+        int? audioAssetCount, int? sequenceCount, int? packagedFileCount,
         IReadOnlyList<string> diagnostics)
     {
+        SceneCount = sceneCount;
         GlbAssetCount = glbAssetCount;
+        AudioAssetCount = audioAssetCount;
+        SequenceCount = sequenceCount;
         PackagedFileCount = packagedFileCount;
         Diagnostics = Array.AsReadOnly(diagnostics.ToArray());
     }
 
+    public int? SceneCount { get; }
     public int? GlbAssetCount { get; }
+    /// <summary>Unique stable audio asset references across the packaged scenes.</summary>
+    public int? AudioAssetCount { get; }
+    public int? SequenceCount { get; }
     public int? PackagedFileCount { get; }
     public IReadOnlyList<string> Diagnostics { get; }
 

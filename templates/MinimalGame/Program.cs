@@ -20,13 +20,34 @@ internal static class Program
     [STAThread]
     private static void Main(string[] args)
     {
+        if (args.Contains("--validate-package", StringComparer.OrdinalIgnoreCase))
+        {
+            var projectPath = GetOption(args, "--project") ?? ResolveDefaultProjectPath();
+            var validation = EngineProjectPackage.Validate(projectPath);
+            if (!validation.IsValid)
+            {
+                foreach (var diagnostic in validation.Diagnostics)
+                    Console.Error.WriteLine($"Cannot publish project: {diagnostic}");
+                Environment.ExitCode = 1;
+                return;
+            }
+
+            Console.WriteLine(
+                $"Project content is ready: {validation.SceneCount} scene(s), {validation.GlbAssetCount} GLB asset(s), " +
+                $"{validation.AudioAssetCount} referenced audio asset(s), {validation.SequenceCount} sequence(s), " +
+                $"{validation.PackagedFileCount} package file(s).");
+            return;
+        }
+
         var packageDestination = GetOption(args, "--package-to");
         if (packageDestination is not null)
         {
             var projectPath = GetOption(args, "--project")
-                ?? Path.Combine(AppContext.BaseDirectory, EngineProjectFile.DefaultFileName);
+                ?? ResolveDefaultProjectPath();
             var package = EngineProjectPackage.Create(projectPath, packageDestination);
-            Console.WriteLine($"Packaged project to '{package.DirectoryPath}' with startup scene '{package.StartupScenePath}' and {package.GlbAssetCount} GLB asset(s).");
+            Console.WriteLine($"Packaged project to '{package.DirectoryPath}' with {package.SceneCount} scene(s), " +
+                $"{package.GlbAssetCount} GLB asset(s), {package.AudioAssetCount} referenced audio asset(s), " +
+                $"{package.SequenceCount} sequence(s), and {package.PackagedFileCount} file(s).");
             return;
         }
 
@@ -44,6 +65,14 @@ internal static class Program
             return args[index + 1];
         }
         return null;
+    }
+
+    internal static string ResolveDefaultProjectPath()
+    {
+        var distributionProject = Path.Combine(AppContext.BaseDirectory, "Project", EngineProjectFile.DefaultFileName);
+        return File.Exists(distributionProject)
+            ? distributionProject
+            : Path.Combine(AppContext.BaseDirectory, EngineProjectFile.DefaultFileName);
     }
 }
 
@@ -71,15 +100,7 @@ internal sealed class MinimalGame : EngineHost
         _graphics.GraphicsProfile = GraphicsProfile.HiDef;
         _controlSmoke = args.Contains("--smoke-controls", StringComparer.OrdinalIgnoreCase);
         _projectPath = Path.GetFullPath(ParseOption(args, "--project")
-            ?? ResolveDefaultProjectPath());
-    }
-
-    private static string ResolveDefaultProjectPath()
-    {
-        var distributionProject = Path.Combine(AppContext.BaseDirectory, "Project", EngineProjectFile.DefaultFileName);
-        return File.Exists(distributionProject)
-            ? distributionProject
-            : Path.Combine(AppContext.BaseDirectory, EngineProjectFile.DefaultFileName);
+            ?? Program.ResolveDefaultProjectPath());
     }
 
     protected override void LoadContent()
