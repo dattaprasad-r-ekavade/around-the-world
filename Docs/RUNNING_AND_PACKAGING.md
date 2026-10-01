@@ -113,8 +113,9 @@ then launch it directly from the output folder:
 C:\Build\MyEmberGame-win-x64\MinimalEmberGame.exe
 ```
 
-The publisher bundles the packaged project under `Project/`; the executable finds it without a
-command-line project path.
+The publisher runs the read-only dependency preflight first and displays discovered blockers in the
+console. It does not bundle project content when validation fails. When ready, it places the package
+under `Project/`; the executable finds it without a command-line project path.
 
 For a complete authored Fox scene, package, and playable Windows build, follow
 [ANIMATED_GAME_TUTORIAL.md](ANIMATED_GAME_TUTORIAL.md).

@@ -51,12 +51,23 @@ try {
     if (-not (Test-Path -LiteralPath $application -PathType Leaf)) {
         throw "Published apphost was not created at '$application'."
     }
+    $managedAssembly = Join-Path $publishDirectory 'MinimalEmberGame.dll'
+    if (-not (Test-Path -LiteralPath $managedAssembly -PathType Leaf)) {
+        throw "Published game assembly was not created at '$managedAssembly'."
+    }
 
-    $packageProcess = Start-Process -FilePath $application `
-        -ArgumentList @('--project', $engineProjectFile, '--package-to', $packageDirectory) `
-        -Wait -PassThru
-    if ($packageProcess.ExitCode -ne 0) {
-        throw "The published app could not package project content (exit code $($packageProcess.ExitCode))."
+    Write-Output 'Checking project dependencies before packaging...'
+    & dotnet $managedAssembly --validate-package --project $engineProjectFile
+    $preflightExitCode = $LASTEXITCODE
+    if ($preflightExitCode -ne 0) {
+        throw "Project content preflight failed with exit code $preflightExitCode; see the diagnostics above."
+    }
+
+    Write-Output 'Copying validated project content into the distribution...'
+    & dotnet $managedAssembly --project $engineProjectFile --package-to $packageDirectory
+    $packageExitCode = $LASTEXITCODE
+    if ($packageExitCode -ne 0) {
+        throw "The published app could not package project content (exit code $packageExitCode)."
     }
 
     $projectContentDirectory = Join-Path $publishDirectory 'Project'
@@ -64,6 +75,7 @@ try {
 
     $requiredFiles = @(
         'MinimalEmberGame.exe',
+        'MinimalEmberGame.dll',
         'coreclr.dll',
         'hostfxr.dll',
         'hostpolicy.dll',

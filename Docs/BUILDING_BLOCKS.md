@@ -576,10 +576,11 @@ The generated `Directory.Build.props` points to the selected Ember checkout's
 each enabled object as a cube. This source project reference keeps the engine source in its checkout
 while letting the external game build and run as an independent consumer.
 
-`tools/publish-engine-project.ps1` builds a self-contained `win-x64` distribution, packages the
-project's startup scene and dependencies under `Project/`, and verifies the runtime, engine, and
-graphics assemblies are present. In the published app, that bundled project becomes the default.
-The app can launch from any working directory without `dotnet` or the engine source checkout.
+`tools/publish-engine-project.ps1` builds a self-contained `win-x64` distribution, runs the
+read-only dependency preflight, and packages the project's startup scene and dependencies under
+`Project/` only when content is valid. It verifies the runtime, engine, and graphics assemblies are
+present. In the published app, that bundled project becomes the default. The app can launch from
+any working directory without `dotnet` or the engine source checkout.
 
 ## Interface
 
