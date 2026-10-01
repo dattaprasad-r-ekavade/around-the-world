@@ -105,6 +105,7 @@ public abstract class EngineHost : Game
             _graphics.PreferredBackBufferHeight = LogicalHeight;
             _graphics.IsFullScreen = false;
             Window.IsBorderless = false;
+            Window.AllowUserResizing = true;
         }
     }
 

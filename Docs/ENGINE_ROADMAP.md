@@ -93,7 +93,7 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 
 | Task | Status | Exists now | Remaining to pass | Evidence |
 | --- | --- | --- | --- | --- |
-| M0.4 | In progress | Hosted CI [36817425269](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36817425269) passed all 373 CPU tests and built the solution with 0 warnings and 0 errors after restoring the root MGCB tool once and disabling per-project auto-restore | Complete interactive resize, save/reopen, Play/Stop and recovery cancel/apply/close/reopen checks | [M0](progress/M0.md) |
+| M0.4 | In progress | Hosted CI [36817425269](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36817425269) passed all 373 CPU tests and built with 0 warnings and 0 errors; `--windowed` now permits resizing, and Home maximize/restore plus 1280×720 Home/showcase captures were verified | Verify visible folder/project controls, then scene transform save/reopen, Play/Stop and recovery cancel/apply/close/reopen | [M0](progress/M0.md) |
 | UX.1 | In progress | Home with Game/Film/Open on an opaque background; scene-first workspace; More tools menu with exclusive panels | Scene area of at least 60% at 1280×720; reset layout; resize; 100% and 150% DPI; button-driven check | [UX](progress/UX.md) |
 | UX.2 | In progress | Starter thumbnails; atomic Game/Film starters; native pickers; Move/Turn/Size buttons; scene-view selection; model preview with Add/Cancel; searchable Add library | Interactive walkthrough of the whole loop with no typed paths or required shortcuts | [UX](progress/UX.md) |
 | UX.3 | In progress | Inspector explanations; next actions for empty states; error recovery hints; bundled 16 px Source Sans 3 font with explicit editor punctuation glyphs; fresh Home and scene captures render ellipses correctly | Live check of messages, keyboard focus, readable 100%/150% scaling and non-color states | [UX](progress/UX.md) |
@@ -113,10 +113,12 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
 new default editor panels until the M1 gate passes.
 
-1. **M0.4:** run the interactive checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
-   resize, save/reopen, Play/Stop, and recovery cancel/apply/close/reopen. Hosted workflow
+1. **M0.4:** finish the visible editor checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
+   folder/project controls, scene transform save/reopen, Play/Stop and recovery
+   cancel/apply/close/reopen. Windowed Home resize/restore and the Home/showcase captures are
+   recorded in [M0](progress/M0.md); hosted workflow
    [36817425269](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36817425269)
-   confirms the centralized MGCB tool restore builds without MSBuild warnings.
+   confirms the centralized MGCB restore builds without MSBuild warnings.
 2. **UX.1–UX.4 and M1 manual checks** through visible controls on the extracted editor:
    - project pickers; Browse → preview → Add/Cancel; a valid and a corrupt model reload (the
      prior preview stays active and the message explains the next action);
