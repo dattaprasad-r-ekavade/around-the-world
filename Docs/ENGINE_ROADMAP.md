@@ -104,7 +104,7 @@ was promoted.
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open actions request linked world-door destinations and CharacterStudio Play resolves cells/spawns, carries the controlled character, and returns to the authored starting cell on Stop; optional editor modules register stable-ID behaviours with creator-facing names and owner-specific diagnostics; scene version 20 saves assignments with undo/redo, Inspector choices, Play resolution, clone/placement and template-update baselines; template updates merge source assignments, preserve local overrides, retain removed overridden objects as orphans, and support undo/redo; the earlier Open-action slice and complete 373-test suite passed hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Manual verification of door travel, collider bounds, template behaviour overrides, behaviour choices, and the complete Play workflow; current editor travel loads a single destination cell synchronously | [M2](progress/M2.md) |
 | M2.2 | In progress | CharacterStudio pauses gameplay input, physics, interactions, animation advancement and its interaction-audio voice; SequenceFile v2 saves an optional stable-ID Reach goal trigger with version-1 migration; the existing sequence tool assigns, opens and saves sequences; reaching the bound trigger in Play starts the sequence on the runtime scene copy and restores the previous player pose and camera when it ends | Run the saved open/reopen, trigger playback, player/camera restore, repeated Play/Pause/Stop and interaction-audio checks; verify no duplicate behaviour callbacks | [M2](progress/M2.md) |
-| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; saving a sequence inside a project registers it for packaging; package preflight validates registered sequence object, trigger, asset, clip and camera references before staging | Audio dependency discovery and validation; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
+| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; project-local sequence saves register for packaging and are reference-validated; every file under `Assets/Audio` is included automatically | Persisted audio references and missing-audio validation; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
 | E.3 | Passed | Generic authoring and `Ember.Editor` have no RPG assembly references; RPG validation, recovery and Placement/Dialogue/Quest authoring load from the optional module; CharacterStudio builds and starts with that module disabled | — | [E](progress/E.md) |
@@ -131,8 +131,8 @@ new default editor panels until the M1 gate passes.
    - the first-creation lesson through its final reopen and replay.
 3. **UX.5:** run three novice sessions. Fix blockers and repeat the affected task.
 4. Then continue the remaining M2.1 work, finish M2.2 interaction verification, and continue M2.3
-   (phase P4). M2.3 next: connect audio references to project content, then add the build panel and
-   relocated executable workflow. Use the
+   (phase P4). M2.3 next: define persisted audio references and validate them during package
+   preflight, then add the build panel and relocated executable workflow. Use the
    [review's bounded follow-up checks](#recommended-follow-up-checks) to avoid treating existing
    runtime APIs as completed editor workflows.
 
@@ -609,7 +609,7 @@ was running before the cutscene. A sequence evaluation failure also restores the
 M2.2 remains In progress. The task is not ready to pass until the authored tests and repeated visible
 Play, trigger, camera/player restoration, audio and Stop checks are complete.
 
-## M2.3 sequence content registration checkpoint — 1 October 2026
+## M2.3 sequence/audio content checkpoint — 1 October 2026
 
 Saving a `.sequence.json` file inside an open project now registers its project-relative path in the
 existing `extraContent` list. The same registration runs for the editor's command-line save option.
@@ -617,12 +617,15 @@ Files saved outside the project remain saved, but CharacterStudio reports that p
 them. Before staging, `EngineProjectPackage` resolves each registered sequence against one packaged
 scene, its skinned GLB assets, animation clips, camera tracks and optional trigger. Missing or
 ambiguous references stop package creation with a sequence-specific diagnostic. Audio discovery,
-the build panel and a relocated playable executable remain open M2.3 work.
+the build panel and a relocated playable executable remain open M2.3 work. Files under
+`Assets/Audio` are now staged recursively as well. The scene format has no persisted audio reference,
+so package preflight cannot yet distinguish missing sounds from unused ones; that closure remains
+open until audio references are authored and validated.
 
 | Check | Result |
 | --- | --- |
 | Release solution build to a temporary output directory | PASS — all projects compiled with 0 warnings and 0 errors |
-| Package registration, relocation and missing-sequence-reference regression coverage | NOT RUN — test source added; execution is deferred to the owner |
+| Sequence/audio package relocation and missing-sequence-reference regression coverage | NOT RUN — test source added; execution is deferred to the owner |
 | CharacterStudio save-sequence registration and package/reopen workflow | NOT RUN — desktop interaction was not performed; steps are in `MANUAL_GRAPHICS_GATE.md` |
 
 No M2.3 acceptance status was promoted.

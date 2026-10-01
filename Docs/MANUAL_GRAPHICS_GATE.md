@@ -123,14 +123,16 @@ The base editor does not include a game-specific behaviour module by default.
 
 ## Sequence packaging acceptance
 
-Use a project that contains a skinned character and a saved sequence.
+Use a project that contains a skinned character and a saved sequence. Put at least one audio file
+inside the project's `Assets/Audio` folder.
 
 1. Save the sequence from CharacterStudio into the open project. Confirm the status says it was added
    to project packaging. Save again to an external folder and confirm the status explains that an
    outside-project sequence will not be included.
 2. Package the project to a new folder outside the checkout, move that folder to a different
-   directory, and open the moved project. Confirm the registered sequence and its scene/GLB files
-   remain available. Open the sequence against the moved scene and confirm its references resolve.
+   directory, and open the moved project. Confirm the registered sequence, the files under
+   `Assets/Audio`, and their scene/GLB files remain available. Open the sequence against the moved
+   scene and confirm its references resolve.
 3. Break one target-object or clip reference in a copy of the sequence and package again. Confirm
    preflight names the sequence and missing reference, and does not create the output directory.
 4. Record the source and relocated paths, screenshots, console output and result. This check remains

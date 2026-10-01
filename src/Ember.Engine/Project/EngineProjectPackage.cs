@@ -120,10 +120,17 @@ public static class EngineProjectPackage
             }
         }
 
-        // 3. Validate every registered sequence against the scenes and character assets being packaged.
+        // 3. Audio imported under the project's standard audio folder is bundled automatically.
+        foreach (var audioFile in EnumerateProjectAudioFiles(project))
+        {
+            var relativePath = Path.GetRelativePath(project.RootDirectory, audioFile).Replace('\\', '/');
+            AddPackageFile(filesByPath, relativePath, audioFile);
+        }
+
+        // 4. Validate every registered sequence against the scenes and character assets being packaged.
         ValidateSequenceFiles(filesByPath.Values, scenesByPath, assetsById);
 
-        // 4. For each collected GLB asset, inspect external URIs (buffers/images)
+        // 5. For each collected GLB asset, inspect external URIs (buffers/images)
         foreach (var asset in assetsById.Values)
         {
             AddPackageFile(filesByPath, asset.Reference.SourcePath, asset.FullPath);
@@ -135,7 +142,7 @@ public static class EngineProjectPackage
             }
         }
 
-        // 5. Optional notices
+        // 6. Optional notices
         const string noticesRelativePath = "ThirdPartyNotices.txt";
         var noticesPath = project.ResolveContentPath(noticesRelativePath);
         if (File.Exists(noticesPath))
@@ -145,6 +152,22 @@ public static class EngineProjectPackage
             .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new PackageContents(files, assetsById.Count);
+    }
+
+    private static IEnumerable<string> EnumerateProjectAudioFiles(EngineProjectFile project)
+    {
+        var audioDirectory = project.ResolveContentPath("Assets/Audio");
+        if (!Directory.Exists(audioDirectory)) yield break;
+        if ((File.GetAttributes(audioDirectory) & FileAttributes.ReparsePoint) != 0)
+            throw new InvalidDataException("Project audio folder 'Assets/Audio' cannot be a symbolic link or junction.");
+
+        var options = new EnumerationOptions
+        {
+            RecurseSubdirectories = true,
+            AttributesToSkip = FileAttributes.ReparsePoint
+        };
+        foreach (var file in Directory.EnumerateFiles(audioDirectory, "*", options))
+            yield return file;
     }
 
     private static void ValidateSequenceFiles(

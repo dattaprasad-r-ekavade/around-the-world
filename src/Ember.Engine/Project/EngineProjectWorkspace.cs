@@ -28,7 +28,7 @@ public static class EngineProjectWorkspace
         var staging = Path.Combine(parent, $".{Path.GetFileName(destination)}.creating-{Guid.NewGuid():N}");
         try
         {
-            Directory.CreateDirectory(Path.Combine(staging, "Assets"));
+            Directory.CreateDirectory(Path.Combine(staging, "Assets", "Audio"));
             var scenePath = Path.Combine(staging, "Scenes", "Main.json");
             SceneFile.SaveAtomic(new SceneGraph(), scenePath);
             EngineProjectFile.SaveAtomic(Path.Combine(staging, EngineProjectFile.DefaultFileName),

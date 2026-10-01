@@ -553,7 +553,9 @@ inside an open project, so the sequence JSON travels with the packaged project; 
 outside the project is not included. Before staging, the package validates registered
 `.sequence.json` files against a single packaged scene, its skinned GLBs and animation clips, camera
 tracks, and optional Reach goal trigger. Missing or ambiguous references stop publication before
-the output directory is created. Audio dependency discovery is still open.
+the output directory is created. Files under `Assets/Audio` are copied recursively, and new projects
+create that folder. The scene format does not yet store audio references, so package preflight cannot
+report a missing referenced sound or exclude unused files.
 
 `tools/new-engine-project.ps1` generates `templates/MinimalGame` into an empty external directory.
 The generated `Directory.Build.props` points to the selected Ember checkout's

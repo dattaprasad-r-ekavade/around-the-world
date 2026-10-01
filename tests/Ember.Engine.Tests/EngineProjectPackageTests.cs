@@ -16,7 +16,7 @@ namespace Ember.Engine.Tests;
 public sealed class EngineProjectPackageTests
 {
     [Fact]
-    public void PackageContainsStartupSceneAndOnlyItsReferencedGlbsAndCanMove()
+    public void PackageContainsReferencedGlbsProjectAudioAndRegisteredSequenceAndCanMove()
     {
         var root = NewDirectory();
         try
@@ -27,13 +27,17 @@ public sealed class EngineProjectPackageTests
             var referencedPath = Path.Combine(sourceRoot, "Content", "Models", "hero.glb");
             var unusedPath = Path.Combine(sourceRoot, "Content", "Models", "unused.glb");
             var noticesPath = Path.Combine(sourceRoot, "ThirdPartyNotices.txt");
+            var audioRelativePath = "Assets/Audio/Intro.wav";
+            var audioPath = Path.Combine(sourceRoot, audioRelativePath.Replace('/', Path.DirectorySeparatorChar));
             var sequenceRelativePath = "Content/Sequences/Intro.sequence.json";
             var sequencePath = Path.Combine(sourceRoot, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(referencedPath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(audioPath)!);
             Directory.CreateDirectory(Path.GetDirectoryName(sequencePath)!);
             var foxPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Fox.glb");
             File.Copy(foxPath, referencedPath);
             File.WriteAllBytes(unusedPath, [5, 6, 7, 8]);
+            File.WriteAllBytes(audioPath, [31, 32, 33, 34]);
             File.WriteAllText(noticesPath, "Fox attribution and license notice.");
 
             var objectId = Guid.NewGuid();
@@ -62,8 +66,11 @@ public sealed class EngineProjectPackageTests
             Assert.True(File.Exists(Path.Combine(packagePath, EngineProjectFile.DefaultFileName)));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Scenes", "Start.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));
+            Assert.True(File.Exists(Path.Combine(packagePath, audioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.True(File.Exists(Path.Combine(packagePath, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.Equal(sequenceRelativePath, Assert.Single(project.ExtraContentPaths));
+            Assert.Equal(File.ReadAllBytes(audioPath),
+                File.ReadAllBytes(Path.Combine(packagePath, audioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.False(File.Exists(Path.Combine(packagePath, "Content", "Models", "unused.glb")));
             Assert.Equal(File.ReadAllText(noticesPath), File.ReadAllText(Path.Combine(packagePath, "ThirdPartyNotices.txt")));
             Assert.Equal(File.ReadAllBytes(referencedPath),
@@ -76,6 +83,8 @@ public sealed class EngineProjectPackageTests
             var movedScene = SceneFile.Load(movedProject.ResolveStartupScenePath());
             Assert.Equal(objectId, Assert.Single(movedScene.Objects).Id);
             Assert.True(File.Exists(movedProject.ResolveContentPath("Content/Models/hero.glb")));
+            Assert.Equal(File.ReadAllBytes(audioPath),
+                File.ReadAllBytes(movedProject.ResolveContentPath(audioRelativePath)));
             var movedCharacter = GltfSkinnedCharacterData.Import(
                 ModelRoot.Load(movedProject.ResolveContentPath("Content/Models/hero.glb")));
             var reopenedSequence = SequenceFile.Load(movedProject.ResolveContentPath(sequenceRelativePath), movedScene,
