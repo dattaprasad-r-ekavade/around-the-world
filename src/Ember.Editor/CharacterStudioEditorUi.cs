@@ -271,6 +271,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             ImGui.SetCurrentContext(_context);
             ImGui.StyleColorsDark();
             _io = ImGui.GetIO();
+            _io.ConfigFlags |= ImGuiConfigFlags.NavEnableKeyboard;
             unsafe { _io.NativePtr->IniFilename = null; }
             _io.DisplaySize = new NumericsVector2(_logicalWidth, _logicalHeight);
             var editorFontPath = Path.Combine(AppContext.BaseDirectory, "Fonts", "SourceSans3-Regular.ttf");

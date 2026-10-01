@@ -410,3 +410,24 @@ arrows/quotes used by other editor tools.
 
 Still open: live typography/DPI/focus checks and the full beginner workflow. UX.3 remains
 **In progress**.
+
+## UX.3 keyboard navigation — 1 October 2026
+
+Enabled ImGui keyboard navigation in CharacterStudio's shared editor context. The editor already
+forwards Tab, Enter, arrow, text and modifier key events; ImGui can now use those events to navigate
+the existing controls. This is an implementation change, not evidence that the focus order or
+visual focus treatment is usable.
+
+An isolated copy of the Release editor opened on Home at 1461×887 from
+`%TEMP%/Ember/KeyboardNavigation/f67c3f344ce74440b6f74c00589e39e7`. No project was created and no
+sample scene was changed. Automated Tab input did not produce a clearly visible focus change. The
+user confirmed physical mouse clicks work, but was unavailable to operate the desktop; therefore
+keyboard focus remains unverified.
+
+| Check | Result |
+| --- | --- |
+| `dotnet build src/Ember.Editor/Ember.Editor.csproj --configuration Release --no-restore --nologo -p:AutoRestoreMGCBTool=false` | PASS — 0 warnings and 0 errors |
+| Automated test suite | NOT RUN — per the user's instruction |
+| Interactive keyboard focus | NOT VERIFIED — automation could not confirm focus movement; physical input was unavailable |
+
+UX.3 remains **In progress**. M0.4's project and scene interaction checks also remain open.
