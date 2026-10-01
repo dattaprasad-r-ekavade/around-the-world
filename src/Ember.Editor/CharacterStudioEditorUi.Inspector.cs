@@ -29,6 +29,7 @@ internal sealed partial class CharacterStudioEditorUi
     private void DrawCharacterControls(SceneObject selected) => _inspectorPanel.DrawCharacterControls(selected);
     private void DrawLightingControls() => _inspectorPanel.DrawLightingControls();
     private void DrawWhatHappensControls(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawWhatHappensControls(scene, selected);
+    private void DrawBehaviourAssignmentControls(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawBehaviourAssignmentControls(scene, selected);
     private void TrackTransformInput(SceneGraph scene, Guid objectId, Transform transform, bool changed, Action applyChange) => _inspectorPanel.TrackTransformInput(scene, objectId, transform, changed, applyChange);
     private void CommitActiveTransformEdit(SceneGraph scene) => _inspectorPanel.CommitActiveTransformEdit(scene);
     private void RunHistoryAction(SceneGraph scene, bool undo) => _inspectorPanel.RunHistoryAction(scene, undo);
@@ -559,6 +560,63 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.TextWrapped("To add Open door, link this object to a destination cell and spawn in More tools > World.");
         else
             ImGui.TextWrapped("Choose an action, or leave this set to Nothing yet.");
+        ImGui.TreePop();
+    }
+
+    public void DrawBehaviourAssignmentControls(SceneGraph scene, SceneObject selected)
+    {
+        if (!ImGui.TreeNode("Custom behaviours")) return;
+        if (_owner._isPlaying())
+        {
+            ImGui.TextWrapped("Stop Play to change saved behaviour assignments.");
+            ImGui.TreePop();
+            return;
+        }
+
+        var registrations = _owner._behaviourRegistry.RegisteredBehaviours;
+        if (registrations.Count == 0)
+        {
+            ImGui.TextWrapped("No custom behaviours are registered in this editor session. Optional editor modules can provide behaviour choices.");
+            ImGui.TreePop();
+            return;
+        }
+
+        var knownIds = registrations.Select(item => item.Id).ToHashSet(StringComparer.Ordinal);
+        foreach (var unknownId in selected.BehaviourAssignments.Where(id => !knownIds.Contains(id)))
+        {
+            ImGui.TextWrapped($"Missing behaviour '{unknownId}'. Load its editor module before playing this scene.");
+            ImGui.PushID(unknownId);
+            if (ImGui.SmallButton("Clear missing behaviour"))
+            {
+                var assignments = selected.BehaviourAssignments
+                    .Where(id => !string.Equals(id, unknownId, StringComparison.Ordinal))
+                    .ToArray();
+                _owner._history.Execute(scene,
+                    new EditSceneBehaviourAssignmentsCommand(selected.Id, assignments));
+                _owner._projectWorkspaceStatus = $"Removed missing behaviour '{unknownId}' from {selected.Name}.";
+            }
+            ImGui.PopID();
+        }
+
+        foreach (var registration in registrations)
+        {
+            var isAssigned = selected.BehaviourAssignments.Contains(registration.Id, StringComparer.Ordinal);
+            ImGui.PushID(registration.Id);
+            if (ImGui.Checkbox(registration.DisplayName, ref isAssigned))
+            {
+                var assignments = selected.BehaviourAssignments
+                    .Where(id => !string.Equals(id, registration.Id, StringComparison.Ordinal))
+                    .ToList();
+                if (isAssigned) assignments.Add(registration.Id);
+                _owner._history.Execute(scene,
+                    new EditSceneBehaviourAssignmentsCommand(selected.Id, assignments));
+                _owner._projectWorkspaceStatus = isAssigned
+                    ? $"Assigned {registration.DisplayName} to {selected.Name}."
+                    : $"Removed {registration.DisplayName} from {selected.Name}.";
+            }
+            ImGui.PopID();
+        }
+        ImGui.TextWrapped("Registered behaviours run in Play mode. Assignment changes can be undone and redone.");
         ImGui.TreePop();
     }
 

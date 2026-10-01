@@ -156,6 +156,7 @@ internal sealed partial class CharacterStudioEditorUi
 
         ImGui.Separator();
         _owner.DrawWhatHappensControls(scene, selected);
+        _owner.DrawBehaviourAssignmentControls(scene, selected);
 
         ImGui.Separator();
         ImGui.Text("Change this object");

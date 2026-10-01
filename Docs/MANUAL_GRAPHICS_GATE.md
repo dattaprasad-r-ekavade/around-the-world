@@ -73,6 +73,25 @@ These are planned acceptance checks, not passes for the current UI. Record novic
 observations separately under UX.5; screenshots and developer automation cannot close
 that gate. The optional designer mission must use the same saved project as free editing.
 
+## Registered behaviour workflow acceptance
+
+Use a build with an optional editor module that registers at least one behaviour ID and display name.
+The base editor does not include a game-specific behaviour module by default.
+
+1. Select an object and open **Custom behaviours** in the Inspector. Assign a behaviour, clear it,
+   then Undo and Redo. Confirm the saved list changes once per action and the display name is shown
+   instead of requiring a typed ID.
+2. Save and reopen the scene. Confirm the same assignment remains. Duplicate the object and place a
+   template instance; confirm both preserve the assignment.
+3. Start Play and invoke the behaviour. Confirm it affects only the runtime copy. Stop Play and
+   confirm the authored scene remains unchanged.
+4. Close the editor, remove or rename the module, and reopen the scene. Confirm the Inspector names
+   the missing behaviour and offers an undoable clear action. Restore the module and confirm the saved
+   behaviour runs again.
+5. Record the module build, project and scene paths, exact action sequence, console output and result.
+   Template revision updates remain pending until behaviour assignments have source baselines; do not
+   mark that update/undo check as passed before this support exists.
+
 ## Scene-template workflow acceptance
 
 Use a project with a parent object and at least two children. Open **More tools → Scene templates**.

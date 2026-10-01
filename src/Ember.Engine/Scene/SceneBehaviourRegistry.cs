@@ -7,20 +7,45 @@ namespace Ember.Scene;
 /// <summary>Maps stable behaviour IDs to factories supplied by a game or engine module.</summary>
 public sealed class SceneBehaviourRegistry
 {
-    private readonly Dictionary<string, Func<SceneObject, SceneBehaviour>> _factories = new(StringComparer.Ordinal);
+    private sealed record Registration(string DisplayName, Func<SceneObject, SceneBehaviour> Factory);
+
+    private readonly Dictionary<string, Registration> _registrations = new(StringComparer.Ordinal);
 
     /// <summary>Registered IDs in a stable order for validation and authoring UI.</summary>
-    public IReadOnlyList<string> RegisteredIds => _factories.Keys
-        .OrderBy(id => id, StringComparer.Ordinal)
+    public IReadOnlyList<SceneBehaviourRegistration> RegisteredBehaviours => _registrations
+        .OrderBy(pair => pair.Key, StringComparer.Ordinal)
+        .Select(pair => new SceneBehaviourRegistration(pair.Key, pair.Value.DisplayName))
         .ToArray();
+
+    public IReadOnlyList<string> RegisteredIds => RegisteredBehaviours.Select(item => item.Id).ToArray();
 
     /// <summary>Registers a factory under a stable, case-sensitive ID.</summary>
     public void Register(string behaviourId, Func<SceneObject, SceneBehaviour> factory)
+        => Register(behaviourId, behaviourId, factory);
+
+    /// <summary>Registers a factory with a creator-facing name for editor choice lists.</summary>
+    public void Register(string behaviourId, string displayName, Func<SceneObject, SceneBehaviour> factory)
     {
         var id = SceneBehaviourIds.ValidateId(behaviourId, nameof(behaviourId));
+        if (string.IsNullOrWhiteSpace(displayName))
+            throw new ArgumentException("A behaviour display name is required.", nameof(displayName));
         ArgumentNullException.ThrowIfNull(factory);
-        if (!_factories.TryAdd(id, factory))
+        if (!_registrations.TryAdd(id, new Registration(displayName.Trim(), factory)))
             throw new InvalidOperationException($"Behaviour ID '{id}' is already registered.");
+    }
+
+    /// <summary>Merges another registry atomically, rejecting any duplicate IDs before changing this one.</summary>
+    public void RegisterFrom(SceneBehaviourRegistry source)
+    {
+        ArgumentNullException.ThrowIfNull(source);
+        if (source._registrations.Keys.Any(_registrations.ContainsKey))
+        {
+            var duplicate = source._registrations.Keys.First(_registrations.ContainsKey);
+            throw new InvalidOperationException($"Behaviour ID '{duplicate}' is already registered.");
+        }
+
+        foreach (var (id, registration) in source._registrations)
+            _registrations.Add(id, registration);
     }
 
     /// <summary>Creates one behaviour instance and reports failures with its owning scene object.</summary>
@@ -28,13 +53,13 @@ public sealed class SceneBehaviourRegistry
     {
         ArgumentNullException.ThrowIfNull(owner);
         var id = SceneBehaviourIds.ValidateId(behaviourId, nameof(behaviourId));
-        if (!_factories.TryGetValue(id, out var factory))
+        if (!_registrations.TryGetValue(id, out var registration))
             throw new InvalidOperationException(
                 $"Scene object '{owner.Name}' ({owner.Id}) assigns behaviour '{id}', but it is not registered. Register it before starting Play.");
 
         try
         {
-            return factory(owner)
+            return registration.Factory(owner)
                 ?? throw new InvalidOperationException("The registered factory returned no behaviour.");
         }
         catch (Exception exception)
@@ -46,6 +71,9 @@ public sealed class SceneBehaviourRegistry
     }
 
 }
+
+/// <summary>A stable behaviour identifier and its creator-facing display name.</summary>
+public sealed record SceneBehaviourRegistration(string Id, string DisplayName);
 
 internal static class SceneBehaviourIds
 {

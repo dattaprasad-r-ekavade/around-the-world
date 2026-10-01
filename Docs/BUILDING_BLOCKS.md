@@ -747,7 +747,27 @@ play.Behaviours.Interact(switchObjectId, "Interact");
 `ScenePlaySession` deep-copies mutable scene state while retaining stable object and attachment
 IDs. It starts registered behavior instances once, then stops them and disposes their owned resources
 when the session ends. Runtime edits affect only `RuntimeScene`; disposing the session discards those
-edits. CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
+edits. Scene format version 20 stores stable behavior IDs per object; `SceneObject.SetBehaviourAssignments`
+validates unique IDs, and `EditSceneBehaviourAssignmentsCommand` makes replacements undoable.
+`SceneGraphCloner` and object duplication preserve the list. `SceneBehaviourRegistry` maps those IDs to
+factories and creator-facing names, creates a fresh instance for each owner, and reports missing IDs or
+factory failures with that owner. Pass the registry to the Play session to start the saved assignments:
+
+```csharp
+var behaviours = new SceneBehaviourRegistry();
+behaviours.Register("game.door.open", "Open linked door",
+    owner => new OpenDoorBehaviour(owner.Id));
+door.SetBehaviourAssignments(new[] { "game.door.open" });
+using var play = new ScenePlaySession(authoredScene, registry: behaviours);
+```
+
+Older scenes load with an empty assignment list. An assignment whose ID is not registered blocks Play
+with an object-specific message. Optional editor tool modules can register choices through
+`IEditorToolExtension.RegisterBehaviours`; CharacterStudio shows those choices in the existing Inspector
+and records checkbox changes through command history. Template placement copies assignments, but
+template revision baselines and update/undo handling for those assignments remain unfinished.
+
+CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
 actions to physics, and persists player, movement, camera, and keyboard settings. A saved Open
 action emits the linked world-door destination through `SceneAuthoredActionEvent`; a world host
 handles the cell change. CharacterStudio's single-scene preview reports the request without

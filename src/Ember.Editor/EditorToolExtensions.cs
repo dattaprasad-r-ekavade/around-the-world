@@ -14,6 +14,7 @@ public interface IEditorToolExtension
 {
     string Id { get; }
     string DisplayName { get; }
+    void RegisterBehaviours(SceneBehaviourRegistry registry) { }
     void Update(EditorToolContext context, float elapsedSeconds) { }
     void Draw(EditorToolContext context);
 }
@@ -72,7 +73,8 @@ public sealed class EditorToolContext
 
 public sealed record EditorToolExtensionLoadResult(
     IReadOnlyList<IEditorToolExtension> Extensions,
-    IReadOnlyList<string> Errors);
+    IReadOnlyList<string> Errors,
+    SceneBehaviourRegistry BehaviourRegistry);
 
 /// <summary>Loads optional editor tools from an app-local Modules directory.</summary>
 public static class EditorToolExtensionLoader
@@ -81,8 +83,9 @@ public static class EditorToolExtensionLoader
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(applicationDirectory);
         var modulesDirectory = Path.Combine(Path.GetFullPath(applicationDirectory), "Modules");
+        var registry = new SceneBehaviourRegistry();
         if (!Directory.Exists(modulesDirectory))
-            return new EditorToolExtensionLoadResult(Array.Empty<IEditorToolExtension>(), Array.Empty<string>());
+            return new EditorToolExtensionLoadResult(Array.Empty<IEditorToolExtension>(), Array.Empty<string>(), registry);
 
         var extensions = new List<IEditorToolExtension>();
         var errors = new List<string>();
@@ -104,6 +107,9 @@ public static class EditorToolExtensionLoader
                         throw new InvalidDataException($"Editor tool '{type.FullName}' needs an ID and display name.");
                     if (!ids.Add(extension.Id))
                         throw new InvalidDataException($"More than one editor tool uses ID '{extension.Id}'.");
+                    var moduleRegistry = new SceneBehaviourRegistry();
+                    extension.RegisterBehaviours(moduleRegistry);
+                    registry.RegisterFrom(moduleRegistry);
                     extensions.Add(extension);
                 }
             }
@@ -113,7 +119,7 @@ public static class EditorToolExtensionLoader
             }
         }
 
-        return new EditorToolExtensionLoadResult(extensions.AsReadOnly(), errors.AsReadOnly());
+        return new EditorToolExtensionLoadResult(extensions.AsReadOnly(), errors.AsReadOnly(), registry);
     }
 
     private sealed class EditorModuleLoadContext : AssemblyLoadContext

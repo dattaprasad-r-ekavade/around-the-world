@@ -81,6 +81,37 @@ public sealed class SceneBehaviourRegistryTests
         Assert.Contains("configuration failed", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void RegisterFromMergesDisplayNamesAndFactories()
+    {
+        var registry = new SceneBehaviourRegistry();
+        var module = new SceneBehaviourRegistry();
+        module.Register("sample.flash", "Flash light", _ => new ProbeBehaviour(Guid.NewGuid()));
+
+        registry.RegisterFrom(module);
+
+        var registration = Assert.Single(registry.RegisteredBehaviours);
+        Assert.Equal("sample.flash", registration.Id);
+        Assert.Equal("Flash light", registration.DisplayName);
+        Assert.NotNull(registry.Create(registration.Id, new SceneObject(Guid.NewGuid(), "Torch")));
+    }
+
+    [Fact]
+    public void RegisterFromRejectsDuplicateIdsWithoutPartialChanges()
+    {
+        var registry = new SceneBehaviourRegistry();
+        registry.Register("sample.existing", _ => new ProbeBehaviour(Guid.NewGuid()));
+        var module = new SceneBehaviourRegistry();
+        module.Register("sample.new", _ => new ProbeBehaviour(Guid.NewGuid()));
+        module.Register("sample.existing", _ => new ProbeBehaviour(Guid.NewGuid()));
+
+        Assert.Throws<InvalidOperationException>(() => registry.RegisterFrom(module));
+
+        Assert.Equal(new[] { "sample.existing" }, registry.RegisteredIds);
+        Assert.Throws<InvalidOperationException>(() => registry.Create(
+            "sample.new", new SceneObject(Guid.NewGuid(), "Unknown")));
+    }
+
     private sealed class ProbeBehaviour(Guid ownerId) : SceneBehaviour
     {
         public Guid OwnerId { get; } = ownerId;

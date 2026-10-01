@@ -54,7 +54,7 @@ public sealed partial class CharacterStudioGame
                     interactionClip.Volume = InteractionVolume;
                     foreach (var item in runtimeScene.Objects)
                         behaviours.Add(item.Id, new PlayAudioOnInteractionBehaviour(interactionClip));
-                });
+                }, _owner._editorUi?.BehaviourRegistry);
                 candidate.AuthoredActionExecuted += action =>
                 {
                     var actor = action.InstigatorId is { } actorId

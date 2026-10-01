@@ -86,6 +86,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Action<bool> _setDiagnosticsVisible;
     private readonly IReadOnlyList<IEditorToolExtension> _toolExtensions;
     private readonly IReadOnlyList<string> _toolExtensionLoadErrors;
+    private readonly SceneBehaviourRegistry _behaviourRegistry;
+
+    internal SceneBehaviourRegistry BehaviourRegistry => _behaviourRegistry;
     private FirstCreationLesson? _firstCreationLesson;
     private string? _lessonProjectOpenCheck;
     private readonly int _logicalWidth;
@@ -213,6 +216,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         var loadedExtensions = EditorToolExtensionLoader.Load(AppContext.BaseDirectory);
         _toolExtensions = loadedExtensions.Extensions;
         _toolExtensionLoadErrors = loadedExtensions.Errors;
+        _behaviourRegistry = loadedExtensions.BehaviourRegistry;
         _history = history ?? throw new ArgumentNullException(nameof(history));
         _afterStructureChange = afterStructureChange ?? throw new ArgumentNullException(nameof(afterStructureChange));
         _getCharacterInfo = getCharacterInfo ?? throw new ArgumentNullException(nameof(getCharacterInfo));
