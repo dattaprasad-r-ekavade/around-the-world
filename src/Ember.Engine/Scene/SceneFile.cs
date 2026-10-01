@@ -443,7 +443,10 @@ public static class SceneFile
                     HasBoxColliderBaseline = baseline.HasBoxColliderBaseline,
                     BoxCollider = ToBoxColliderData(baseline.BoxCollider),
                     HasTriggerActionBaseline = baseline.HasTriggerActionBaseline,
-                    TriggerAction = ToTriggerActionData(baseline.TriggerAction)
+                    TriggerAction = ToTriggerActionData(baseline.TriggerAction),
+                    HasBehaviourAssignmentsBaseline = baseline.HasBehaviourAssignmentsBaseline,
+                    BehaviourAssignments = baseline.HasBehaviourAssignmentsBaseline
+                        ? baseline.BehaviourAssignments.ToList() : null
                 }).ToList(),
                 OrphanedObjectIds = component.OrphanedObjectIds.ToList(),
                 TargetWorldCellId = component.TargetWorldCellId
@@ -500,6 +503,12 @@ public static class SceneFile
             if (!hasTriggerActionBaseline && data.TriggerAction is not null)
                 throw new InvalidDataException("Scene template instance baseline has a trigger action without a baseline marker.");
             var triggerAction = ToTriggerActionComponent(data.TriggerAction);
+            var hasBehaviourAssignmentsBaseline = data.HasBehaviourAssignmentsBaseline == true
+                || documentVersion < 20;
+            if (!hasBehaviourAssignmentsBaseline && data.BehaviourAssignments is not null)
+                throw new InvalidDataException(
+                    "Scene template instance behaviour assignments have no baseline marker.");
+            var behaviourAssignments = data.BehaviourAssignments ?? new List<string>();
             return new SceneTemplateObjectBaseline(data.SourceObjectId, data.Name!, new Transform
             {
                 Position = new Vector3(data.Position[0], data.Position[1], data.Position[2]),
@@ -510,7 +519,9 @@ public static class SceneFile
                 characterSettingsBaseline, hasCharacterSettingsBaseline,
                 door, hasDoorBaseline, spawnPoint, hasSpawnPointBaseline,
                 worldEntity, hasWorldEntityBaseline, data.SourceSpawnPointId,
-                boxCollider, hasBoxColliderBaseline, triggerAction, hasTriggerActionBaseline);
+                boxCollider, hasBoxColliderBaseline, triggerAction, hasTriggerActionBaseline,
+                hasBehaviourAssignmentsBaseline ? behaviourAssignments : null,
+                hasBehaviourAssignmentsBaseline);
         }
         catch (ArgumentException exception)
         {
@@ -791,6 +802,11 @@ public static class SceneFile
             throw new InvalidDataException($"Object {data.Id} Open trigger action data requires scene version 19.");
         if (documentVersion < 20 && data.BehaviourAssignments is not null)
             throw new InvalidDataException($"Object {data.Id} behaviour assignments require scene version 20.");
+        if (documentVersion < 20 && data.TemplateInstance?.ObjectBaselines?.Any(baseline => baseline is not null
+                && (baseline.HasBehaviourAssignmentsBaseline is not null
+                    || baseline.BehaviourAssignments is not null)) == true)
+            throw new InvalidDataException(
+                $"Object {data.Id} behaviour assignment template baselines require scene version 20.");
         try
         {
             _ = SceneBehaviourIds.ValidateAssignments(
@@ -1101,6 +1117,8 @@ public static class SceneFile
         public SceneBoxColliderData? BoxCollider { get; set; }
         public bool? HasTriggerActionBaseline { get; set; }
         public SceneTriggerActionData? TriggerAction { get; set; }
+        public bool? HasBehaviourAssignmentsBaseline { get; set; }
+        public List<string>? BehaviourAssignments { get; set; }
     }
 
     private sealed class SceneTemplateCharacterSettingsBaselineData

@@ -764,8 +764,10 @@ using var play = new ScenePlaySession(authoredScene, registry: behaviours);
 Older scenes load with an empty assignment list. An assignment whose ID is not registered blocks Play
 with an object-specific message. Optional editor tool modules can register choices through
 `IEditorToolExtension.RegisterBehaviours`; CharacterStudio shows those choices in the existing Inspector
-and records checkbox changes through command history. Template placement copies assignments, but
-template revision baselines and update/undo handling for those assignments remain unfinished.
+and records checkbox changes through command history. Template placement stores a behaviour baseline;
+revision updates apply source changes where the instance still matches that baseline and keep local
+overrides. Removed objects with changed assignments remain as orphans. Template update commands
+capture assignments for undo and redo.
 
 CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
 actions to physics, and persists player, movement, camera, and keyboard settings. A saved Open

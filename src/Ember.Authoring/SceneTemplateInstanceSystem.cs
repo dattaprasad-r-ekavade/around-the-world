@@ -67,7 +67,9 @@ public static class SceneTemplateInstanceSystem
                     worldEntity: clones[index].WorldEntity, hasWorldEntityBaseline: true,
                     sourceSpawnPointId: item.SpawnPoint?.Id,
                     boxCollider: clones[index].BoxCollider, hasBoxColliderBaseline: true,
-                    triggerAction: clones[index].TriggerAction, hasTriggerActionBaseline: true)),
+                    triggerAction: clones[index].TriggerAction, hasTriggerActionBaseline: true,
+                    behaviourAssignments: item.BehaviourAssignments,
+                    hasBehaviourAssignmentsBaseline: true)),
                 targetWorldCellId: targetWorldCellId)
         };
 
@@ -160,7 +162,7 @@ public static class SceneTemplateInstanceSystem
                 || !baseline.HasCharacterSettingsBaseline
                 || !baseline.HasDoorBaseline || !baseline.HasSpawnPointBaseline
                 || !baseline.HasWorldEntityBaseline || !baseline.HasBoxColliderBaseline
-                || !baseline.HasTriggerActionBaseline
+                || !baseline.HasTriggerActionBaseline || !baseline.HasBehaviourAssignmentsBaseline
                 || baseline.CharacterSettingsBaseline is { HasAttachmentMappings: false };
             var hasKnownOverride = !string.Equals(target.Name, baseline.Name, StringComparison.Ordinal)
                 || !baseline.MatchesTransform(target.Transform)
@@ -174,7 +176,9 @@ public static class SceneTemplateInstanceSystem
                 || baseline.HasSpawnPointBaseline && !MatchesSpawnPoint(target.SpawnPoint, baseline.SpawnPoint)
                 || baseline.HasWorldEntityBaseline && !MatchesWorldEntity(target.WorldEntity, baseline.WorldEntity)
                 || baseline.HasBoxColliderBaseline && !MatchesBoxCollider(target.BoxCollider, baseline.BoxCollider)
-                || baseline.HasTriggerActionBaseline && !MatchesTriggerAction(target.TriggerAction, baseline.TriggerAction);
+                || baseline.HasTriggerActionBaseline && !MatchesTriggerAction(target.TriggerAction, baseline.TriggerAction)
+                || baseline.HasBehaviourAssignmentsBaseline
+                    && !MatchesBehaviourAssignments(target.BehaviourAssignments, baseline.BehaviourAssignments);
             if (baselineIsIncomplete || hasKnownOverride)
                 retainedRemovedIds.Add(target.Id);
         }
@@ -255,7 +259,8 @@ public static class SceneTemplateInstanceSystem
             (WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
                 WorldEntityPlacementComponent? WorldEntity, Guid? SourceSpawnPointId,
                 SceneBoxColliderComponent? BoxCollider,
-                SceneTriggerActionComponent? TriggerAction)>();
+                SceneTriggerActionComponent? TriggerAction,
+                IReadOnlyList<string> BehaviourAssignments)>();
 
         var updates = new List<(SceneObject Target, string Name, Transform Transform,
             bool Enabled, WorldInstanceResetPolicy ResetPolicy, GltfAssetReference? GltfAsset,
@@ -263,6 +268,7 @@ public static class SceneTemplateInstanceSystem
             WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint,
             WorldEntityPlacementComponent? WorldEntity, SceneBoxColliderComponent? BoxCollider,
             SceneTriggerActionComponent? TriggerAction,
+            IReadOnlyList<string> BehaviourAssignments,
             SceneTemplateCharacterSettingsBaseline? CharacterBaseline)>();
         foreach (var (sourceId, sourceObject) in sourceById)
         {
@@ -312,13 +318,18 @@ public static class SceneTemplateInstanceSystem
                 baseline.HasBoxColliderBaseline, baseline.BoxCollider, MatchesBoxCollider);
             var triggerAction = MergeComponent(sourceObject.TriggerAction, target.TriggerAction,
                 baseline.HasTriggerActionBaseline, baseline.TriggerAction, MatchesTriggerAction);
+            var behaviourAssignments = baseline.HasBehaviourAssignmentsBaseline
+                && MatchesBehaviourAssignments(target.BehaviourAssignments, baseline.BehaviourAssignments)
+                ? sourceObject.BehaviourAssignments
+                : target.BehaviourAssignments;
             characterBaselinesBySourceId[sourceId] = characterMerge.Baseline;
             worldBaselinesBySourceId[sourceId] =
                 (sourceDoorBaseline, sourceSpawnBaseline, sourceWorldEntityBaseline,
-                    sourceObject.SpawnPoint?.Id, sourceObject.BoxCollider, sourceObject.TriggerAction);
+                    sourceObject.SpawnPoint?.Id, sourceObject.BoxCollider, sourceObject.TriggerAction,
+                    sourceObject.BehaviourAssignments);
             updates.Add((target, name, transform, enabled, resetPolicy, gltfAsset,
                 staticMeshLod, characterMerge.Settings, door, spawnPoint, worldEntity, boxCollider, triggerAction,
-                characterMerge.Baseline));
+                behaviourAssignments, characterMerge.Baseline));
         }
         foreach (var sourceObject in source.Objects.Where(item => !oldMappings.ContainsKey(item.Id)))
         {
@@ -327,7 +338,8 @@ public static class SceneTemplateInstanceSystem
                 sourceObject.CharacterSettings, clone.CharacterSettings);
             worldBaselinesBySourceId[sourceObject.Id] =
                 (clone.Door, clone.SpawnPoint, clone.WorldEntity,
-                    sourceObject.SpawnPoint?.Id, clone.BoxCollider, clone.TriggerAction);
+                    sourceObject.SpawnPoint?.Id, clone.BoxCollider, clone.TriggerAction,
+                    sourceObject.BehaviourAssignments);
         }
 
         var nextOrphanIds = instance.OrphanedObjectIds
@@ -355,6 +367,7 @@ public static class SceneTemplateInstanceSystem
                 update.Target.WorldEntity = update.WorldEntity;
                 update.Target.BoxCollider = update.BoxCollider;
                 update.Target.TriggerAction = update.TriggerAction;
+                update.Target.SetBehaviourAssignments(update.BehaviourAssignments);
             }
             foreach (var sourceObject in source.Objects)
             {
@@ -401,7 +414,9 @@ public static class SceneTemplateInstanceSystem
                     boxCollider: worldBaselinesBySourceId[item.Id].BoxCollider,
                     hasBoxColliderBaseline: true,
                     triggerAction: worldBaselinesBySourceId[item.Id].TriggerAction,
-                    hasTriggerActionBaseline: true)),
+                    hasTriggerActionBaseline: true,
+                    behaviourAssignments: worldBaselinesBySourceId[item.Id].BehaviourAssignments,
+                    hasBehaviourAssignmentsBaseline: true)),
                 nextOrphanIds, instance.TargetWorldCellId);
         }
         catch
@@ -431,6 +446,7 @@ public static class SceneTemplateInstanceSystem
             return new SceneTemplateObjectState(item, item.Name, item.Enabled, CopyTransform(item.Transform),
                 item.ResetPolicy, item.GltfAsset, item.StaticMeshLod, item.CharacterSettings,
                 item.Door, item.SpawnPoint, item.WorldEntity, item.BoxCollider, item.TriggerAction,
+                item.BehaviourAssignments.ToArray(),
                 item.ParentId, item.TemplateInstance);
         }).ToArray();
         return new SceneTemplateInstanceState(wrapperId, scene.PlaySettings, objects);
@@ -472,6 +488,7 @@ public static class SceneTemplateInstanceSystem
             current.WorldEntity = item.WorldEntity;
             current.BoxCollider = item.BoxCollider;
             current.TriggerAction = item.TriggerAction;
+            current.SetBehaviourAssignments(item.BehaviourAssignments);
             current.TemplateInstance = item.TemplateInstance;
         }
         foreach (var item in state.Objects)
@@ -629,6 +646,10 @@ public static class SceneTemplateInstanceSystem
     private static bool MatchesTriggerAction(SceneTriggerActionComponent? left,
         SceneTriggerActionComponent? right) => left is null ? right is null
         : right is not null && left.Kind == right.Kind;
+
+    private static bool MatchesBehaviourAssignments(IReadOnlyList<string>? left,
+        IReadOnlyList<string>? right) => left is null ? right is null
+        : right is not null && left.SequenceEqual(right, StringComparer.Ordinal);
 
     private static bool MatchesAssetReference(GltfAssetReference? left, GltfAssetReference? right) =>
         left is null ? right is null
@@ -891,4 +912,5 @@ internal sealed record SceneTemplateObjectState(SceneObject Object, string Name,
     GltfStaticMeshLod? StaticMeshLod, GltfCharacterSettings? CharacterSettings,
     WorldDoorComponent? Door, WorldSpawnComponent? SpawnPoint, WorldEntityPlacementComponent? WorldEntity,
     SceneBoxColliderComponent? BoxCollider, SceneTriggerActionComponent? TriggerAction,
+    IReadOnlyList<string> BehaviourAssignments,
     Guid? ParentId, SceneTemplateInstanceComponent? TemplateInstance);

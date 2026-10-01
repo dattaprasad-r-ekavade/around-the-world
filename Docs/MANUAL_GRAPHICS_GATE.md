@@ -88,9 +88,11 @@ The base editor does not include a game-specific behaviour module by default.
 4. Close the editor, remove or rename the module, and reopen the scene. Confirm the Inspector names
    the missing behaviour and offers an undoable clear action. Restore the module and confirm the saved
    behaviour runs again.
-5. Record the module build, project and scene paths, exact action sequence, console output and result.
-   Template revision updates remain pending until behaviour assignments have source baselines; do not
-   mark that update/undo check as passed before this support exists.
+5. Save a template with an assigned behaviour, place an instance, change the template assignment,
+   and update the instance. Confirm unchanged instance assignments follow the new template, local
+   assignment overrides survive, and removing a source object with an override keeps it as an orphan.
+   Undo and redo the update and confirm assignments and the saved baseline return each time.
+6. Record the module build, project and scene paths, exact action sequence, console output and result.
 
 ## Scene-template workflow acceptance
 

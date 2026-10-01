@@ -41,6 +41,150 @@ public sealed class SceneTemplateInstanceSystemTests
     }
 
     [Fact]
+    public void TemplateUpdatePropagatesBehaviourAssignmentsAndUndoRestoresThem()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Door");
+            root.SetBehaviourAssignments(new[] { "sample.open-door" });
+            var source = new SceneGraph();
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceId = wrapper.TemplateInstance!.ObjectMappings.Single().InstanceObjectId;
+
+            root.SetBehaviourAssignments(new[] { "sample.open-door", "sample.close-door" });
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            var history = new SceneCommandHistory();
+            history.Execute(scene, new UpdateSceneTemplateCommand(wrapper.Id, secondRevision));
+
+            Assert.Equal(new[] { "sample.open-door", "sample.close-door" },
+                scene.Find(instanceId)!.BehaviourAssignments);
+            var reopened = SceneFile.FromJson(SceneFile.ToJson(scene));
+            var baseline = Assert.Single(reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines);
+            Assert.True(baseline.HasBehaviourAssignmentsBaseline);
+            Assert.Equal(new[] { "sample.open-door", "sample.close-door" }, baseline.BehaviourAssignments);
+
+            Assert.True(history.Undo(scene));
+            Assert.Equal(new[] { "sample.open-door" }, scene.Find(instanceId)!.BehaviourAssignments);
+            Assert.True(history.Redo(scene));
+            Assert.Equal(new[] { "sample.open-door", "sample.close-door" },
+                scene.Find(instanceId)!.BehaviourAssignments);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TemplateUpdatePreservesLocalBehaviourAssignmentOverride()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Door");
+            root.SetBehaviourAssignments(new[] { "sample.open-door" });
+            var source = new SceneGraph();
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceId = wrapper.TemplateInstance!.ObjectMappings.Single().InstanceObjectId;
+            scene.Find(instanceId)!.SetBehaviourAssignments(new[] { "local.custom-door" });
+
+            root.SetBehaviourAssignments(new[] { "sample.open-door", "sample.close-door" });
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            SceneTemplateInstanceSystem.Update(scene, wrapper.Id, secondRevision);
+
+            Assert.Equal(new[] { "local.custom-door" }, scene.Find(instanceId)!.BehaviourAssignments);
+            var baseline = Assert.Single(SceneFile.FromJson(SceneFile.ToJson(scene))
+                .Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines);
+            Assert.Equal(new[] { "sample.open-door", "sample.close-door" }, baseline.BehaviourAssignments);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void TemplateUpdatePreservesAssignmentsWhenVersionTwentyBaselineIsMissing()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Door");
+            var source = new SceneGraph();
+            source.Add(root);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceId = wrapper.TemplateInstance!.ObjectMappings.Single().InstanceObjectId;
+            scene.Find(instanceId)!.SetBehaviourAssignments(new[] { "local.custom-door" });
+
+            var legacyJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
+            var wrapperData = legacyJson["Objects"]!.AsArray().Single(item =>
+                Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
+            var baseline = wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray().Single()!.AsObject();
+            baseline.Remove("HasBehaviourAssignmentsBaseline");
+            baseline.Remove("BehaviourAssignments");
+            var reopened = SceneFile.FromJson(legacyJson.ToJsonString());
+
+            root.SetBehaviourAssignments(new[] { "sample.open-door" });
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Door", path);
+            SceneTemplateInstanceSystem.Update(reopened, wrapper.Id, secondRevision);
+
+            Assert.Equal(new[] { "local.custom-door" }, reopened.Find(instanceId)!.BehaviourAssignments);
+            var upgradedBaseline = Assert.Single(reopened.Find(wrapper.Id)!.TemplateInstance!.ObjectBaselines);
+            Assert.True(upgradedBaseline.HasBehaviourAssignmentsBaseline);
+            Assert.Equal(new[] { "sample.open-door" }, upgradedBaseline.BehaviourAssignments);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void RemovedTemplateObjectWithBehaviourOverrideIsRetainedAsOrphan()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var root = new SceneObject(Guid.NewGuid(), "Room");
+            var child = new SceneObject(Guid.NewGuid(), "Door");
+            child.SetBehaviourAssignments(new[] { "sample.open-door" });
+            var source = new SceneGraph();
+            source.Add(root);
+            source.Add(child);
+            source.SetParent(child.Id, root.Id);
+            var firstRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            var scene = new SceneGraph();
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(scene, firstRevision, Vector3.Zero);
+            var instanceChildId = wrapper.TemplateInstance!.ObjectMappings
+                .Single(mapping => mapping.SourceObjectId == child.Id).InstanceObjectId;
+            scene.Find(instanceChildId)!.SetBehaviourAssignments(new[] { "local.custom-door" });
+
+            source.Remove(child.Id);
+            var secondRevision = SceneTemplateFile.Save(source, root.Id, "Room", path);
+            SceneTemplateInstanceSystem.Update(scene, wrapper.Id, secondRevision);
+
+            Assert.NotNull(scene.Find(instanceChildId));
+            Assert.Equal(new[] { "local.custom-door" }, scene.Find(instanceChildId)!.BehaviourAssignments);
+            Assert.Contains(instanceChildId, wrapper.TemplateInstance!.OrphanedObjectIds);
+            Assert.DoesNotContain(wrapper.TemplateInstance.ObjectMappings,
+                mapping => mapping.InstanceObjectId == instanceChildId);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void PlacesIndependentExpandedHierarchiesAndPersistsTheirSourceMappings()
     {
         var path = TemporaryTemplatePath();
@@ -989,6 +1133,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var legacyJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             legacyJson["Version"] = 8;
             legacyJson.Remove("PlaySettings");
+            RemoveVersionTwentyBehaviourFields(legacyJson);
             var wrapperData = legacyJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             wrapperData["TemplateInstance"]!.AsObject().Remove("ObjectBaselines");
@@ -1030,6 +1175,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var versionNineJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionNineJson["Version"] = 9;
             versionNineJson.Remove("PlaySettings");
+            RemoveVersionTwentyBehaviourFields(versionNineJson);
             var wrapperData = versionNineJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
@@ -1119,6 +1265,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var versionTenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionTenJson["Version"] = 10;
             versionTenJson.Remove("PlaySettings");
+            RemoveVersionTwentyBehaviourFields(versionTenJson);
             var wrapperData = versionTenJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
@@ -1197,6 +1344,7 @@ public sealed class SceneTemplateInstanceSystemTests
             var versionElevenJson = JsonNode.Parse(SceneFile.ToJson(scene))!.AsObject();
             versionElevenJson["Version"] = 11;
             versionElevenJson.Remove("PlaySettings");
+            RemoveVersionTwentyBehaviourFields(versionElevenJson);
             var wrapperData = versionElevenJson["Objects"]!.AsArray().Single(item =>
                 Guid.Parse((string)item!["Id"]!) == wrapper.Id)!;
             foreach (var baseline in wrapperData["TemplateInstance"]!["ObjectBaselines"]!.AsArray())
@@ -1248,6 +1396,25 @@ public sealed class SceneTemplateInstanceSystemTests
         baseline.Remove("BoxCollider");
         baseline.Remove("HasTriggerActionBaseline");
         baseline.Remove("TriggerAction");
+    }
+
+    private static void RemoveVersionTwentyBehaviourFields(JsonObject document)
+    {
+        foreach (var objectNode in document["Objects"]!.AsArray())
+        {
+            var sceneObject = objectNode!.AsObject();
+            sceneObject.Remove("BehaviourAssignments");
+            if (sceneObject["TemplateInstance"]?["ObjectBaselines"] is not JsonArray baselines)
+                continue;
+            foreach (var baseline in baselines)
+            {
+                if (baseline is JsonObject baselineObject)
+                {
+                    baselineObject.Remove("HasBehaviourAssignmentsBaseline");
+                    baselineObject.Remove("BehaviourAssignments");
+                }
+            }
+        }
     }
 
     private static SceneGraph CreateSourceHierarchy(out Guid rootId, out Guid childId,

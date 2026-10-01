@@ -175,7 +175,8 @@ public sealed class SceneTemplateObjectBaseline
         WorldEntityPlacementComponent? worldEntity = null, bool hasWorldEntityBaseline = false,
         Guid? sourceSpawnPointId = null,
         SceneBoxColliderComponent? boxCollider = null, bool hasBoxColliderBaseline = false,
-        SceneTriggerActionComponent? triggerAction = null, bool hasTriggerActionBaseline = false)
+        SceneTriggerActionComponent? triggerAction = null, bool hasTriggerActionBaseline = false,
+        IEnumerable<string>? behaviourAssignments = null, bool hasBehaviourAssignmentsBaseline = false)
     {
         if (sourceObjectId == Guid.Empty) throw new ArgumentException("Template source object ID cannot be empty.", nameof(sourceObjectId));
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Template source object name is required.", nameof(name));
@@ -208,6 +209,8 @@ public sealed class SceneTemplateObjectBaseline
             throw new ArgumentException("A box collider requires an available source baseline.", nameof(boxCollider));
         if (!hasTriggerActionBaseline && triggerAction is not null)
             throw new ArgumentException("A trigger action requires an available source baseline.", nameof(triggerAction));
+        if (!hasBehaviourAssignmentsBaseline && behaviourAssignments is not null)
+            throw new ArgumentException("Behaviour assignments require an available source baseline.", nameof(behaviourAssignments));
 
         SourceObjectId = sourceObjectId;
         Name = name;
@@ -233,6 +236,9 @@ public sealed class SceneTemplateObjectBaseline
         HasBoxColliderBaseline = hasBoxColliderBaseline;
         TriggerAction = triggerAction;
         HasTriggerActionBaseline = hasTriggerActionBaseline;
+        BehaviourAssignments = Array.AsReadOnly(SceneBehaviourIds.ValidateAssignments(
+            behaviourAssignments ?? Array.Empty<string>(), nameof(behaviourAssignments)));
+        HasBehaviourAssignmentsBaseline = hasBehaviourAssignmentsBaseline;
     }
 
     public Guid SourceObjectId { get; }
@@ -259,6 +265,8 @@ public sealed class SceneTemplateObjectBaseline
     public bool HasBoxColliderBaseline { get; }
     public SceneTriggerActionComponent? TriggerAction { get; }
     public bool HasTriggerActionBaseline { get; }
+    public IReadOnlyList<string> BehaviourAssignments { get; }
+    public bool HasBehaviourAssignmentsBaseline { get; }
 
     public Transform ToTransform() => new()
     {
