@@ -213,6 +213,8 @@ internal sealed partial class CharacterStudioEditorUi
 
     public WorldCellDefinition? FindCurrentWorldCell()
     {
+        if (_owner._isPlaying() && _owner._playWorldCellId is { } playCellId)
+            return _owner._worldManifest?.FindCell(playCellId);
         if (_owner._worldManifest is null || string.IsNullOrWhiteSpace(_owner._getCurrentScenePath())) return null;
         string currentPath;
         try { currentPath = Path.GetFullPath(_owner._getCurrentScenePath()!); }
@@ -224,6 +226,24 @@ internal sealed partial class CharacterStudioEditorUi
                 return cell;
         }
         return null;
+    }
+
+    public (WorldCellDefinition Cell, SceneGraph Scene, WorldSpawnLocation Spawn)
+        ResolvePlayDoorDestination(SceneGraph currentScene, Guid? currentCellId, WorldDoorComponent door)
+    {
+        ArgumentNullException.ThrowIfNull(currentScene);
+        ArgumentNullException.ThrowIfNull(door);
+        var world = _owner._worldManifest
+            ?? throw new InvalidOperationException("Open a world manifest before using a saved Open action in Play.");
+        var cell = world.FindCell(door.DestinationCellId)
+            ?? throw new InvalidDataException($"Door targets unknown world cell {door.DestinationCellId}.");
+        var activeCell = currentCellId is { } activeId
+            ? world.FindCell(activeId)
+            : FindCurrentWorldCell();
+        var scene = LoadTravelScene(cell, currentScene, activeCell);
+        var spawn = WorldTravelValidator.ResolveDestination(world,
+            new Dictionary<Guid, SceneGraph> { [cell.Id] = scene }, door);
+        return (cell, scene, spawn);
     }
 
     private SceneGraph LoadTravelScene(WorldCellDefinition cell, SceneGraph currentScene,

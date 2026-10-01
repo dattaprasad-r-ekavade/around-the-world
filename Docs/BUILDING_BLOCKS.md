@@ -771,11 +771,14 @@ capture assignments for undo and redo.
 
 CharacterStudio's Play mode now connects saved box colliders and Collect/ReachGoal trigger
 actions to physics, and persists player, movement, camera, and keyboard settings. A saved Open
-action emits the linked world-door destination through `SceneAuthoredActionEvent`; a world host
-handles the cell change. CharacterStudio's single-scene preview reports the request without
-switching cells. In edit mode, the selected object's box collider appears as a colored wireframe in
-the scene view. Custom behavior types still require game-code registration; authoring and compiling
-project C# behaviors from the editor remains future work.
+action emits the linked world-door destination through `SceneAuthoredActionEvent`. CharacterStudio
+resolves it through the open world manifest, prepares the destination scene, and swaps the active
+Play copy to that cell at the linked spawn while carrying the controlled character. Stop still
+restores the original authored scene. This editor host loads one cell synchronously; background
+streaming and larger-world loading budgets remain separate work. In edit mode, the selected object's
+box collider appears as a colored wireframe in the scene view. Custom behavior types still require
+game-code registration; authoring and compiling project C# behaviors from the editor remains future
+work.
 
 ---
 

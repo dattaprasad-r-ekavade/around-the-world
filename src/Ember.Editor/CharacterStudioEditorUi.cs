@@ -89,6 +89,11 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly SceneBehaviourRegistry _behaviourRegistry;
 
     internal SceneBehaviourRegistry BehaviourRegistry => _behaviourRegistry;
+    internal Guid? CurrentWorldCellId => _worldPanel.FindCurrentWorldCell()?.Id;
+    internal (WorldCellDefinition Cell, SceneGraph Scene, WorldSpawnLocation Spawn)
+        ResolvePlayDoorDestination(SceneGraph currentScene, Guid? currentCellId, WorldDoorComponent door) =>
+        _worldPanel.ResolvePlayDoorDestination(currentScene, currentCellId, door);
+
     private FirstCreationLesson? _firstCreationLesson;
     private string? _lessonProjectOpenCheck;
     private readonly int _logicalWidth;
@@ -106,6 +111,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Dictionary<Guid, string> _doorLinkStatuses = new();
     private readonly Dictionary<Guid, (string Path, DateTime LastWriteUtc, SceneGraph Scene)> _travelSceneCache = new();
     private WorldManifest? _worldManifest;
+    private Guid? _playWorldCellId;
     private Guid? _selectedWorldCellId;
     private int _exteriorCellX;
     private int _exteriorCellZ;
@@ -383,11 +389,14 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _initialSelectionSet = false;
     }
 
+    internal void SetPlayWorldCellId(Guid? cellId) => _playWorldCellId = cellId;
+
     public void OnProjectOpened(string projectRoot, string? worldManifestPath)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(projectRoot);
         _projectWorkspaceStatus = GetWorkspaceReadyMessage();
         _worldManifest = null;
+        _playWorldCellId = null;
         _worldManifestPath = worldManifestPath is null
             ? Path.Combine(projectRoot, WorldManifest.DefaultFileName)
             : Path.GetFullPath(worldManifestPath);

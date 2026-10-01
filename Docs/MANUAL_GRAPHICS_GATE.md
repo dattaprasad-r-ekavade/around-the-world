@@ -85,14 +85,19 @@ The base editor does not include a game-specific behaviour module by default.
    template instance; confirm both preserve the assignment.
 3. Start Play and invoke the behaviour. Confirm it affects only the runtime copy. Stop Play and
    confirm the authored scene remains unchanged.
-4. Close the editor, remove or rename the module, and reopen the scene. Confirm the Inspector names
+4. Open a world project, start Play in a cell with a linked Open trigger, and activate it. Confirm
+   Play remains active, the controlled character appears at the destination spawn with the door's
+   facing, and a return door can bring it back. Stop Play and confirm the editor returns to the
+   original authored cell. Try a missing cell or spawn and confirm the source remains playable with
+   a clear error.
+5. Close the editor, remove or rename the module, and reopen the scene. Confirm the Inspector names
    the missing behaviour and offers an undoable clear action. Restore the module and confirm the saved
    behaviour runs again.
-5. Save a template with an assigned behaviour, place an instance, change the template assignment,
+6. Save a template with an assigned behaviour, place an instance, change the template assignment,
    and update the instance. Confirm unchanged instance assignments follow the new template, local
    assignment overrides survive, and removing a source object with an override keeps it as an orphan.
    Undo and redo the update and confirm assignments and the saved baseline return each time.
-6. Record the module build, project and scene paths, exact action sequence, console output and result.
+7. Record the module build, project and scene paths, exact action sequence, console output and result.
 
 ## Scene-template workflow acceptance
 

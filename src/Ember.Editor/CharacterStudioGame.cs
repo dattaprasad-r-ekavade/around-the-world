@@ -531,12 +531,16 @@ public sealed partial class CharacterStudioGame : EngineHost
             _camera.Zoom(mouse.ScrollWheelValue - _lastMouse.ScrollWheelValue);
         _lastMouse = mouse;
         _input.Commit();
+        if (!sequenceExportRunning)
+        {
+            UpdatePathFollowers(RealSeconds(gameTime));
+            _playController.AdvanceWorldTravelRequests();
+        }
         var preview = _preview?.Current;
         if (preview is not null)
         {
             if (!sequenceExportRunning)
             {
-                UpdatePathFollowers(RealSeconds(gameTime));
                 _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 foreach (var state in preview.CharacterInstances.Values)
                     state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
