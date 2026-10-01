@@ -152,8 +152,9 @@ The Fox model and its third-party notice are both in the packaged `Project/` fol
 
 ## What this small consumer does not support
 
-- It draws skinned scene objects. Enabled non-skinned scene objects currently appear as cubes,
-  so this template does not reproduce static GLB environments.
+- It draws supported static and skinned GLB scene objects, including base-color textures and
+  MASK materials. Static LOD references use their near asset; far-LOD switching and animated
+  unskinned GLBs are not supported. Objects without a supported GLB appear as cubes.
 - It plays one saved clip per character with the saved name, time, speed, loop, and playing state.
   Crossfades and bone attachments are rejected with a clear error.
 - Movement is a simple world-axis X/Z translation. There is no turning, camera-relative steering,

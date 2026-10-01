@@ -574,7 +574,9 @@ still uses `ImportedAudioClip` and a `SceneBehaviour` until editor audio authori
 The generated `Directory.Build.props` points to the selected Ember checkout's
 `src/Ember.Engine/Ember.Engine.csproj`. The small sample loads its configured `SceneFile` and draws
 each enabled object as a cube. This source project reference keeps the engine source in its checkout
-while letting the external game build and run as an independent consumer.
+while letting the external game build and run as an independent consumer. The template renders
+supported static and skinned GLB references from its startup scene; objects without a supported GLB
+are shown as cubes.
 
 `tools/publish-engine-project.ps1` builds a self-contained `win-x64` distribution, runs the
 read-only dependency preflight, and packages the project's startup scene and dependencies under

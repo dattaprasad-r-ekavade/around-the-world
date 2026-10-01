@@ -88,10 +88,13 @@ internal sealed class MinimalGame : EngineHost
     private readonly List<PointLight> _lights = new();
     private readonly Dictionary<Guid, CharacterAsset> _characterAssets = new();
     private readonly Dictionary<Guid, CharacterInstance> _characterInstances = new();
+    private readonly Dictionary<Guid, StaticAsset> _staticAssets = new();
     private readonly InputActionMap _actions = CreateInputActions();
     private EngineProjectFile _project = null!;
     private SceneGraph _sceneGraph = null!;
     private SceneRenderer _scene = null!;
+    private BasicEffect? _staticEffect;
+    private AlphaTestEffect? _maskedStaticEffect;
     private int _controlSmokeFrame;
 
     public MinimalGame(string[] args)
@@ -107,7 +110,11 @@ internal sealed class MinimalGame : EngineHost
     {
         _project = EngineProjectFile.Load(_projectPath);
         _sceneGraph = SceneFile.Load(_project.ResolveStartupScenePath());
-        LoadCharacterInstances();
+        _staticEffect = new BasicEffect(GraphicsDevice);
+        _staticEffect.EnableDefaultLighting();
+        _staticEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
+        _maskedStaticEffect = new AlphaTestEffect(GraphicsDevice);
+        LoadSceneAssets();
         if (_controlSmoke && _characterInstances.Count == 0)
             throw new InvalidOperationException("--smoke-controls requires a startup scene with a skinned character.");
         _scene = new SceneRenderer(GraphicsDevice);
@@ -117,8 +124,8 @@ internal sealed class MinimalGame : EngineHost
 
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio, far: 1000f);
         _camera.MaxDistance = 500f;
-        var characterBounds = GetCharacterBounds();
-        if (characterBounds is { } bounds)
+        var sceneBounds = GetFramingBounds();
+        if (sceneBounds is { } bounds)
         {
             _camera.Reset(bounds.Center, distance: 8f, yaw: 0.55f, pitch: -0.24f);
             _camera.Frame(bounds);
@@ -201,11 +208,16 @@ internal sealed class MinimalGame : EngineHost
 
         foreach (var item in _sceneGraph.Objects.Where(item => item.Enabled))
         {
+            var world = _sceneGraph.GetWorldMatrix(item.Id);
             if (_characterInstances.TryGetValue(item.Id, out var character))
                 character.Asset.Draw(GraphicsDevice, character.Pose,
-                    _sceneGraph.GetWorldMatrix(item.Id), _camera.View, _camera.Projection);
+                    world, _camera.View, _camera.Projection);
+            else if (GetMeshAssetReference(item) is { } reference
+                     && _staticAssets.TryGetValue(reference.AssetId, out var staticAsset))
+                staticAsset.Draw(GraphicsDevice, _staticEffect!, _maskedStaticEffect!,
+                    world, _camera.View, _camera.Projection);
             else
-                _scene.DrawCube(_sceneGraph.GetWorldMatrix(item.Id), new Color(173, 139, 88));
+                _scene.DrawCube(world, new Color(173, 139, 88));
         }
 
         _ui.Begin();
@@ -229,15 +241,25 @@ internal sealed class MinimalGame : EngineHost
             character.Dispose();
         _characterAssets.Clear();
         _characterInstances.Clear();
+        foreach (var asset in _staticAssets.Values)
+            asset.Dispose();
+        _staticAssets.Clear();
+        _staticEffect?.Dispose();
+        _staticEffect = null;
+        _maskedStaticEffect?.Dispose();
+        _maskedStaticEffect = null;
         DisposeHost();
         base.UnloadContent();
     }
 
-    private void LoadCharacterInstances()
+    private void LoadSceneAssets()
     {
         foreach (var item in _sceneGraph.Objects)
         {
-            if (item.GltfAsset is not { } reference || _characterAssets.ContainsKey(reference.AssetId)) continue;
+            var reference = GetMeshAssetReference(item);
+            if (reference is null
+                || _characterAssets.ContainsKey(reference.AssetId)
+                || _staticAssets.ContainsKey(reference.AssetId)) continue;
             var assetPath = _project.ResolveContentPath(reference.SourcePath);
             if (!File.Exists(assetPath))
                 throw new FileNotFoundException(
@@ -245,11 +267,17 @@ internal sealed class MinimalGame : EngineHost
                     assetPath);
 
             var model = ModelRoot.Load(assetPath);
-            if (!model.LogicalNodes.Any(node => node.Skin is not null)) continue;
-
-            var character = GltfSkinnedCharacterData.Import(model);
-            var asset = new CharacterAsset(GraphicsDevice, character);
-            _characterAssets.Add(reference.AssetId, asset);
+            if (model.LogicalNodes.Any(node => node.Skin is not null))
+            {
+                var character = GltfSkinnedCharacterData.Import(model);
+                var asset = new CharacterAsset(GraphicsDevice, character);
+                _characterAssets.Add(reference.AssetId, asset);
+            }
+            else
+            {
+                var imported = GltfSceneImporter.Import(model);
+                _staticAssets.Add(reference.AssetId, new StaticAsset(GraphicsDevice, imported));
+            }
         }
 
         foreach (var item in _sceneGraph.Objects)
@@ -258,6 +286,9 @@ internal sealed class MinimalGame : EngineHost
                 _characterInstances.Add(item.Id, new CharacterInstance(item, asset));
         }
     }
+
+    private static GltfAssetReference? GetMeshAssetReference(SceneObject item) =>
+        item.GltfAsset ?? item.StaticMeshLod?.NearAsset;
 
     private static InputActionMap CreateInputActions()
     {
@@ -285,14 +316,20 @@ internal sealed class MinimalGame : EngineHost
         Console.WriteLine($"PASS control smoke: {ControlSmokeMovementKeys[_controlSmokeFrame / 2]} moved {actualDelta}.");
     }
 
-    private Bounds3? GetCharacterBounds()
+    private Bounds3? GetFramingBounds()
     {
         Bounds3? combined = null;
         foreach (var item in _sceneGraph.Objects)
         {
-            if (!_characterInstances.TryGetValue(item.Id, out var instance)) continue;
-            var bounds = instance.Asset.FramingBounds.Transform(_sceneGraph.GetWorldMatrix(item.Id));
-            combined = combined is { } current ? current.Encapsulate(bounds) : bounds;
+            var world = _sceneGraph.GetWorldMatrix(item.Id);
+            Bounds3? bounds = null;
+            if (_characterInstances.TryGetValue(item.Id, out var character))
+                bounds = character.Asset.FramingBounds.Transform(world);
+            else if (GetMeshAssetReference(item) is { } reference
+                     && _staticAssets.TryGetValue(reference.AssetId, out var staticAsset))
+                bounds = staticAsset.GetWorldBounds(world);
+            if (bounds is not { } objectBounds) continue;
+            combined = combined is { } current ? current.Encapsulate(objectBounds) : objectBounds;
         }
         return combined;
     }
@@ -414,5 +451,132 @@ internal sealed class MinimalGame : EngineHost
             _textures.Clear();
             Effect.Dispose();
         }
+    }
+
+    private sealed class StaticAsset : IDisposable
+    {
+        private readonly Dictionary<ImportedGltfPrimitive, StaticPrimitive> _primitives = new();
+        private readonly Dictionary<int, Texture2D> _textures = new();
+        private bool _disposed;
+
+        public StaticAsset(GraphicsDevice device, ImportedGltfScene imported)
+        {
+            Imported = imported;
+            try
+            {
+                foreach (var primitive in imported.MeshesByNodeId.Values
+                             .SelectMany(value => value).Distinct())
+                {
+                    Texture2D? texture = null;
+                    if (primitive.Material.HasBaseColorImage)
+                    {
+                        var imageIndex = primitive.Material.BaseColorImageIndex
+                            ?? throw new InvalidDataException(
+                                $"Material '{primitive.Material.Name}' has image data without an image ID.");
+                        if (!_textures.TryGetValue(imageIndex, out texture))
+                        {
+                            using var imageStream = new MemoryStream(
+                                primitive.Material.BaseColorImage.ToArray(), writable: false);
+                            texture = Texture2D.FromStream(device, imageStream);
+                            _textures.Add(imageIndex, texture);
+                        }
+                    }
+
+                    _primitives.Add(primitive, new StaticPrimitive(
+                        new StaticMeshGpuBuffer(device, primitive.Mesh), primitive.Material, texture));
+                }
+            }
+            catch
+            {
+                Dispose();
+                throw;
+            }
+        }
+
+        public ImportedGltfScene Imported { get; }
+
+        public Bounds3? GetWorldBounds(Matrix instanceWorld)
+        {
+            Bounds3? combined = null;
+            foreach (var (nodeId, primitives) in Imported.MeshesByNodeId)
+            {
+                var nodeWorld = Imported.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                foreach (var primitive in primitives)
+                {
+                    if (primitive.Mesh.LocalBounds is not { } localBounds) continue;
+                    var worldBounds = localBounds.Transform(nodeWorld);
+                    combined = combined is { } current
+                        ? current.Encapsulate(worldBounds)
+                        : worldBounds;
+                }
+            }
+            return combined;
+        }
+
+        public void Draw(GraphicsDevice device, BasicEffect opaqueEffect, AlphaTestEffect maskedEffect,
+            Matrix instanceWorld, Matrix view, Matrix projection)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            try
+            {
+                foreach (var (nodeId, primitives) in Imported.MeshesByNodeId)
+                {
+                    var nodeWorld = Imported.Scene.GetWorldMatrix(nodeId) * instanceWorld;
+                    foreach (var primitive in primitives)
+                    {
+                        var runtime = _primitives[primitive];
+                        var material = runtime.Material;
+                        var factor = material.BaseColorFactor;
+                        device.RasterizerState = material.DoubleSided
+                            ? RasterizerState.CullNone
+                            : RasterizerState.CullCounterClockwise;
+
+                        if (material.AlphaMode == GltfAlphaMode.Mask && runtime.Texture is not null)
+                        {
+                            maskedEffect.World = nodeWorld;
+                            maskedEffect.View = view;
+                            maskedEffect.Projection = projection;
+                            maskedEffect.DiffuseColor = new Vector3(factor.X, factor.Y, factor.Z);
+                            maskedEffect.Alpha = factor.W;
+                            maskedEffect.Texture = runtime.Texture;
+                            maskedEffect.AlphaFunction = CompareFunction.GreaterEqual;
+                            maskedEffect.ReferenceAlpha = (byte)Math.Clamp(
+                                (int)MathF.Round(material.AlphaCutoff * 255f), 0, 255);
+                            runtime.Buffer.Draw(maskedEffect);
+                            continue;
+                        }
+
+                        if (material.AlphaMode == GltfAlphaMode.Mask
+                            && factor.W < material.AlphaCutoff)
+                            continue;
+
+                        opaqueEffect.DiffuseColor = new Vector3(factor.X, factor.Y, factor.Z);
+                        opaqueEffect.Alpha = factor.W;
+                        opaqueEffect.Texture = runtime.Texture;
+                        opaqueEffect.TextureEnabled = runtime.Texture is not null;
+                        runtime.Buffer.Draw(opaqueEffect, nodeWorld, view, projection);
+                    }
+                }
+            }
+            finally
+            {
+                device.RasterizerState = RasterizerState.CullCounterClockwise;
+            }
+        }
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            foreach (var primitive in _primitives.Values)
+                primitive.Buffer.Dispose();
+            foreach (var texture in _textures.Values)
+                texture.Dispose();
+            _primitives.Clear();
+            _textures.Clear();
+        }
+
+        private sealed record StaticPrimitive(
+            StaticMeshGpuBuffer Buffer, GltfMaterialData Material, Texture2D? Texture);
     }
 }
