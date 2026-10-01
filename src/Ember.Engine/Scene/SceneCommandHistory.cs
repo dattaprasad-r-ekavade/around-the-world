@@ -191,6 +191,45 @@ public sealed class EditSceneTriggerActionCommand : ISceneCommand
         scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
 }
 
+/// <summary>Replaces the registered behaviour IDs assigned to one scene object.</summary>
+public sealed class EditSceneBehaviourAssignmentsCommand : ISceneCommand
+{
+    private readonly Guid _objectId;
+    private readonly string[] _replacement;
+    private string[]? _previous;
+    private bool _captured;
+
+    public EditSceneBehaviourAssignmentsCommand(Guid objectId, IEnumerable<string> behaviourIds)
+    {
+        if (objectId == Guid.Empty) throw new ArgumentException("Scene object ID cannot be empty.", nameof(objectId));
+        _objectId = objectId;
+        _replacement = SceneBehaviourIds.ValidateAssignments(behaviourIds, nameof(behaviourIds));
+    }
+
+    public void Apply(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        var item = Require(scene, _objectId);
+        if (!_captured)
+        {
+            _previous = item.BehaviourAssignments.ToArray();
+            _captured = true;
+        }
+        item.SetBehaviourAssignments(_replacement);
+    }
+
+    public void Revert(SceneGraph scene)
+    {
+        ArgumentNullException.ThrowIfNull(scene);
+        if (!_captured || _previous is null)
+            throw new InvalidOperationException("Cannot undo behaviour assignments that were not applied.");
+        Require(scene, _objectId).SetBehaviourAssignments(_previous);
+    }
+
+    private static SceneObject Require(SceneGraph scene, Guid id) =>
+        scene.Find(id) ?? throw new InvalidOperationException($"Cannot edit missing scene object {id}.");
+}
+
 /// <summary>Changes an object's parent while preserving its world transform when it is representable as TRS.</summary>
 public sealed class ReparentSceneObjectCommand : ISceneCommand
 {
@@ -567,6 +606,7 @@ internal static class SceneObjectCopy
                 ? null
                 : id is null ? source.SpawnPoint : new WorldSpawnComponent(Guid.NewGuid())
         };
+        copy.SetBehaviourAssignments(source.BehaviourAssignments);
         return copy;
     }
 

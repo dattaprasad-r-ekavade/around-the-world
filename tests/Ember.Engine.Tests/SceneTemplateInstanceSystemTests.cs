@@ -14,6 +14,33 @@ namespace Ember.Engine.Tests;
 public sealed class SceneTemplateInstanceSystemTests
 {
     [Fact]
+    public void InitialTemplatePlacementPreservesSavedBehaviourAssignments()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var rootId = Guid.NewGuid();
+            var source = new SceneGraph();
+            var root = new SceneObject(rootId, "Door");
+            root.SetBehaviourAssignments(new[] { "sample.open-door" });
+            source.Add(root);
+            var template = SceneTemplateFile.Save(source, rootId, "Door", path);
+            var destination = new SceneGraph();
+
+            var wrapper = SceneTemplateInstanceSystem.Instantiate(destination, template, Vector3.Zero);
+            var instanceObjectId = wrapper.TemplateInstance!.ObjectMappings
+                .Single(mapping => mapping.SourceObjectId == rootId).InstanceObjectId;
+
+            Assert.Equal(new[] { "sample.open-door" },
+                destination.Find(instanceObjectId)!.BehaviourAssignments);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void PlacesIndependentExpandedHierarchiesAndPersistsTheirSourceMappings()
     {
         var path = TemporaryTemplatePath();

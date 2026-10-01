@@ -13,7 +13,8 @@ public sealed class ScenePlaySession : IDisposable
     private readonly Dictionary<PhysicsObjectId, Guid> _characterIds = new();
     private readonly HashSet<Guid> _reachedGoals = new();
 
-    public ScenePlaySession(SceneGraph authoredScene, Action<SceneGraph, SceneBehaviourRuntime>? configure = null)
+    public ScenePlaySession(SceneGraph authoredScene, Action<SceneGraph, SceneBehaviourRuntime>? configure = null,
+        SceneBehaviourRegistry? registry = null)
     {
         ArgumentNullException.ThrowIfNull(authoredScene);
         ValidateTriggerActions(authoredScene);
@@ -22,6 +23,7 @@ public sealed class ScenePlaySession : IDisposable
         try
         {
             configure?.Invoke(RuntimeScene, Behaviours);
+            RegisterSavedBehaviours(registry);
             Behaviours.Start();
         }
         catch
@@ -38,6 +40,18 @@ public sealed class ScenePlaySession : IDisposable
 
     /// <summary>Raised when a saved trigger action runs or requests a world action.</summary>
     public event Action<SceneAuthoredActionEvent>? AuthoredActionExecuted;
+
+    private void RegisterSavedBehaviours(SceneBehaviourRegistry? registry)
+    {
+        foreach (var owner in RuntimeScene.Objects)
+        foreach (var behaviourId in owner.BehaviourAssignments)
+        {
+            if (registry is null)
+                throw new InvalidOperationException(
+                    $"Scene object '{owner.Name}' ({owner.Id}) assigns behaviour '{behaviourId}', but no behaviour registry was provided.");
+            Behaviours.AddRegistered(owner.Id, behaviourId, registry);
+        }
+    }
 
     /// <summary>Associates a runtime physics body with its stable scene character identity.</summary>
     public void BindPhysicsCharacter(PhysicsObjectId physicsObjectId, Guid sceneCharacterId)
@@ -164,6 +178,7 @@ public static class SceneGraphCloner
                 TemplateInstance = item.TemplateInstance,
                 ResetPolicy = item.ResetPolicy
             };
+            copy.SetBehaviourAssignments(item.BehaviourAssignments);
             clone.Add(copy);
         }
 

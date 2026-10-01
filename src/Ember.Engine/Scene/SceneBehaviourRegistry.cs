@@ -17,7 +17,7 @@ public sealed class SceneBehaviourRegistry
     /// <summary>Registers a factory under a stable, case-sensitive ID.</summary>
     public void Register(string behaviourId, Func<SceneObject, SceneBehaviour> factory)
     {
-        var id = ValidateId(behaviourId, nameof(behaviourId));
+        var id = SceneBehaviourIds.ValidateId(behaviourId, nameof(behaviourId));
         ArgumentNullException.ThrowIfNull(factory);
         if (!_factories.TryAdd(id, factory))
             throw new InvalidOperationException($"Behaviour ID '{id}' is already registered.");
@@ -27,7 +27,7 @@ public sealed class SceneBehaviourRegistry
     public SceneBehaviour Create(string behaviourId, SceneObject owner)
     {
         ArgumentNullException.ThrowIfNull(owner);
-        var id = ValidateId(behaviourId, nameof(behaviourId));
+        var id = SceneBehaviourIds.ValidateId(behaviourId, nameof(behaviourId));
         if (!_factories.TryGetValue(id, out var factory))
             throw new InvalidOperationException(
                 $"Scene object '{owner.Name}' ({owner.Id}) assigns behaviour '{id}', but it is not registered. Register it before starting Play.");
@@ -45,12 +45,27 @@ public sealed class SceneBehaviourRegistry
         }
     }
 
-    private static string ValidateId(string behaviourId, string parameterName)
+}
+
+internal static class SceneBehaviourIds
+{
+    internal static string ValidateId(string behaviourId, string parameterName)
     {
         if (string.IsNullOrWhiteSpace(behaviourId))
             throw new ArgumentException("A stable behaviour ID is required.", parameterName);
         if (!string.Equals(behaviourId, behaviourId.Trim(), StringComparison.Ordinal))
             throw new ArgumentException("Behaviour IDs cannot start or end with whitespace.", parameterName);
         return behaviourId;
+    }
+
+    internal static string[] ValidateAssignments(IEnumerable<string> behaviourIds, string parameterName)
+    {
+        ArgumentNullException.ThrowIfNull(behaviourIds);
+        var assignments = behaviourIds
+            .Select(id => ValidateId(id, parameterName))
+            .ToArray();
+        if (assignments.Distinct(StringComparer.Ordinal).Count() != assignments.Length)
+            throw new ArgumentException("Behaviour assignments cannot contain duplicate IDs.", parameterName);
+        return assignments;
     }
 }

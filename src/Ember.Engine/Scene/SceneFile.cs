@@ -15,7 +15,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 19;
+    public const int CurrentVersion = 20;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -108,6 +108,8 @@ public static class SceneFile
                 TemplateInstance = ToTemplateInstanceComponent(data.TemplateInstance, document.Version),
                 ResetPolicy = data.ResetPolicy
             };
+            item.SetBehaviourAssignments(data.BehaviourAssignments is null
+                ? Enumerable.Empty<string>() : data.BehaviourAssignments);
             scene.Add(item);
             parents.Add(data.Id, data.ParentId);
         }
@@ -162,6 +164,7 @@ public static class SceneFile
                     Character = ToCharacterData(value.CharacterSettings),
                     BoxCollider = ToBoxColliderData(value.BoxCollider),
                     TriggerAction = ToTriggerActionData(value.TriggerAction),
+                    BehaviourAssignments = value.BehaviourAssignments.ToList(),
                     Door = ToDoorData(value.Door),
                     SpawnPoint = value.SpawnPoint is null ? null : new SceneSpawnData { Id = value.SpawnPoint.Id },
                     WorldEntity = ToWorldEntityData(value.WorldEntity),
@@ -786,6 +789,20 @@ public static class SceneFile
                 baseline?.TriggerAction?.Kind == SceneTriggerActionKind.Open) == true;
         if (documentVersion < 19 && hasOpenAction)
             throw new InvalidDataException($"Object {data.Id} Open trigger action data requires scene version 19.");
+        if (documentVersion < 20 && data.BehaviourAssignments is not null)
+            throw new InvalidDataException($"Object {data.Id} behaviour assignments require scene version 20.");
+        try
+        {
+            _ = SceneBehaviourIds.ValidateAssignments(
+                data.BehaviourAssignments is null
+                    ? Enumerable.Empty<string>() : data.BehaviourAssignments,
+                nameof(data.BehaviourAssignments));
+        }
+        catch (ArgumentException exception)
+        {
+            throw new InvalidDataException(
+                $"Object {data.Id} has invalid behaviour assignments: {exception.Message}", exception);
+        }
         _ = ToBoxColliderComponent(data.BoxCollider);
         _ = ToTriggerActionComponent(data.TriggerAction);
         if (data.TriggerAction is not null && data.BoxCollider is not { IsTrigger: true })
@@ -966,6 +983,7 @@ public static class SceneFile
         public SceneCharacterData? Character { get; set; }
         public SceneBoxColliderData? BoxCollider { get; set; }
         public SceneTriggerActionData? TriggerAction { get; set; }
+        public List<string>? BehaviourAssignments { get; set; }
         public SceneDoorData? Door { get; set; }
         public SceneSpawnData? SpawnPoint { get; set; }
         public SceneWorldEntityData? WorldEntity { get; set; }

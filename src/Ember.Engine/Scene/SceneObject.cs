@@ -145,11 +145,17 @@ public sealed class SceneObject
     public GltfCharacterSettings? CharacterSettings { get; set; }
     public SceneBoxColliderComponent? BoxCollider { get; set; }
     public SceneTriggerActionComponent? TriggerAction { get; set; }
+    public IReadOnlyList<string> BehaviourAssignments { get; private set; } = Array.Empty<string>();
     public WorldDoorComponent? Door { get; set; }
     public WorldSpawnComponent? SpawnPoint { get; set; }
     public WorldEntityPlacementComponent? WorldEntity { get; set; }
     public SceneTemplateInstanceComponent? TemplateInstance { get; set; }
     public WorldInstanceResetPolicy ResetPolicy { get; set; } = WorldInstanceResetPolicy.Preserve;
+
+    /// <summary>Replaces the saved behaviour IDs after validating stable IDs and uniqueness.</summary>
+    public void SetBehaviourAssignments(IEnumerable<string> behaviourIds) =>
+        BehaviourAssignments = Array.AsReadOnly(
+            SceneBehaviourIds.ValidateAssignments(behaviourIds, nameof(behaviourIds)));
 }
 
 /// <summary>Maps a stable template source object ID to its placed scene-object ID.</summary>

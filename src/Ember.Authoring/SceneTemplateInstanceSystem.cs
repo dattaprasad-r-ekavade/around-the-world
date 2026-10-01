@@ -486,7 +486,7 @@ public static class SceneTemplateInstanceSystem
         Guid? targetWorldCellId)
     {
         var character = CopyCharacterSettings(source.CharacterSettings, usedAttachmentIds);
-        return new SceneObject(id, source.Name)
+        var clone = new SceneObject(id, source.Name)
         {
             Enabled = source.Enabled,
             Transform = new Transform
@@ -505,6 +505,8 @@ public static class SceneTemplateInstanceSystem
             WorldEntity = CopyWorldEntityForInstance(source.WorldEntity, entityInstanceMap),
             ResetPolicy = source.ResetPolicy
         };
+        clone.SetBehaviourAssignments(source.BehaviourAssignments);
+        return clone;
     }
 
     private static GltfCharacterSettings? CopyCharacterSettings(GltfCharacterSettings? source,

@@ -100,9 +100,9 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 | UX.4 | In progress | Optional action-driven first-creation lesson (`FirstCreationLesson`) with Why?, two hint levels, replay and a project-local completion record | Button-driven walkthrough through the final reopen and replay | [UX](progress/UX.md) |
 | M1.1 | In progress | Project create/open/recent; GLB import with rollback; stable asset catalog; project GLBs in the Add library; reload with replacement validation; world-only projects open | Browse → preview → Add/Cancel, a valid reload and a corrupt reload through visible controls; relocate and reopen through the UI | [M1](progress/M1.md) |
 | M1.2 | In progress | Nested hierarchy; world-preserving reparent; Move/Turn/Size gizmos; position, angle and scale snapping | Live drag; one-step undo/redo; save/reopen keeps IDs, hierarchy and appearance | [M1](progress/M1.md) |
-| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 19 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
+| M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 20 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
-| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open action requests its linked world-door destination (scene version 19); stable-ID behaviour factories with owner-specific diagnostics; the action and complete 373-test suite pass hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Persisted behaviour assignments and editor controls; world-host cell-change handoff; manual verification of collider bounds, behaviour assignment, and the complete Play workflow | [M2](progress/M2.md) |
+| M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open action requests its linked world-door destination (scene version 19); stable-ID behaviour factories and owner-specific diagnostics; scene version 20 saves behaviour IDs with undo/redo, Play resolution and clone/initial-template-placement preservation; the earlier Open-action slice and complete 373-test suite passed hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Inspector authoring and template-update baselines for behaviour assignments; world-host cell-change handoff; manual verification of collider bounds, behaviour assignment, and the complete Play workflow | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -430,11 +430,11 @@ milestones or permission to skip M0/UX/M1 dependencies.
   close-cancel and lesson replay. Fix observed failures within these tasks.
 - [ ] **UX.5:** observe three first-time users and the later unaided repeat; retain timings,
   confusion and transfer results. Keep the gate pending until participants exist.
-- [ ] **M2.1, after M1:** saved player identity, collider wireframe, saved Open action and a stable-ID
-  behaviour registry are implemented. Verify player choice, collider display, Open-action save/reopen,
-  delete/undo, template guard, movement and triggers in the visible workflow; connect the Open request
-  to world cell travel, then persist behaviour assignments and expose them with undo/redo,
-  duplicate/template and Play-isolation checks.
+- [ ] **M2.1, after M1:** saved player identity, collider wireframe, saved Open action, stable-ID
+  behaviour registry and scene-version-20 behaviour IDs are implemented. Verify player choice,
+  collider display, Open-action save/reopen, delete/undo, template guard, movement, triggers and
+  behaviour resolution; expose assignments in the Inspector, preserve their template-update baselines,
+  and connect the Open request to world cell travel.
 - [ ] **M2.2:** implement game pause and one saved cutscene trigger; verify repeated handoff
   restores player/camera/input/audio ownership and Stop restores authored data.
 - [ ] **M2.3:** complete dependency collection and failure diagnostics before the build panel;
