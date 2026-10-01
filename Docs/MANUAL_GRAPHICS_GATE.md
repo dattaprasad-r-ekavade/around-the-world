@@ -110,11 +110,16 @@ The base editor does not include a game-specific behaviour module by default.
    return normally.
 3. Repeat Play → Pause → Resume → Stop several times. Confirm no duplicate behaviour start/stop
    callbacks or lingering sound voices. Record any exceptions and resource counts.
-4. After saved trigger-to-sequence authoring is available, trigger a cutscene during Play. Confirm
-   gameplay pauses, the sequence uses the active player's scene copy and camera, and completion
-   restores control to the same player and camera without registering behaviours a second time.
-5. Record the project and scene paths, exact action sequence, console output and result. Until the
-   trigger-to-sequence workflow exists, record that item as not implemented rather than passed.
+4. Open or create a scene sequence, choose an enabled **Reach goal** trigger, and save the
+   `.sequence.json` file. Close and reopen the scene and sequence; confirm the trigger selection is
+   retained. Start Play and enter that trigger. Confirm movement, physics, interactions and the
+   interaction sound pause while the sequence plays on the Play scene copy. Confirm completion
+   restores the same player's pose and the prior camera, then resumes Play. Repeat with manual Play
+   Pause before starting a sequence from the sequence controls; confirm completion leaves Play
+   paused. Stop during a cutscene and confirm the authored scene is restored.
+5. Repeat the full Play → trigger → cutscene → return flow several times. Confirm behaviours do not
+   start twice, no interaction-audio voice remains active, and the same player remains controllable.
+   Record the project, scene and sequence paths, exact action sequence, console output and result.
 
 ## Scene-template workflow acceptance
 

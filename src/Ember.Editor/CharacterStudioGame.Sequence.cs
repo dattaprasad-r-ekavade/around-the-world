@@ -32,7 +32,7 @@ public sealed partial class CharacterStudioGame
         if (_sequence is null || _sequencePlayer is null) return null;
         var cameraName = _sequence.SampleCamera(_sequencePlayer.Time).CameraName;
         return new SequenceEditorInfo(_sequence.Name, _sequencePlayer.Time, _sequence.Duration,
-            _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName);
+            _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName, _sequence.TriggerObjectId);
     }
 
     private SequenceExportEditorInfo GetSequenceExportEditorInfo()
@@ -205,6 +205,15 @@ public sealed partial class CharacterStudioGame
         if (_sequencePlayer is null) return;
         if (playing)
         {
+            if (_playSession is not null)
+            {
+                try { _playController.BeginSequenceCutscene(); }
+                catch (Exception exception)
+                {
+                    _reimportStatus = $"Could not pause Play for the sequence: {exception.Message}";
+                    return;
+                }
+            }
             _sequencePlayer.Play();
             _sequencePreviewEnabled = true;
         }
@@ -213,6 +222,150 @@ public sealed partial class CharacterStudioGame
             _sequencePlayer.Pause();
         }
         ApplySequenceAtCurrentTime();
+    }
+
+    private void SetSequenceTrigger(Guid? triggerObjectId)
+    {
+        if (_sequence is null || _sequencePlayer is null) return;
+        if (_playSession is not null)
+        {
+            _reimportStatus = "Stop Play before changing the saved cutscene trigger.";
+            return;
+        }
+        if (triggerObjectId is { } id)
+        {
+            var trigger = _sceneData.Find(id);
+            if (trigger is null || !trigger.Enabled || trigger.BoxCollider is not { IsTrigger: true }
+                || trigger.TriggerAction?.Kind != SceneTriggerActionKind.ReachGoal)
+            {
+                _reimportStatus = $"Choose an enabled Reach goal trigger with a trigger collider; object {id} does not qualify.";
+                return;
+            }
+        }
+
+        try
+        {
+            var previous = _sequence;
+            var previousPlayer = _sequencePlayer;
+            _sequence = new SceneSequence(previous.Name, previous.Duration, previous.CharacterTracks,
+                previous.CameraTracks, previous.CameraCuts, triggerObjectId);
+            _sequencePlayer = new SceneSequencePlayer(_sequence);
+            _sequencePlayer.Seek(previousPlayer.Time);
+            if (previousPlayer.IsPlaying) _sequencePlayer.Play();
+            _reimportStatus = triggerObjectId is { } selectedId
+                ? $"Cutscene will start at Reach goal trigger '{_sceneData.Find(selectedId)!.Name}'. Save the sequence to keep this link."
+                : "Cutscene trigger cleared. Save the sequence to keep this change.";
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Could not change the cutscene trigger: {exception.Message}";
+        }
+    }
+
+    private void OpenSequenceFromUi()
+    {
+        if (_playSession is not null)
+        {
+            _reimportStatus = "Stop Play before opening a different sequence.";
+            return;
+        }
+
+        var initialPath = _sequenceFilePath ?? _sceneSavePath;
+        var initialDirectory = initialPath is null
+            ? _project?.RootDirectory
+            : Path.GetDirectoryName(Path.GetFullPath(initialPath));
+        var path = CharacterStudioFilePickers.PickSequenceFile(
+            initialDirectory, GraphicsDevice.PresentationParameters.DeviceWindowHandle);
+        if (path is null) return;
+
+        try
+        {
+            var preview = _preview?.Current
+                ?? throw new InvalidOperationException("The scene preview is not ready.");
+            var candidate = SequenceFile.Load(path, _sceneData, BuildSequenceClipCatalog(preview));
+            _sequence = candidate;
+            _sequencePlayer = new SceneSequencePlayer(candidate);
+            _sequenceFilePath = Path.GetFullPath(path);
+            _sequencePreviewEnabled = false;
+            _activeSequenceCameraName = null;
+            _reimportStatus = $"Opened sequence '{candidate.Name}'.";
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Could not open sequence '{Path.GetFileName(path)}': {exception.Message}";
+        }
+    }
+
+    private void SaveSequenceFromUi()
+    {
+        if (_playSession is not null)
+        {
+            _reimportStatus = "Stop Play before saving an authored sequence.";
+            return;
+        }
+        if (_sequence is null)
+        {
+            _reimportStatus = "Add a skinned character before saving a sequence.";
+            return;
+        }
+
+        var initialPath = _sequenceFilePath ?? _sceneSavePath;
+        var initialDirectory = initialPath is null
+            ? _project?.RootDirectory
+            : Path.GetDirectoryName(Path.GetFullPath(initialPath));
+        var suggestedName = string.IsNullOrWhiteSpace(_sequenceFilePath)
+            ? $"{string.Concat(_sequence.Name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))}.sequence.json"
+            : Path.GetFileName(_sequenceFilePath);
+        var path = CharacterStudioFilePickers.PickSequenceSaveFile(
+            initialDirectory, suggestedName, GraphicsDevice.PresentationParameters.DeviceWindowHandle);
+        if (path is null) return;
+
+        try
+        {
+            SequenceFile.SaveAtomic(_sequence, _sceneData, path);
+            _sequenceFilePath = Path.GetFullPath(path);
+            _reimportStatus = $"Saved sequence '{_sequence.Name}' to {Path.GetFileName(path)}.";
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"Could not save sequence: {exception.Message}";
+        }
+    }
+
+    internal void StartSequenceCutsceneFromTrigger()
+    {
+        if (_playSession is null || _sequence is null || _sequencePlayer is null
+            || _sequence.TriggerObjectId is null)
+            return;
+
+        try
+        {
+            _playController.BeginSequenceCutscene();
+            _sequencePlayer.Seek(0f);
+            _sequencePlayer.Play();
+            _sequencePreviewEnabled = true;
+            ApplySequenceAtCurrentTime();
+            _reimportStatus = $"Reached the cutscene trigger. Playing '{_sequence.Name}'.";
+        }
+        catch (Exception exception)
+        {
+            _playController.CancelSequenceCutscene();
+            _reimportStatus = $"Could not start '{_sequence.Name}': {exception.Message}";
+        }
+    }
+
+    internal void RestorePlayPreviewAfterCutscene(float cameraTargetDistance, float cameraYaw,
+        float cameraPitch, Vector3 cameraTarget)
+    {
+        _sequencePlayer?.Pause();
+        _sequencePreviewEnabled = false;
+        _activeSequenceCameraName = null;
+        if (_preview?.Current is { } preview)
+        {
+            foreach (var state in preview.CharacterInstances.Values)
+                state.Seek(state.Playback?.Time ?? state.Settings.Time);
+        }
+        _camera.Reset(cameraTarget, cameraTargetDistance, cameraYaw, cameraPitch);
     }
 
     private void SeekSequence(float time)
@@ -233,13 +386,36 @@ public sealed partial class CharacterStudioGame
         else
         {
             _sequencePlayer?.Pause();
+            if (_playController.IsSequenceCutsceneActive)
+            {
+                _playController.CancelSequenceCutscene();
+                return;
+            }
             _activeSequenceCameraName = null;
             if (GetSceneBounds() is { } bounds) _camera.Frame(bounds);
         }
     }
 
-    private void BuildSequencePreview()
+    private void BuildSequencePreview(bool preserveCurrentSequence = false)
     {
+        var previousSequence = preserveCurrentSequence ? _sequence : null;
+        var currentPreview = _preview?.Current;
+        if (previousSequence is not null && currentPreview is not null
+            && previousSequence.CharacterTracks.All(track =>
+                CurrentScene.Find(track.TargetObjectId) is not null
+                && currentPreview.CharacterInstances.ContainsKey(track.TargetObjectId))
+            && (previousSequence.TriggerObjectId is null
+                || CurrentScene.Find(previousSequence.TriggerObjectId.Value) is
+                    { Enabled: true, BoxCollider: { IsTrigger: true }, TriggerAction.Kind: SceneTriggerActionKind.ReachGoal }))
+        {
+            _sequence = previousSequence;
+            _sequencePlayer = new SceneSequencePlayer(previousSequence);
+            _sequencePreviewEnabled = false;
+            _activeSequenceCameraName = null;
+            return;
+        }
+
+        _sequenceFilePath = null;
         _sequence = null;
         _sequencePlayer = null;
         _sequencePreviewEnabled = false;
@@ -312,7 +488,15 @@ public sealed partial class CharacterStudioGame
             _sequencePlayer.Pause();
             _sequencePreviewEnabled = false;
             _activeSequenceCameraName = null;
-            _reimportStatus = $"Sequence preview stopped: {exception.Message}";
+            if (_playController.IsSequenceCutsceneActive)
+            {
+                _playController.CompleteSequenceCutscene();
+                _reimportStatus = $"Sequence preview stopped: {exception.Message} Play was restored.";
+            }
+            else
+            {
+                _reimportStatus = $"Sequence preview stopped: {exception.Message}";
+            }
         }
     }
 

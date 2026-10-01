@@ -13,7 +13,7 @@ namespace Ember.Sequence;
 /// <summary>Versioned JSON persistence for absolute-time character and camera sequences.</summary>
 public static class SequenceFile
 {
-    public const int CurrentVersion = 1;
+    public const int CurrentVersion = 2;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -51,8 +51,8 @@ public static class SequenceFile
             throw new InvalidDataException($"Sequence JSON is invalid: {exception.Message}", exception);
         }
 
-        if (document.Version != CurrentVersion)
-            throw new InvalidDataException($"Unsupported sequence version {document.Version}; expected {CurrentVersion}.");
+        if (document.Version < 1 || document.Version > CurrentVersion)
+            throw new InvalidDataException($"Unsupported sequence version {document.Version}; supported versions are 1–{CurrentVersion}.");
         if (document.Name is null) throw new InvalidDataException("Sequence name is missing.");
         if (document.CharacterTracks is null) throw new InvalidDataException("Sequence character-track list is missing.");
         if (document.CameraTracks is null) throw new InvalidDataException("Sequence camera-track list is missing.");
@@ -114,7 +114,10 @@ public static class SequenceFile
                 cuts = new SequenceCameraCutTrack(cutKeys);
             }
 
-            return new SceneSequence(document.Name, document.Duration, characters, cameras, cuts);
+            var triggerObjectId = document.Version >= 2 ? document.TriggerObjectId : null;
+            ValidateCutsceneTrigger(scene, triggerObjectId);
+            return new SceneSequence(document.Name, document.Duration, characters, cameras, cuts,
+                triggerObjectId);
         }
         catch (ArgumentException exception)
         {
@@ -124,6 +127,7 @@ public static class SequenceFile
 
     private static SequenceDocument ToDocument(SceneSequence sequence, SceneGraph scene)
     {
+        ValidateCutsceneTrigger(scene, sequence.TriggerObjectId);
         var characters = sequence.CharacterTracks.Select(track =>
         {
             var target = scene.Find(track.TargetObjectId)
@@ -165,6 +169,7 @@ public static class SequenceFile
             Version = CurrentVersion,
             Name = sequence.Name,
             Duration = sequence.Duration,
+            TriggerObjectId = sequence.TriggerObjectId,
             CharacterTracks = characters,
             CameraTracks = cameras,
             CameraCuts = sequence.CameraCuts?.Keys.Select(key => new CameraCutDocument
@@ -175,11 +180,27 @@ public static class SequenceFile
         };
     }
 
+    private static void ValidateCutsceneTrigger(SceneGraph scene, Guid? triggerObjectId)
+    {
+        if (triggerObjectId is not { } id) return;
+        var trigger = scene.Find(id)
+            ?? throw new InvalidDataException($"Sequence cutscene trigger refers to missing scene object {id}.");
+        if (!trigger.Enabled)
+            throw new InvalidDataException($"Sequence cutscene trigger '{trigger.Name}' ({id}) must be enabled.");
+        if (trigger.BoxCollider is not { IsTrigger: true })
+            throw new InvalidDataException(
+                $"Sequence cutscene trigger '{trigger.Name}' ({id}) must have a trigger box collider.");
+        if (trigger.TriggerAction?.Kind != SceneTriggerActionKind.ReachGoal)
+            throw new InvalidDataException(
+                $"Sequence cutscene trigger '{trigger.Name}' ({id}) must use the Reach goal action.");
+    }
+
     private sealed class SequenceDocument
     {
         public int Version { get; set; }
         public string? Name { get; set; }
         public float Duration { get; set; }
+        public Guid? TriggerObjectId { get; set; }
         public CharacterTrackDocument?[]? CharacterTracks { get; set; }
         public CameraTrackDocument?[]? CameraTracks { get; set; }
         public CameraCutDocument?[]? CameraCuts { get; set; }

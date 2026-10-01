@@ -103,7 +103,7 @@ and deliverable game/film gates remain open. No acceptance status was promoted.
 | M1.3 | In progress | Template snapshots, instances, explicit updates, overrides, orphans and relink; collider and trigger baselines; Scene Templates tool; current scene format is version 20 | Interactive use of the tool; two instances with one override survive reload | [M1](progress/M1.md) |
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open actions request linked world-door destinations and CharacterStudio Play resolves cells/spawns, carries the controlled character, and returns to the authored starting cell on Stop; optional editor modules register stable-ID behaviours with creator-facing names and owner-specific diagnostics; scene version 20 saves assignments with undo/redo, Inspector choices, Play resolution, clone/placement and template-update baselines; template updates merge source assignments, preserve local overrides, retain removed overridden objects as orphans, and support undo/redo; the earlier Open-action slice and complete 373-test suite passed hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Manual verification of door travel, collider bounds, template behaviour overrides, behaviour choices, and the complete Play workflow; current editor travel loads a single destination cell synchronously | [M2](progress/M2.md) |
-| M2.2 | In progress | CharacterStudio pauses gameplay input, physics, interactions, animation advancement and its interaction-audio voice from the existing Play toolbar | Saved trigger-to-sequence binding and player/camera handoff; repeated lifecycle and manual verification | [M2](progress/M2.md) |
+| M2.2 | In progress | CharacterStudio pauses gameplay input, physics, interactions, animation advancement and its interaction-audio voice; SequenceFile v2 saves an optional stable-ID Reach goal trigger with version-1 migration; the existing sequence tool assigns, opens and saves sequences; reaching the bound trigger in Play starts the sequence on the runtime scene copy and restores the previous player pose and camera when it ends | Run the saved open/reopen, trigger playback, player/camera restore, repeated Play/Pause/Stop and interaction-audio checks; verify no duplicate behaviour callbacks | [M2](progress/M2.md) |
 | M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation; packaged path data; relocation tests reopen packaged worlds | Automatic audio/sequence dependency closure; build panel and executable publication; relocated playable game | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
@@ -130,7 +130,7 @@ new default editor panels until the M1 gate passes.
    - close-cancel, Save As and project-switch prompts;
    - the first-creation lesson through its final reopen and replay.
 3. **UX.5:** run three novice sessions. Fix blockers and repeat the affected task.
-4. Then continue the remaining M2.1 work, M2.2 and M2.3 (phase P4). Use the
+4. Then continue the remaining M2.1 work, finish M2.2 interaction verification, and continue M2.3 (phase P4). Use the
    [review's bounded follow-up checks](#recommended-follow-up-checks) to avoid treating
    existing runtime APIs as completed editor workflows.
 
@@ -589,3 +589,20 @@ open.
 
 No task status was promoted. Remaining M2.1 work is the world-host cell-change handoff, custom
 behaviour registration, and manual verification of collider editing and the Play workflow.
+
+## M2.2 saved trigger-to-sequence checkpoint — 1 October 2026
+
+The existing sequence workflow now saves an optional Reach goal trigger in `SequenceFile` v2 and
+loads v1 files without a trigger. CharacterStudio exposes sequence open/save and trigger selection.
+During Play, the selected trigger starts the sequence against the runtime scene copy, pauses gameplay
+and interaction audio, then restores the previous preview pose and camera. Play resumes only when it
+was running before the cutscene. A sequence evaluation failure also restores the Play session.
+
+| Check | Result |
+| --- | --- |
+| Release solution build redirected to a temporary output directory | PASS — all solution projects compiled with 0 warnings and 0 errors |
+| Sequence serialization and atomic-save regression tests | NOT RUN — per the owner's instruction |
+| CharacterStudio saved trigger and cutscene handoff workflow | NOT RUN — window interaction was unavailable; follow the steps in `MANUAL_GRAPHICS_GATE.md` |
+
+M2.2 remains In progress. The task is not ready to pass until the authored tests and repeated visible
+Play, trigger, camera/player restoration, audio and Stop checks are complete.

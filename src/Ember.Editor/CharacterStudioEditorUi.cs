@@ -22,7 +22,8 @@ namespace Ember.Editor;
 internal sealed record CharacterEditorInfo(
     IReadOnlyList<string> ClipNames, string? ClipName, float Time, float Duration, bool IsPlaying);
 internal sealed record SequenceEditorInfo(
-    string Name, float Time, float Duration, bool IsPlaying, bool PreviewEnabled, string? CameraName);
+    string Name, float Time, float Duration, bool IsPlaying, bool PreviewEnabled, string? CameraName,
+    Guid? TriggerObjectId);
 internal sealed record SequenceExportEditorInfo(
     bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
 internal sealed record SequenceExportEditorRequest(
@@ -62,6 +63,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Action<bool> _setSequencePlaying;
     private readonly Action<float> _seekSequence;
     private readonly Action<bool> _setSequencePreviewEnabled;
+    private readonly Action<Guid?> _setSequenceTrigger;
+    private readonly Action _openSequence;
+    private readonly Action _saveSequence;
     private readonly Func<SequenceExportEditorInfo> _getSequenceExportInfo;
     private readonly Action<SequenceExportEditorRequest> _startSequenceExport;
     private readonly Action _cancelSequenceExport;
@@ -191,6 +195,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Func<float> getInteractionVolume, Action<float> setInteractionVolume,
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
         Action<float> seekSequence, Action<bool> setSequencePreviewEnabled,
+        Action<Guid?> setSequenceTrigger, Action openSequence, Action saveSequence,
         Func<SequenceExportEditorInfo> getSequenceExportInfo,
         Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
         Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
@@ -246,6 +251,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _setSequencePlaying = setSequencePlaying ?? throw new ArgumentNullException(nameof(setSequencePlaying));
         _seekSequence = seekSequence ?? throw new ArgumentNullException(nameof(seekSequence));
         _setSequencePreviewEnabled = setSequencePreviewEnabled ?? throw new ArgumentNullException(nameof(setSequencePreviewEnabled));
+        _setSequenceTrigger = setSequenceTrigger ?? throw new ArgumentNullException(nameof(setSequenceTrigger));
+        _openSequence = openSequence ?? throw new ArgumentNullException(nameof(openSequence));
+        _saveSequence = saveSequence ?? throw new ArgumentNullException(nameof(saveSequence));
         _getSequenceExportInfo = getSequenceExportInfo ?? throw new ArgumentNullException(nameof(getSequenceExportInfo));
         _startSequenceExport = startSequenceExport ?? throw new ArgumentNullException(nameof(startSequenceExport));
         _cancelSequenceExport = cancelSequenceExport ?? throw new ArgumentNullException(nameof(cancelSequenceExport));
@@ -501,7 +509,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                 var toolMenuVisible = DrawMoreToolsMenu();
                 if (!toolMenuVisible)
                 {
-                    if (_showSequenceTools) DrawSequencePanel();
+                    if (_showSequenceTools) DrawSequencePanel(scene);
                     if (_showWorldTools) DrawWorldCellPanel(scene);
                     if (_showWorldAuthoringTools) DrawWorldAuthoringPanel(scene);
                     if (_showSceneTemplateTools) DrawSceneTemplatePanel(scene);

@@ -783,7 +783,13 @@ work.
 `ScenePlaySession.Pause` and `Resume` suspend behaviour interactions and trigger actions. The
 CharacterStudio Play toolbar also pauses movement, physics steps, character and sequence preview
 advancement, and the active interaction-audio voice. Stop remains available while paused and still
-restores the authored scene. Saved trigger-to-sequence handoff is not implemented yet.
+restores the authored scene. `SequenceFile` version 2 stores an optional scene-object ID for an
+enabled Reach goal trigger with a trigger box collider; version-1 sequence files load without a
+trigger. CharacterStudio can assign the trigger and open or save `.sequence.json` files. During Play,
+reaching the selected trigger pauses gameplay and starts the sequence on the runtime scene copy.
+When playback ends, the editor restores the character preview pose and camera, then resumes Play
+only if it was running before the cutscene. Automatic sequence and audio dependency packaging is
+still part of M2.3.
 
 ---
 

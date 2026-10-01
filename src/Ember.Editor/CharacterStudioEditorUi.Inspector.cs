@@ -24,7 +24,7 @@ internal sealed partial class CharacterStudioEditorUi
     private readonly InspectorPanel _inspectorPanel;
 
     private void DrawTransformToolActions(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawTransformToolActions(scene, selected);
-    private void DrawSequencePanel() => _inspectorPanel.DrawSequencePanel();
+    private void DrawSequencePanel(SceneGraph scene) => _inspectorPanel.DrawSequencePanel(scene);
     private void DrawBoxColliderControls(SceneGraph scene, SceneObject selected) => _inspectorPanel.DrawBoxColliderControls(scene, selected);
     private void DrawCharacterControls(SceneObject selected) => _inspectorPanel.DrawCharacterControls(selected);
     private void DrawLightingControls() => _inspectorPanel.DrawLightingControls();
@@ -217,13 +217,13 @@ internal sealed partial class CharacterStudioEditorUi
         _owner._projectWorkspaceStatus = status;
     }
 
-    public void DrawSequencePanel()
+    public void DrawSequencePanel(SceneGraph scene)
     {
         var sequence = _owner._getSequenceInfo();
         if (sequence is null) return;
 
         ImGui.SetNextWindowPos(new NumericsVector2(232f, 60f));
-        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth * 0.5f), 150f));
+        ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth * 0.5f), 230f));
         if (!ImGui.Begin("Animate and Finish", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {
             ImGui.End();
@@ -231,6 +231,32 @@ internal sealed partial class CharacterStudioEditorUi
         }
 
         ImGui.Text(sequence.Name);
+        var canEditSequence = !_owner._isPlaying();
+        if (!canEditSequence) ImGui.BeginDisabled();
+        ImGui.SetNextItemWidth(-1f);
+        var selectedTrigger = sequence.TriggerObjectId is { } triggerId ? scene.Find(triggerId) : null;
+        var triggerLabel = selectedTrigger?.Name
+            ?? (sequence.TriggerObjectId is null ? "None (manual playback only)" : "Missing trigger object");
+        if (ImGui.BeginCombo("Cutscene trigger", triggerLabel))
+        {
+            if (ImGui.Selectable("None (manual playback only)", sequence.TriggerObjectId is null))
+                _owner._setSequenceTrigger(null);
+            foreach (var candidate in scene.Objects
+                         .Where(item => item.Enabled && item.BoxCollider is { IsTrigger: true }
+                             && item.TriggerAction?.Kind == SceneTriggerActionKind.ReachGoal)
+                         .OrderBy(item => item.Name, StringComparer.OrdinalIgnoreCase))
+            {
+                var isSelected = sequence.TriggerObjectId == candidate.Id;
+                if (ImGui.Selectable($"{candidate.Name}##cutscene-{candidate.Id:N}", isSelected))
+                    _owner._setSequenceTrigger(candidate.Id);
+            }
+            ImGui.EndCombo();
+        }
+        ImGui.TextWrapped("A Reach goal trigger can pause Play and start this sequence.");
+        if (ImGui.Button("Open sequence…")) _owner._openSequence();
+        ImGui.SameLine();
+        if (ImGui.Button("Save sequence…")) _owner._saveSequence();
+        if (!canEditSequence) ImGui.EndDisabled();
         if (ImGui.Button(sequence.IsPlaying ? "Pause" : "Play"))
             _owner._setSequencePlaying(!sequence.IsPlaying);
         ImGui.SameLine();
@@ -259,7 +285,7 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._sequenceExportEndTimeInitialized = true;
         }
 
-        ImGui.SetNextWindowPos(new NumericsVector2(232f, 218f));
+        ImGui.SetNextWindowPos(new NumericsVector2(232f, 300f));
         ImGui.SetNextWindowSize(new NumericsVector2(Math.Min(450f, _owner._logicalWidth * 0.5f), 330f));
         if (!ImGui.Begin("Finish film", ImGuiWindowFlags.NoCollapse | ImGuiWindowFlags.NoMove | ImGuiWindowFlags.NoResize))
         {

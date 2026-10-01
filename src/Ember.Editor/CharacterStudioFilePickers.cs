@@ -70,6 +70,43 @@ internal static class CharacterStudioFilePickers
             : null;
     }
 
+    public static string? PickSequenceFile(string? initialDirectory, IntPtr ownerHandle)
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Title = "Open a scene sequence",
+            Filter = "Ember sequence (*.sequence.json)|*.sequence.json|JSON files (*.json)|*.json",
+            FilterIndex = 1,
+            CheckFileExists = true,
+            Multiselect = false,
+            RestoreDirectory = true,
+            InitialDirectory = ExistingDirectoryOrDocuments(initialDirectory)
+        };
+        return dialog.ShowDialog(new WindowOwner(ownerHandle)) == DialogResult.OK
+            ? dialog.FileName
+            : null;
+    }
+
+    public static string? PickSequenceSaveFile(string? initialDirectory, string suggestedFileName,
+        IntPtr ownerHandle)
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Title = "Save the scene sequence",
+            Filter = "Ember sequence (*.sequence.json)|*.sequence.json|JSON files (*.json)|*.json",
+            FilterIndex = 1,
+            AddExtension = true,
+            DefaultExt = "sequence.json",
+            FileName = string.IsNullOrWhiteSpace(suggestedFileName) ? "Sequence.sequence.json" : suggestedFileName,
+            OverwritePrompt = true,
+            RestoreDirectory = true,
+            InitialDirectory = ExistingDirectoryOrDocuments(initialDirectory)
+        };
+        return dialog.ShowDialog(new WindowOwner(ownerHandle)) == DialogResult.OK
+            ? dialog.FileName
+            : null;
+    }
+
     public static string? PickSceneSaveFile(string? initialDirectory, string suggestedFileName,
         IntPtr ownerHandle)
     {

@@ -174,7 +174,8 @@ public sealed class SceneSequence
     public SceneSequence(string name, float duration,
         IEnumerable<CharacterClipTrack> characterTracks,
         IEnumerable<SequenceCameraTrack>? cameraTracks = null,
-        SequenceCameraCutTrack? cameraCuts = null)
+        SequenceCameraCutTrack? cameraCuts = null,
+        Guid? triggerObjectId = null)
     {
         if (string.IsNullOrWhiteSpace(name)) throw new ArgumentException("Sequence name is required.", nameof(name));
         if (!float.IsFinite(duration) || duration <= 0f)
@@ -188,6 +189,8 @@ public sealed class SceneSequence
             throw new ArgumentException("Character track IDs must be unique.", nameof(characterTracks));
         if (characters.Select(track => track.TargetObjectId).Distinct().Count() != characters.Length)
             throw new ArgumentException("A sequence can contain at most one character clip track per scene object.", nameof(characterTracks));
+        if (triggerObjectId == Guid.Empty)
+            throw new ArgumentException("A cutscene trigger ID cannot be empty.", nameof(triggerObjectId));
 
         var cameras = (cameraTracks ?? Array.Empty<SequenceCameraTrack>()).ToArray();
         if (cameras.Any(track => track is null)) throw new ArgumentException("Camera tracks cannot contain null entries.", nameof(cameraTracks));
@@ -207,6 +210,7 @@ public sealed class SceneSequence
         CharacterTracks = Array.AsReadOnly(characters);
         CameraTracks = Array.AsReadOnly(cameras);
         CameraCuts = cameraCuts;
+        TriggerObjectId = triggerObjectId;
         _cameraById = new ReadOnlyDictionary<Guid, SequenceCameraTrack>(cameras.ToDictionary(camera => camera.Id));
     }
 
@@ -215,6 +219,7 @@ public sealed class SceneSequence
     public ReadOnlyCollection<CharacterClipTrack> CharacterTracks { get; }
     public ReadOnlyCollection<SequenceCameraTrack> CameraTracks { get; }
     public SequenceCameraCutTrack? CameraCuts { get; }
+    public Guid? TriggerObjectId { get; }
 
     /// <summary>Resets tracked poses to rest, evaluates clips at this absolute time, and samples the active camera.</summary>
     public SceneSequenceFrame Evaluate(float time, SceneGraph scene,

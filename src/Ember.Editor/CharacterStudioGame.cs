@@ -158,6 +158,7 @@ public sealed partial class CharacterStudioGame : EngineHost
     private float _interactionVolume => _playController.InteractionVolume;
     private SceneSequence? _sequence;
     private SceneSequencePlayer? _sequencePlayer;
+    private string? _sequenceFilePath;
     private bool _sequencePreviewEnabled;
     private string? _activeSequenceCameraName;
     private SequenceFrameExportJob? _sequenceExportJob;
@@ -358,6 +359,7 @@ public sealed partial class CharacterStudioGame : EngineHost
                 TogglePlayPause, StartPlaySession, StopPlaySession, TriggerInteraction,
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
+                SetSequenceTrigger, OpenSequenceFromUi, SaveSequenceFromUi,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
                 SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
                 ApplyRecoveredProject,
@@ -407,6 +409,7 @@ public sealed partial class CharacterStudioGame : EngineHost
                 _sequence = SequenceFile.Load(sequencePath, _sceneData,
                     BuildSequenceClipCatalog(_preview.Current));
                 _sequencePlayer = new SceneSequencePlayer(_sequence);
+                _sequenceFilePath = Path.GetFullPath(sequencePath);
                 _sequencePreviewEnabled = false;
                 Console.WriteLine($"Opened sequence '{_sequence.Name}' from {Path.GetFullPath(sequencePath)}");
             }
@@ -416,6 +419,7 @@ public sealed partial class CharacterStudioGame : EngineHost
                 var sequence = _sequence
                     ?? throw new InvalidOperationException("There is no character sequence to save.");
                 SequenceFile.SaveAtomic(sequence, _sceneData, saveSequencePath);
+                _sequenceFilePath = Path.GetFullPath(saveSequencePath);
                 Console.WriteLine($"Saved sequence '{sequence.Name}' to {Path.GetFullPath(saveSequencePath)}");
             }
 
@@ -548,8 +552,9 @@ public sealed partial class CharacterStudioGame : EngineHost
         var preview = _preview?.Current;
         if (preview is not null)
         {
-            if (!sequenceExportRunning && !_playController.IsPaused)
+            if (!sequenceExportRunning && _playController.CanAdvanceScenePreview)
             {
+                var sequenceWasPlaying = _sequencePlayer?.IsPlaying == true;
                 _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 foreach (var state in preview.CharacterInstances.Values)
                     state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
@@ -557,6 +562,9 @@ public sealed partial class CharacterStudioGame : EngineHost
                     foreach (var state in pending.Resources.CharacterInstances.Values)
                         state.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 if (_sequencePreviewEnabled) ApplySequenceAtCurrentTime();
+                if (sequenceWasPlaying && _sequencePlayer is { IsPlaying: false }
+                    && _playController.IsSequenceCutsceneActive)
+                    _playController.CompleteSequenceCutscene();
             }
         }
         base.Update(gameTime);

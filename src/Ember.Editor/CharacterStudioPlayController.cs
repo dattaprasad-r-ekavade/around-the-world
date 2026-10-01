@@ -26,6 +26,9 @@ public sealed partial class CharacterStudioGame
 
         public ScenePlaySession? Session { get; private set; }
         public bool IsPaused => Session?.IsPaused == true;
+        public bool IsSequenceCutsceneActive { get; private set; }
+        public bool CanAdvanceScenePreview => !IsPaused
+            || (IsSequenceCutsceneActive && _owner._sequencePlayer?.IsPlaying == true);
         public SceneCommandHistory History { get; private set; } = new();
         public InputActionMap InputMap { get; } = new();
         public ImportedAudioClip? InteractionClip { get; set; }
@@ -37,6 +40,12 @@ public sealed partial class CharacterStudioGame
         public SceneStaticColliderSet? SceneColliders { get; set; }
         public PhysicsFixedStepper? PhysicsStepper { get; set; }
         private readonly Queue<SceneAuthoredActionEvent> _pendingWorldTravelRequests = new();
+        private bool _pendingCutsceneStart;
+        private bool _resumePlayAfterCutscene;
+        private float _cutsceneRestoreCameraDistance;
+        private float _cutsceneRestoreCameraYaw;
+        private float _cutsceneRestoreCameraPitch;
+        private Vector3 _cutsceneRestoreCameraTarget;
         private Guid? _playWorldCellId;
 
         public void StartPlaySession()
@@ -54,6 +63,9 @@ public sealed partial class CharacterStudioGame
                 var cleanupError = _owner._preview.Reload(() => PreviewResources.Load(
                     _owner.GraphicsDevice, _owner.ResolveSceneAssets(candidate.RuntimeScene), candidate.RuntimeScene));
                 SetSession(candidate);
+                IsSequenceCutsceneActive = false;
+                _resumePlayAfterCutscene = false;
+                _pendingCutsceneStart = false;
                 _playWorldCellId = _owner._editorUi?.CurrentWorldCellId;
                 _owner._editorUi?.SetPlayWorldCellId(_playWorldCellId);
                 _pendingWorldTravelRequests.Clear();
@@ -61,7 +73,7 @@ public sealed partial class CharacterStudioGame
                 InteractionClip = candidateAudio;
                 SetHistory(new SceneCommandHistory());
                 _owner._editorUi?.SetHistory(History);
-                _owner.BuildSequencePreview();
+                _owner.BuildSequencePreview(preserveCurrentSequence: true);
                 var controls = CharacterController is null
                     ? "Play clone started. Choose an enabled character in Play setup to control it; P stops and restores."
                     : "Play clone started. Configured move keys move; the configured jump key jumps; E interacts; P stops and restores.";
@@ -123,6 +135,14 @@ public sealed partial class CharacterStudioGame
 
         private void HandleAuthoredAction(SceneAuthoredActionEvent action)
         {
+            if (action.Kind == SceneTriggerActionKind.ReachGoal
+                && _owner._sequence?.TriggerObjectId == action.SceneObjectId
+                && _owner._sequencePlayer is not null)
+            {
+                _pendingCutsceneStart = true;
+                return;
+            }
+
             if (action.Kind == SceneTriggerActionKind.Open && action.Door is not null)
             {
                 _pendingWorldTravelRequests.Enqueue(action);
@@ -142,7 +162,14 @@ public sealed partial class CharacterStudioGame
 
         public void AdvanceWorldTravelRequests()
         {
-            if (Session is null || Session.IsPaused || !_pendingWorldTravelRequests.TryDequeue(out var request)) return;
+            if (Session is null || Session.IsPaused) return;
+            if (_pendingCutsceneStart)
+            {
+                _pendingCutsceneStart = false;
+                _owner.StartSequenceCutsceneFromTrigger();
+                return;
+            }
+            if (!_pendingWorldTravelRequests.TryDequeue(out var request)) return;
             if (request.Door is not { } door)
             {
                 _owner._reimportStatus = $"Open action on '{request.SceneObjectName}' has no linked door.";
@@ -477,10 +504,13 @@ public sealed partial class CharacterStudioGame
                 _playWorldCellId = null;
                 _owner._editorUi?.SetPlayWorldCellId(null);
                 _pendingWorldTravelRequests.Clear();
+                _pendingCutsceneStart = false;
+                IsSequenceCutsceneActive = false;
+                _resumePlayAfterCutscene = false;
                 InteractionClip = null;
                 _owner._sceneData.PlaySettings.ApplyInputBindings(InputMap);
                 _owner._editorUi?.SetHistory(_owner._editorHistory);
-                _owner.BuildSequencePreview();
+                _owner.BuildSequencePreview(preserveCurrentSequence: true);
                 var errors = new[] { cleanupError, sessionCleanupError }.Where(error => error is not null)
                     .Select(error => error!.Message).ToArray();
                 _owner._reimportStatus = errors.Length == 0
@@ -519,6 +549,12 @@ public sealed partial class CharacterStudioGame
             if (Session is not { } session) return;
             if (session.IsPaused)
             {
+                if (IsSequenceCutsceneActive)
+                {
+                    _resumePlayAfterCutscene = true;
+                    CompleteSequenceCutscene();
+                    return;
+                }
                 InteractionClip?.Resume();
                 session.Resume();
                 _owner._reimportStatus = "Play resumed.";
@@ -528,6 +564,59 @@ public sealed partial class CharacterStudioGame
             InteractionClip?.Pause();
             session.Pause();
             _owner._reimportStatus = "Play paused. Resume or stop to continue.";
+        }
+
+        public void BeginSequenceCutscene()
+        {
+            if (Session is not { } session || _owner._sequencePlayer is null
+                || IsSequenceCutsceneActive) return;
+
+            _cutsceneRestoreCameraDistance = _owner._camera.Distance;
+            _cutsceneRestoreCameraYaw = _owner._camera.Yaw;
+            _cutsceneRestoreCameraPitch = _owner._camera.Pitch;
+            _cutsceneRestoreCameraTarget = _owner._camera.Target;
+            _resumePlayAfterCutscene = !session.IsPaused;
+            if (!session.IsPaused)
+            {
+                InteractionClip?.Pause();
+                session.Pause();
+            }
+            IsSequenceCutsceneActive = true;
+        }
+
+        public void CancelSequenceCutscene()
+        {
+            if (!IsSequenceCutsceneActive) return;
+            CompleteSequenceCutscene();
+        }
+
+        public void CompleteSequenceCutscene()
+        {
+            if (!IsSequenceCutsceneActive) return;
+            var resumePlay = _resumePlayAfterCutscene;
+            IsSequenceCutsceneActive = false;
+            _resumePlayAfterCutscene = false;
+
+            var cleanupErrors = new List<string>();
+            try
+            {
+                _owner.RestorePlayPreviewAfterCutscene(_cutsceneRestoreCameraDistance,
+                    _cutsceneRestoreCameraYaw, _cutsceneRestoreCameraPitch,
+                    _cutsceneRestoreCameraTarget);
+            }
+            catch (Exception exception) { cleanupErrors.Add($"preview restore: {exception.Message}"); }
+
+            if (resumePlay && Session is { IsPaused: true } session)
+            {
+                try { InteractionClip?.Resume(); }
+                catch (Exception exception) { cleanupErrors.Add($"audio resume: {exception.Message}"); }
+                try { session.Resume(); }
+                catch (Exception exception) { cleanupErrors.Add($"Play resume: {exception.Message}"); }
+            }
+
+            _owner._reimportStatus = cleanupErrors.Count == 0
+                ? resumePlay ? "Cutscene finished; Play resumed." : "Cutscene finished; Play remains paused."
+                : $"Cutscene ended with cleanup issue: {string.Join("; ", cleanupErrors)}";
         }
 
         public string StartPathFollow(Guid objectId, CellPathGraph graph, CellPathRoute route)

@@ -37,6 +37,7 @@ public sealed class SequenceFileTests
             Assert.True(characterTrack.Loop);
             Assert.Equal("Walk shot", reopened.Name);
             Assert.Equal(2f, reopened.Duration);
+            Assert.Equal(fixture.TriggerId, reopened.TriggerObjectId);
 
             Assert.Equal(fixture.WideCameraId, reopened.CameraTracks[0].Id);
             Assert.Equal("Wide", reopened.CameraTracks[0].Name);
@@ -55,9 +56,33 @@ public sealed class SequenceFileTests
             Assert.Equal(CapturePose(originalPose), CapturePose(reopenedPose));
 
             var json = File.ReadAllText(sequencePath);
-            Assert.Contains("\"version\": 1", json, StringComparison.Ordinal);
+            Assert.Contains($"\"version\": {SequenceFile.CurrentVersion}", json, StringComparison.Ordinal);
             Assert.Contains(fixture.TargetId.ToString(), json, StringComparison.OrdinalIgnoreCase);
             Assert.Contains(fixture.AssetId.ToString(), json, StringComparison.OrdinalIgnoreCase);
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void VersionOneSequenceLoadsWithoutACutsceneTrigger()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var fixture = CreateFixture();
+            var path = Path.Combine(directory, "sequence.json");
+            SequenceFile.SaveAtomic(fixture.Sequence, fixture.Scene, path);
+            var document = JsonNode.Parse(File.ReadAllText(path))!;
+            document["version"] = 1;
+            document.AsObject().Remove("triggerObjectId");
+            File.WriteAllText(path, document.ToJsonString());
+
+            var reopened = SequenceFile.Load(path, fixture.Scene, fixture.ClipsByAssetId);
+
+            Assert.Null(reopened.TriggerObjectId);
         }
         finally
         {
@@ -184,15 +209,46 @@ public sealed class SequenceFileTests
         }
     }
 
+    [Fact]
+    public void InvalidCutsceneTriggerDoesNotReplaceThePreviousValidSequence()
+    {
+        var directory = NewDirectory();
+        try
+        {
+            var fixture = CreateFixture();
+            var path = Path.Combine(directory, "sequence.json");
+            SequenceFile.SaveAtomic(fixture.Sequence, fixture.Scene, path);
+            var previous = File.ReadAllText(path);
+            fixture.Scene.Find(fixture.TriggerId)!.TriggerAction =
+                new SceneTriggerActionComponent(SceneTriggerActionKind.Collect);
+
+            var exception = Assert.Throws<InvalidDataException>(() =>
+                SequenceFile.SaveAtomic(fixture.Sequence, fixture.Scene, path));
+
+            Assert.Contains("must use the Reach goal action", exception.Message, StringComparison.Ordinal);
+            Assert.Equal(previous, File.ReadAllText(path));
+        }
+        finally
+        {
+            if (Directory.Exists(directory)) Directory.Delete(directory, recursive: true);
+        }
+    }
+
     private static Fixture CreateFixture()
     {
         var character = LoadFox();
         var scene = new SceneGraph();
         var targetId = Guid.NewGuid();
         var assetId = Guid.NewGuid();
+        var triggerId = Guid.NewGuid();
         scene.Add(new SceneObject(targetId, "Actor")
         {
             GltfAsset = new GltfAssetReference(assetId, "Assets/Fox.glb")
+        });
+        scene.Add(new SceneObject(triggerId, "End cutscene trigger")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal)
         });
 
         var trackId = Guid.NewGuid();
@@ -216,12 +272,13 @@ public sealed class SequenceFileTests
             new SequenceCameraCutTrack([
                 new SequenceCameraCutKeyframe(0f, wideCameraId),
                 new SequenceCameraCutKeyframe(1f, closeCameraId)
-            ]));
+            ]),
+            triggerObjectId: triggerId);
         IReadOnlyDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> clipsByAssetId =
             new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>> { [assetId] = character.Animations };
 
         return new Fixture(scene, sequence, character, clipsByAssetId,
-            targetId, assetId, trackId, wideCameraId, closeCameraId);
+            targetId, assetId, trackId, wideCameraId, closeCameraId, triggerId);
     }
 
     private static GltfSkinnedCharacterData LoadFox() => GltfSkinnedCharacterData.Import(
@@ -241,5 +298,5 @@ public sealed class SequenceFileTests
 
     private sealed record Fixture(SceneGraph Scene, SceneSequence Sequence, GltfSkinnedCharacterData Character,
         IReadOnlyDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> ClipsByAssetId,
-        Guid TargetId, Guid AssetId, Guid TrackId, Guid WideCameraId, Guid CloseCameraId);
+        Guid TargetId, Guid AssetId, Guid TrackId, Guid WideCameraId, Guid CloseCameraId, Guid TriggerId);
 }
