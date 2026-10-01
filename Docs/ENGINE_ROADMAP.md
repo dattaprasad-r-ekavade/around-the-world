@@ -104,7 +104,7 @@ was promoted.
 | M1.4 | In progress | Dirty state; Save As; project-change and close prompts; Play isolation for character preview; path-graph recovery; extracted project/Play services and optional RPG module (E.2–E.3) | Manual close-cancel, Save As and project switch; interrupted-work recovery; repeated Play/Stop restoration | [M1](progress/M1.md) |
 | M2.1 | In progress | Box colliders; selected-collider wireframe with visually reviewed solid/trigger captures; Collect and ReachGoal actions (scene version 16); saved Open actions request linked world-door destinations and CharacterStudio Play resolves cells/spawns, carries the controlled character, and returns to the authored starting cell on Stop; optional editor modules register stable-ID behaviours with creator-facing names and owner-specific diagnostics; scene version 20 saves assignments with undo/redo, Inspector choices, Play resolution, clone/placement and template-update baselines; template updates merge source assignments, preserve local overrides, retain removed overridden objects as orphans, and support undo/redo; the earlier Open-action slice and complete 373-test suite passed hosted CI [36708744681](https://github.com/dattaprasad-r-ekavade/around-the-world/actions/runs/36708744681). What happens? panel; saved Play settings and stable player choice (scene version 18); selection-independent character control | Manual verification of door travel, collider bounds, template behaviour overrides, behaviour choices, and the complete Play workflow; current editor travel loads a single destination cell synchronously | [M2](progress/M2.md) |
 | M2.2 | In progress | CharacterStudio pauses gameplay input, physics, interactions, animation advancement and its interaction-audio voice; SequenceFile v2 saves an optional stable-ID Reach goal trigger with version-1 migration; the existing sequence tool assigns, opens and saves sequences; reaching the bound trigger in Play starts the sequence on the runtime scene copy and restores the previous player pose and camera when it ends | Run the saved open/reopen, trigger playback, player/camera restore, repeated Play/Pause/Stop and interaction-audio checks; verify no duplicate behaviour callbacks | [M2](progress/M2.md) |
-| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; registered sequences are reference-validated; scene version 21 stores stable-ID audio references; read-only preflight and `--validate-package` return scene/GLB/audio/sequence/file counts or the first dependency diagnostic; every file under `Assets/Audio` is included automatically | Build panel and executable publication; relocated playable game; run the authored package checks and visible publish workflow | [M2](progress/M2.md) |
+| M2.3 | In progress | Project-content staging; startup/cell scenes, GLBs, LOD assets and external buffer/image dependencies; world validation and packaged path data; registered sequences are reference-validated; scene version 21 stores stable-ID audio references; read-only preflight and `--validate-package` return scene/GLB/audio/sequence/file counts or diagnostics for discovered content errors; every file under `Assets/Audio` is included automatically | Build panel and executable publication; relocated playable game; run the authored package checks and visible publish workflow | [M2](progress/M2.md) |
 | E.1 | Passed | Editor code is in `src/Ember.Editor`; CharacterStudio is a thin launcher and content sample | — | [E](progress/E.md) |
 | E.2 | Passed | Feature-grouped files and independent panel/controller types; `EditorProjectSession`; largest current `Ember.Editor` C# file is 690 lines | — | [E](progress/E.md) |
 | E.3 | Passed | Generic authoring and `Ember.Editor` have no RPG assembly references; RPG validation, recovery and Placement/Dialogue/Quest authoring load from the optional module; CharacterStudio builds and starts with that module disabled | — | [E](progress/E.md) |
@@ -386,7 +386,7 @@ found in a saved capture and fixed afterward.
 | Scene/project authoring | Home starters, native pickers, asset catalog/import/reload, hierarchy, gizmos, snapping, templates/overrides/relink, undo/redo, dirty state and recovery are implemented. The tooling font is bundled with its license. | Most of the first editing loop has code and CPU coverage. Full mouse/button use, DPI and loss-prevention acceptance still need observation. |
 | Teaching | `FirstCreationLesson` detects actual editing/Play/save/reopen actions. Why?, hints, replay and project-local learning progress exist. | A coded first-creation lesson foundation; it is not the declarative mission system or career mode. |
 | Film and export foundations | Sequence evaluation, camera tracks/cuts, file serialization, playback/seek and numbered PNG export with a manifest exist. `BuildSequencePreview` constructs a sequence from the first skinned actor and fixed Wide/Close camera tracks. | Generated sequence previews and frame-export plumbing. The Film starter does not establish an editable multi-actor timeline or the M3 film gate. |
-| Packaging foundations | `EngineProjectPackage` stages validated startup/world scenes, referenced GLBs/LOD assets and their external buffers/images, stable-ID audio references, registered sequences, path files and explicit extra content. Its read-only preflight reports package counts or the first blocker. | Relocatable project content and a backend for future Build UI. It does not itself publish a playable executable. |
+| Packaging foundations | `EngineProjectPackage` stages validated startup/world scenes, referenced GLBs/LOD assets and their external buffers/images, stable-ID audio references, registered sequences, path files and explicit extra content. Its read-only preflight reports package counts or diagnostics for independently discoverable content errors. | Relocatable project content and a backend for future Build UI. It does not itself publish a playable executable. |
 
 ### Findings that affect the next work
 
@@ -654,18 +654,18 @@ slice establishes persisted asset references and dependency validation only.
 
 `EngineProjectPackage.Validate(projectFilePath)` now runs the package collector without creating a
 destination. A valid result contains scene, GLB, unique referenced-audio, sequence and package-file
-counts; an invalid result contains the first actionable dependency diagnostic. Destination validity
-remains a separate caller responsibility.
+counts; an invalid result contains actionable diagnostics for discovered content errors. Destination
+validity remains a separate caller responsibility.
 `Create()` remains the publishing boundary and independently runs the same preflight before staging
 files. Regression coverage exercises both a valid audio/sequence
-project and a missing referenced-audio diagnostic, and confirms that failure leaves the package
-destination and its parent absent. The eventual Build panel can call `Validate()` to display readiness
-before enabling publication; this API does not add editor UI or claim full diagnostic aggregation.
+project and multiple missing referenced-audio diagnostics, and confirms that failure leaves the
+package destination and its parent absent. The eventual Build panel can call `Validate()` to display
+readiness before enabling publication; this API does not add editor UI.
 
 | Check | Result |
 | --- | --- |
-| Release solution build to a temporary output directory | PASS — all projects compiled with 0 warnings and 0 errors; tests remain deferred to the owner |
-| Valid and invalid read-only preflight regression coverage | NOT RUN — test source is authored; execution is deferred to the owner |
+| Release solution build to a temporary output directory | PASS — all projects, including CharacterStudio and the test assembly, compiled with 0 warnings and 0 errors; tests remain deferred to the owner |
+| Valid, invalid and multi-error read-only preflight regression coverage | NOT RUN — test source is authored; execution is deferred to the owner |
 | MinimalGame `--validate-package` output and exit-code smoke | NOT RUN — the command was compiled but not launched; its process-level behavior remains unverified |
 | Visible Build-panel preview and publish workflow | NOT RUN — no panel was added before the M1 interaction gate |
 

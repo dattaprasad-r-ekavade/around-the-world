@@ -98,9 +98,9 @@ dotnet run -- --project C:\Games\MyEmberGamePackage\ember.project.json
 ```
 
 `--validate-package` checks the project's referenced content without writing output. It prints scene,
-GLB, referenced-audio, sequence and package-file counts when ready, or the first actionable
-dependency error and a nonzero exit code when blocked. Output destination validation remains part
-of the package/publish operation.
+GLB, referenced-audio, sequence and package-file counts when ready, or actionable diagnostics for
+discovered dependency errors and a nonzero exit code when blocked. Output destination validation
+remains part of the package/publish operation.
 
 Packaging copies the startup scene, referenced GLBs, and project-local buffer/image sidecars while
 keeping their project-relative paths.

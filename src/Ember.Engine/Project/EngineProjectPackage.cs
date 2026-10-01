@@ -22,6 +22,10 @@ public static class EngineProjectPackage
         {
             var project = EngineProjectFile.Load(projectFilePath);
             var contents = CollectPackageContent(project);
+            if (contents.Diagnostics.Count > 0)
+                return new EngineProjectPackageValidationResult(
+                    null, null, null, null, null,
+                    contents.Diagnostics.Select(diagnostic => diagnostic.Message).ToArray());
             return new EngineProjectPackageValidationResult(
                 contents.SceneCount, contents.GlbAssetCount, contents.AudioAssetCount,
                 contents.SequenceCount, contents.Files.Count, Array.Empty<string>());
@@ -49,6 +53,14 @@ public static class EngineProjectPackage
             throw new IOException($"Package destination already exists: '{destination}'.");
 
         var contents = CollectPackageContent(project);
+        if (contents.Diagnostics.Count == 1)
+            throw contents.Diagnostics[0].Exception;
+        if (contents.Diagnostics.Count > 1)
+            throw new InvalidDataException(
+                $"Cannot package project because {contents.Diagnostics.Count} dependency errors were found:" +
+                Environment.NewLine + string.Join(Environment.NewLine,
+                    contents.Diagnostics.Select(diagnostic => $"- {diagnostic.Message}")));
+
         var parentDirectory = Path.GetDirectoryName(destination)
             ?? throw new InvalidDataException("Package destination has no parent directory.");
         Directory.CreateDirectory(parentDirectory);
@@ -81,100 +93,165 @@ public static class EngineProjectPackage
         var audioPathsById = new Dictionary<Guid, string>();
         var filesByPath = new Dictionary<string, PackageFile>(StringComparer.OrdinalIgnoreCase);
         var scenesByPath = new Dictionary<string, SceneGraph>(StringComparer.OrdinalIgnoreCase);
+        var diagnostics = new List<PackageDiagnostic>();
 
         // 1. Startup scene if present
         if (project.StartupScenePath is not null)
         {
-            var startupScenePath = project.ResolveStartupScenePath();
-            var scene = SceneFile.Load(startupScenePath);
-            AddPackageFile(filesByPath, project.StartupScenePath, startupScenePath);
-            scenesByPath[project.StartupScenePath] = scene;
-            CollectSceneGlbAssets(project, scene, assetsById);
-            CollectSceneAudioAssets(project, scene, filesByPath, audioPathsById);
+            try
+            {
+                var startupScenePath = project.ResolveStartupScenePath();
+                var scene = SceneFile.Load(startupScenePath);
+                TryAddPackageFile(filesByPath, project.StartupScenePath, startupScenePath, diagnostics);
+                scenesByPath[project.StartupScenePath] = scene;
+                CollectSceneGlbAssets(project, scene, assetsById, diagnostics);
+                CollectSceneAudioAssets(project, scene, filesByPath, audioPathsById, diagnostics);
+            }
+            catch (Exception exception) when (IsPackageContentFailure(exception))
+            {
+                AddDiagnostic(diagnostics, exception);
+            }
         }
 
         // 2. World manifest if present
         if (project.WorldManifestPath is not null)
         {
-            var manifestPath = project.ResolveWorldManifestPath()!;
-            var validation = WorldProjectValidator.Validate(manifestPath);
-            if (!validation.IsValid)
-                throw new InvalidDataException(
-                    $"Cannot package project because world validation failed:{Environment.NewLine}" +
-                    string.Join(Environment.NewLine, validation.Diagnostics));
-
-            var manifest = validation.Manifest
-                ?? throw new InvalidDataException($"World validation did not load manifest '{manifestPath}'.");
-            AddPackageFile(filesByPath, project.WorldManifestPath, manifestPath);
-
-            foreach (var cell in manifest.Cells)
+            try
             {
-                var cellSceneFullPath = manifest.ResolveScenePath(cell.Id);
-                var cellSceneProjectRel = Path.GetRelativePath(project.RootDirectory, cellSceneFullPath).Replace('\\', '/');
-                AddPackageFile(filesByPath, cellSceneProjectRel, cellSceneFullPath);
+                var manifestPath = project.ResolveWorldManifestPath();
+                var validation = WorldProjectValidator.Validate(manifestPath);
+                foreach (var diagnostic in validation.Diagnostics)
+                    AddDiagnostic(diagnostics, new InvalidDataException(diagnostic.ToString()));
 
-                var cellScene = SceneFile.Load(cellSceneFullPath);
-                scenesByPath.TryAdd(cellSceneProjectRel, cellScene);
-                CollectSceneGlbAssets(project, cellScene, assetsById);
-                CollectSceneAudioAssets(project, cellScene, filesByPath, audioPathsById);
+                var manifest = validation.Manifest;
+                if (manifest is null && validation.Diagnostics.Count == 0)
+                    diagnostics.Add(new PackageDiagnostic(
+                        $"World validation did not load manifest '{manifestPath}'.",
+                        new InvalidDataException($"World validation did not load manifest '{manifestPath}'.")));
+                else if (manifest is not null)
+                {
+                    TryAddPackageFile(filesByPath, project.WorldManifestPath, manifestPath, diagnostics);
+                    foreach (var cell in manifest.Cells.OrderBy(value => value.Id))
+                    {
+                        if (!validation.Scenes.TryGetValue(cell.Id, out var cellScene)) continue;
+                        try
+                        {
+                            var cellSceneFullPath = validation.SceneFiles[cell.Id];
+                            var cellSceneProjectRel = Path.GetRelativePath(project.RootDirectory, cellSceneFullPath)
+                                .Replace('\\', '/');
+                            TryAddPackageFile(filesByPath, cellSceneProjectRel, cellSceneFullPath, diagnostics);
+                            scenesByPath.TryAdd(cellSceneProjectRel, cellScene);
+                            CollectSceneGlbAssets(project, cellScene, assetsById, diagnostics);
+                            CollectSceneAudioAssets(project, cellScene, filesByPath, audioPathsById, diagnostics);
+                        }
+                        catch (Exception exception) when (IsPackageContentFailure(exception))
+                        {
+                            AddDiagnostic(diagnostics, exception);
+                        }
+                    }
+
+                    try
+                    {
+                        foreach (var pathFile in EnumerateWorldPathFiles(manifest.RootDirectory))
+                        {
+                            var rel = Path.GetRelativePath(project.RootDirectory, pathFile).Replace('\\', '/');
+                            TryAddPackageFile(filesByPath, rel, pathFile, diagnostics);
+                        }
+                    }
+                    catch (Exception exception) when (IsPackageContentFailure(exception))
+                    {
+                        AddDiagnostic(diagnostics, exception);
+                    }
+                }
             }
-
-            foreach (var pathFile in EnumerateWorldPathFiles(manifest.RootDirectory))
+            catch (Exception exception) when (IsPackageContentFailure(exception))
             {
-                var rel = Path.GetRelativePath(project.RootDirectory, pathFile).Replace('\\', '/');
-                AddPackageFile(filesByPath, rel, pathFile);
+                AddDiagnostic(diagnostics, exception);
             }
         }
 
         // 3. Extra content if present
         foreach (var extra in project.ExtraContentPaths)
         {
-            var fullPath = project.ResolveContentPath(extra);
-            if (Directory.Exists(fullPath))
+            try
             {
-                foreach (var file in Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories))
+                var fullPath = project.ResolveContentPath(extra);
+                if (Directory.Exists(fullPath))
                 {
-                    var rel = Path.GetRelativePath(project.RootDirectory, file).Replace('\\', '/');
-                    AddPackageFile(filesByPath, rel, file);
+                    foreach (var file in Directory.EnumerateFiles(fullPath, "*", SearchOption.AllDirectories))
+                    {
+                        var rel = Path.GetRelativePath(project.RootDirectory, file).Replace('\\', '/');
+                        TryAddPackageFile(filesByPath, rel, file, diagnostics);
+                    }
                 }
+                else if (File.Exists(fullPath))
+                    TryAddPackageFile(filesByPath, extra, fullPath, diagnostics);
+                else
+                    AddDiagnostic(diagnostics, new FileNotFoundException(
+                        $"Extra content '{extra}' was not found at '{fullPath}'.", fullPath));
             }
-            else if (File.Exists(fullPath))
+            catch (Exception exception) when (IsPackageContentFailure(exception))
             {
-                AddPackageFile(filesByPath, extra, fullPath);
-            }
-            else
-            {
-                throw new FileNotFoundException($"Extra content '{extra}' was not found at '{fullPath}'.", fullPath);
+                AddDiagnostic(diagnostics, exception);
             }
         }
 
         // 3. Audio imported under the project's standard audio folder is bundled automatically.
-        foreach (var audioFile in EnumerateProjectAudioFiles(project))
+        try
         {
-            var relativePath = Path.GetRelativePath(project.RootDirectory, audioFile).Replace('\\', '/');
-            AddPackageFile(filesByPath, relativePath, audioFile);
+            foreach (var audioFile in EnumerateProjectAudioFiles(project))
+            {
+                var relativePath = Path.GetRelativePath(project.RootDirectory, audioFile).Replace('\\', '/');
+                TryAddPackageFile(filesByPath, relativePath, audioFile, diagnostics);
+            }
+        }
+        catch (Exception exception) when (IsPackageContentFailure(exception))
+        {
+            AddDiagnostic(diagnostics, exception);
         }
 
         // 4. Validate every registered sequence against the scenes and character assets being packaged.
-        ValidateSequenceFiles(filesByPath.Values, scenesByPath, assetsById);
+        ValidateSequenceFiles(filesByPath.Values, scenesByPath, assetsById, diagnostics);
 
         // 5. For each collected GLB asset, inspect external URIs (buffers/images)
         foreach (var asset in assetsById.Values)
         {
-            AddPackageFile(filesByPath, asset.Reference.SourcePath, asset.FullPath);
-            foreach (var uri in ReadExternalUris(asset.FullPath, asset.Reference, asset.ObjectId))
+            try
             {
-                if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
-                var dependencyPath = ResolveExternalDependencyPath(project, asset, uri);
-                AddPackageFile(filesByPath, dependencyPath.ProjectRelativePath, dependencyPath.FullPath);
+                TryAddPackageFile(filesByPath, asset.Reference.SourcePath, asset.FullPath, diagnostics);
+                foreach (var uri in ReadExternalUris(asset.FullPath, asset.Reference, asset.ObjectId))
+                {
+                    if (uri.StartsWith("data:", StringComparison.OrdinalIgnoreCase)) continue;
+                    try
+                    {
+                        var dependencyPath = ResolveExternalDependencyPath(project, asset, uri);
+                        TryAddPackageFile(filesByPath, dependencyPath.ProjectRelativePath,
+                            dependencyPath.FullPath, diagnostics);
+                    }
+                    catch (Exception exception) when (IsPackageContentFailure(exception))
+                    {
+                        AddDiagnostic(diagnostics, exception);
+                    }
+                }
+            }
+            catch (Exception exception) when (IsPackageContentFailure(exception))
+            {
+                AddDiagnostic(diagnostics, exception);
             }
         }
 
         // 6. Optional notices
-        const string noticesRelativePath = "ThirdPartyNotices.txt";
-        var noticesPath = project.ResolveContentPath(noticesRelativePath);
-        if (File.Exists(noticesPath))
-            AddPackageFile(filesByPath, noticesRelativePath, noticesPath);
+        try
+        {
+            const string noticesRelativePath = "ThirdPartyNotices.txt";
+            var noticesPath = project.ResolveContentPath(noticesRelativePath);
+            if (File.Exists(noticesPath))
+                TryAddPackageFile(filesByPath, noticesRelativePath, noticesPath, diagnostics);
+        }
+        catch (Exception exception) when (IsPackageContentFailure(exception))
+        {
+            AddDiagnostic(diagnostics, exception);
+        }
 
         var files = filesByPath.Values
             .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
@@ -182,7 +259,9 @@ public static class EngineProjectPackage
         var sequenceCount = files.Count(file =>
             file.ProjectRelativePath.EndsWith(".sequence.json", StringComparison.OrdinalIgnoreCase));
         return new PackageContents(files, scenesByPath.Count, assetsById.Count,
-            audioPathsById.Count, sequenceCount);
+            audioPathsById.Count, sequenceCount, diagnostics
+                .OrderBy(diagnostic => diagnostic.Message, StringComparer.Ordinal)
+                .ToArray());
     }
 
     private static IEnumerable<string> EnumerateProjectAudioFiles(EngineProjectFile project)
@@ -205,37 +284,54 @@ public static class EngineProjectPackage
         EngineProjectFile project,
         SceneGraph scene,
         IDictionary<string, PackageFile> filesByPath,
-        IDictionary<Guid, string> pathsByAssetId)
+        IDictionary<Guid, string> pathsByAssetId,
+        List<PackageDiagnostic> diagnostics)
     {
         foreach (var reference in scene.AudioAssets)
         {
-            if (pathsByAssetId.TryGetValue(reference.AssetId, out var existingPath)
-                && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException(
-                    $"Audio asset ID {reference.AssetId} refers to both '{existingPath}' and '{reference.SourcePath}'.");
-            pathsByAssetId.TryAdd(reference.AssetId, reference.SourcePath);
-
-            string fullPath;
             try
             {
-                fullPath = project.ResolveContentPath(reference.SourcePath);
+                if (pathsByAssetId.TryGetValue(reference.AssetId, out var existingPath)
+                    && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                    AddDiagnostic(diagnostics, new InvalidDataException(
+                        $"Audio asset ID {reference.AssetId} refers to both '{existingPath}' and '{reference.SourcePath}'."));
+                pathsByAssetId.TryAdd(reference.AssetId, reference.SourcePath);
+
+                string fullPath;
+                try
+                {
+                    fullPath = project.ResolveContentPath(reference.SourcePath);
+                }
+                catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
+                {
+                    AddDiagnostic(diagnostics, new InvalidDataException(
+                        $"Scene audio asset {reference.AssetId} has invalid project-relative path '{reference.SourcePath}': {exception.Message}",
+                        exception));
+                    continue;
+                }
+
+                if (!File.Exists(fullPath))
+                {
+                    AddDiagnostic(diagnostics, new FileNotFoundException(
+                        $"Scene audio asset {reference.AssetId} is missing at project-relative path '{reference.SourcePath}'.",
+                        fullPath));
+                    continue;
+                }
+                if (HasReparsePointInPath(project.RootDirectory, fullPath))
+                {
+                    AddDiagnostic(diagnostics, new InvalidDataException(
+                        $"Scene audio asset {reference.AssetId} at '{reference.SourcePath}' cannot be a symbolic link or junction."));
+                    continue;
+                }
+
+                TryAddPackageFile(filesByPath, reference.SourcePath, fullPath, diagnostics);
             }
-            catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
+            catch (Exception exception) when (IsPackageContentFailure(exception))
             {
-                throw new InvalidDataException(
-                    $"Scene audio asset {reference.AssetId} has invalid project-relative path '{reference.SourcePath}': {exception.Message}",
-                    exception);
+                AddDiagnostic(diagnostics, new InvalidDataException(
+                    $"Scene audio asset {reference.AssetId} at '{reference.SourcePath}' could not be checked: {exception.Message}",
+                    exception));
             }
-
-            if (!File.Exists(fullPath))
-                throw new FileNotFoundException(
-                    $"Scene audio asset {reference.AssetId} is missing at project-relative path '{reference.SourcePath}'.",
-                    fullPath);
-            if (HasReparsePointInPath(project.RootDirectory, fullPath))
-                throw new InvalidDataException(
-                    $"Scene audio asset {reference.AssetId} at '{reference.SourcePath}' cannot be a symbolic link or junction.");
-
-            AddPackageFile(filesByPath, reference.SourcePath, fullPath);
         }
     }
 
@@ -257,135 +353,147 @@ public static class EngineProjectPackage
     private static void ValidateSequenceFiles(
         IEnumerable<PackageFile> files,
         IReadOnlyDictionary<string, SceneGraph> scenesByPath,
-        IReadOnlyDictionary<Guid, PackageAsset> assetsById)
+        IReadOnlyDictionary<Guid, PackageAsset> assetsById,
+        List<PackageDiagnostic> diagnostics)
     {
         var scenes = scenesByPath.ToArray();
         var clipCatalogByAssetId = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
         foreach (var file in files.Where(file =>
                      file.ProjectRelativePath.EndsWith(".sequence.json", StringComparison.OrdinalIgnoreCase)))
         {
-            SequenceFile.FileDependencies dependencies;
             try
             {
-                dependencies = SequenceFile.ReadDependencies(file.FullPath);
+                ValidateSequenceFile(file, scenes, assetsById, clipCatalogByAssetId);
             }
-            catch (Exception exception)
+            catch (Exception exception) when (IsPackageContentFailure(exception))
             {
-                throw new InvalidDataException(
-                    $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
+                var message = exception.Message.Contains(file.ProjectRelativePath, StringComparison.OrdinalIgnoreCase)
+                    ? exception.Message
+                    : $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}";
+                AddDiagnostic(diagnostics, new InvalidDataException(message, exception));
             }
+        }
+    }
 
-            var candidates = scenes.Where(scene =>
-            {
-                var hasTracks = dependencies.CharacterTracks.All(track =>
-                    scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId);
-                var hasTrigger = dependencies.TriggerObjectId is not { } triggerId
-                    || scene.Value.Find(triggerId) is not null;
-                return hasTracks && hasTrigger;
-            }).ToArray();
+    private static void ValidateSequenceFile(
+        PackageFile file,
+        IReadOnlyList<KeyValuePair<string, SceneGraph>> scenes,
+        IReadOnlyDictionary<Guid, PackageAsset> assetsById,
+        IDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> clipCatalogByAssetId)
+    {
+        SequenceFile.FileDependencies dependencies;
+        try
+        {
+            dependencies = SequenceFile.ReadDependencies(file.FullPath);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidDataException(
+                $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
+        }
 
-            if (dependencies.CharacterTracks.Count == 0 && dependencies.TriggerObjectId is null)
-                candidates = scenes.Take(1).ToArray();
+        var candidates = scenes.Where(scene =>
+        {
+            var hasTracks = dependencies.CharacterTracks.All(track =>
+                scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId);
+            var hasTrigger = dependencies.TriggerObjectId is not { } triggerId
+                || scene.Value.Find(triggerId) is not null;
+            return hasTracks && hasTrigger;
+        }).ToArray();
 
-            if (candidates.Length == 0)
-            {
-                var missingTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
-                    !scenes.Any(scene => scene.Value.Find(track.TargetObjectId) is not null));
-                if (missingTrack is not null)
-                    throw new InvalidDataException(
-                        $"Sequence '{file.ProjectRelativePath}' track {missingTrack.TrackId} refers to scene object {missingTrack.TargetObjectId}, which is not in any packaged scene.");
+        if (dependencies.CharacterTracks.Count == 0 && dependencies.TriggerObjectId is null)
+            candidates = scenes.Take(1).ToArray();
 
-                var mismatchedTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
-                    !scenes.Any(scene => scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId));
-                if (mismatchedTrack is not null)
-                    throw new InvalidDataException(
-                        $"Sequence '{file.ProjectRelativePath}' track {mismatchedTrack.TrackId} expects asset {mismatchedTrack.AssetId} on scene object {mismatchedTrack.TargetObjectId}, but no packaged scene has that assignment.");
-
-                if (dependencies.TriggerObjectId is { } missingTrigger
-                    && !scenes.Any(scene => scene.Value.Find(missingTrigger) is not null))
-                    throw new InvalidDataException(
-                        $"Sequence '{file.ProjectRelativePath}' cutscene trigger {missingTrigger} is not in any packaged scene.");
-
+        if (candidates.Length == 0)
+        {
+            var missingTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
+                !scenes.Any(scene => scene.Value.Find(track.TargetObjectId) is not null));
+            if (missingTrack is not null)
                 throw new InvalidDataException(
-                    $"Sequence '{file.ProjectRelativePath}' does not resolve all of its scene references in one packaged scene.");
-            }
+                    $"Sequence '{file.ProjectRelativePath}' track {missingTrack.TrackId} refers to scene object {missingTrack.TargetObjectId}, which is not in any packaged scene.");
 
-            if (candidates.Length > 1)
+            var mismatchedTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
+                !scenes.Any(scene => scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId));
+            if (mismatchedTrack is not null)
                 throw new InvalidDataException(
-                    $"Sequence '{file.ProjectRelativePath}' is ambiguous because its scene object IDs match more than one packaged scene.");
+                    $"Sequence '{file.ProjectRelativePath}' track {mismatchedTrack.TrackId} expects asset {mismatchedTrack.AssetId} on scene object {mismatchedTrack.TargetObjectId}, but no packaged scene has that assignment.");
 
-            var clipsByAssetId = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
-            foreach (var track in dependencies.CharacterTracks)
+            if (dependencies.TriggerObjectId is { } missingTrigger
+                && !scenes.Any(scene => scene.Value.Find(missingTrigger) is not null))
+                throw new InvalidDataException(
+                    $"Sequence '{file.ProjectRelativePath}' cutscene trigger {missingTrigger} is not in any packaged scene.");
+
+            throw new InvalidDataException(
+                $"Sequence '{file.ProjectRelativePath}' does not resolve all of its scene references in one packaged scene.");
+        }
+
+        if (candidates.Length > 1)
+            throw new InvalidDataException(
+                $"Sequence '{file.ProjectRelativePath}' is ambiguous because its scene object IDs match more than one packaged scene.");
+
+        var clipsByAssetId = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
+        foreach (var track in dependencies.CharacterTracks)
+        {
+            if (!assetsById.TryGetValue(track.AssetId, out var asset))
+                throw new InvalidDataException(
+                    $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} refers to asset {track.AssetId}, which is not included by any packaged scene.");
+            if (!clipCatalogByAssetId.TryGetValue(track.AssetId, out var clips))
             {
-                if (!assetsById.TryGetValue(track.AssetId, out var asset))
-                    throw new InvalidDataException(
-                        $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} refers to asset {track.AssetId}, which is not included by any packaged scene.");
-                if (!clipCatalogByAssetId.TryGetValue(track.AssetId, out var clips))
+                try
                 {
-                    try
-                    {
-                        clips = GltfSkinnedCharacterData.Import(ModelRoot.Load(asset.FullPath)).Animations;
-                        clipCatalogByAssetId.Add(track.AssetId, clips);
-                    }
-                    catch (Exception exception)
-                    {
-                        throw new InvalidDataException(
-                            $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} cannot load character asset '{asset.Reference.SourcePath}': {exception.Message}",
-                            exception);
-                    }
+                    clips = GltfSkinnedCharacterData.Import(ModelRoot.Load(asset.FullPath)).Animations;
+                    clipCatalogByAssetId.Add(track.AssetId, clips);
                 }
-                clipsByAssetId[track.AssetId] = clips;
+                catch (Exception exception)
+                {
+                    throw new InvalidDataException(
+                        $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} cannot load character asset '{asset.Reference.SourcePath}': {exception.Message}",
+                        exception);
+                }
             }
+            clipsByAssetId[track.AssetId] = clips;
+        }
 
-            try
-            {
-                _ = SequenceFile.Load(file.FullPath, candidates[0].Value, clipsByAssetId);
-            }
-            catch (Exception exception)
-            {
-                throw new InvalidDataException(
-                    $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
-            }
+        try
+        {
+            _ = SequenceFile.Load(file.FullPath, candidates[0].Value, clipsByAssetId);
+        }
+        catch (Exception exception)
+        {
+            throw new InvalidDataException(
+                $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
         }
     }
 
     private static void CollectSceneGlbAssets(
         EngineProjectFile project,
         SceneGraph scene,
-        IDictionary<Guid, PackageAsset> assetsById)
+        IDictionary<Guid, PackageAsset> assetsById,
+        List<PackageDiagnostic> diagnostics)
     {
         foreach (var item in scene.Objects)
         foreach (var reference in EnumerateAssetReferences(item))
         {
-            string fullPath;
             try
             {
-                fullPath = project.ResolveContentPath(reference.SourcePath);
+                var fullPath = project.ResolveContentPath(reference.SourcePath);
+
+                if (!File.Exists(fullPath))
+                    throw new FileNotFoundException(
+                        $"Scene object {item.Id} references missing GLB asset {reference.AssetId} at project-relative path '{reference.SourcePath}' resolved to '{fullPath}'.",
+                        fullPath);
+
+                if (assetsById.TryGetValue(reference.AssetId, out var existing)
+                    && !string.Equals(existing.Reference.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                    throw new InvalidDataException(
+                        $"Scene object {item.Id} refers to GLB asset {reference.AssetId} at '{reference.SourcePath}', which conflicts with '{existing.Reference.SourcePath}'.");
+
+                assetsById.TryAdd(reference.AssetId, new PackageAsset(reference, fullPath, item.Id));
             }
-            catch (ArgumentException exception)
+            catch (Exception exception) when (IsPackageContentFailure(exception))
             {
-                throw new InvalidDataException(
-                    $"Scene object {item.Id} references invalid GLB asset {reference.AssetId} at project-relative path '{reference.SourcePath}': {exception.Message}",
-                    exception);
+                AddDiagnostic(diagnostics, exception);
             }
-            catch (InvalidDataException exception)
-            {
-                throw new InvalidDataException(
-                    $"Scene object {item.Id} references invalid GLB asset {reference.AssetId} at project-relative path '{reference.SourcePath}': {exception.Message}",
-                    exception);
-            }
-
-            if (!File.Exists(fullPath))
-                throw new FileNotFoundException(
-                    $"Scene object {item.Id} references missing GLB asset {reference.AssetId} at project-relative path '{reference.SourcePath}' resolved to '{fullPath}'.",
-                    fullPath);
-
-            if (assetsById.TryGetValue(reference.AssetId, out var existing)
-                && !string.Equals(existing.Reference.SourcePath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
-                throw new InvalidDataException(
-                    $"Scene object {item.Id} refers to GLB asset {reference.AssetId} at '{reference.SourcePath}', which conflicts with '{existing.Reference.SourcePath}'.");
-
-            assetsById.TryAdd(reference.AssetId, new PackageAsset(reference, fullPath, item.Id));
         }
     }
 
@@ -517,6 +625,31 @@ public static class EngineProjectPackage
         files.Add(normalizedPath, new PackageFile(normalizedPath, fullPath));
     }
 
+    private static void TryAddPackageFile(IDictionary<string, PackageFile> files, string projectRelativePath,
+        string fullPath, List<PackageDiagnostic> diagnostics)
+    {
+        try
+        {
+            AddPackageFile(files, projectRelativePath, fullPath);
+        }
+        catch (Exception exception) when (IsPackageContentFailure(exception))
+        {
+            AddDiagnostic(diagnostics, exception);
+        }
+    }
+
+    private static void AddDiagnostic(List<PackageDiagnostic> diagnostics, Exception exception)
+    {
+        if (diagnostics.Any(diagnostic =>
+                string.Equals(diagnostic.Message, exception.Message, StringComparison.Ordinal)))
+            return;
+        diagnostics.Add(new PackageDiagnostic(exception.Message, exception));
+    }
+
+    private static bool IsPackageContentFailure(Exception exception) =>
+        exception is IOException or InvalidDataException or JsonException or UnauthorizedAccessException
+            or ArgumentException or InvalidOperationException or NotSupportedException or UriFormatException;
+
     private static IEnumerable<string> EnumerateWorldPathFiles(string worldRoot)
     {
         foreach (var directoryName in new[] { "Paths", "Navigation" })
@@ -549,7 +682,9 @@ public static class EngineProjectPackage
     private sealed record PackageAsset(GltfAssetReference Reference, string FullPath, Guid ObjectId);
     private sealed record PackageFile(string ProjectRelativePath, string FullPath);
     private sealed record PackageContents(IReadOnlyList<PackageFile> Files, int SceneCount,
-        int GlbAssetCount, int AudioAssetCount, int SequenceCount);
+        int GlbAssetCount, int AudioAssetCount, int SequenceCount,
+        IReadOnlyList<PackageDiagnostic> Diagnostics);
+    private sealed record PackageDiagnostic(string Message, Exception Exception);
 }
 
 public sealed record EngineProjectPackageResult(

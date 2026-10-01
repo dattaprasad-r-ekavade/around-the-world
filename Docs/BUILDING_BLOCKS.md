@@ -562,9 +562,9 @@ file there, plus any audio file directly referenced by a packaged scene.
 
 Call `EngineProjectPackage.Validate(projectFilePath)` to check dependency readiness without creating
 files. It returns loaded-scene, referenced-GLB, unique referenced-audio, sequence, and package-file
-counts, or the first actionable dependency diagnostic. It does not check an output destination; the
-caller must validate that separately. `Create()` repeats dependency preflight before staging and only
-publishes when the complete dependency graph is valid.
+counts, or actionable diagnostics for all discovered content errors. It does not check an output
+destination; the caller must validate that separately. `Create()` repeats dependency preflight before
+staging and only publishes when the complete dependency graph is valid.
 
 Scene audio references are package metadata, not a playback component. Register them with
 `scene.SetAudioAssets([new SceneAudioAssetReference(assetId, "Assets/Audio/step.wav")])`; playback

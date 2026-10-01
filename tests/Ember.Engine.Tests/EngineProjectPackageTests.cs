@@ -349,6 +349,51 @@ public sealed class EngineProjectPackageTests
     }
 
     [Fact]
+    public void PackagePreflightReportsEveryMissingAudioReferenceBeforeCreatingOutput()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var packagePath = Path.Combine(root, "output", "BrokenPackage");
+            var scenePath = Path.Combine(sourceRoot, "Content", "Scenes", "Start.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+            var references = new[]
+            {
+                new SceneAudioAssetReference(Guid.NewGuid(), "Assets/Audio/Footsteps.wav"),
+                new SceneAudioAssetReference(Guid.NewGuid(), "Assets/Audio/Theme.ogg"),
+                new SceneAudioAssetReference(Guid.NewGuid(), "Content/Audio/Voice.wav")
+            };
+            var scene = new SceneGraph();
+            scene.SetAudioAssets(references);
+            SceneFile.SaveAtomic(scene, scenePath);
+            var projectPath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectPath, "Content/Scenes/Start.json");
+
+            var validation = EngineProjectPackage.Validate(projectPath);
+
+            Assert.False(validation.IsValid);
+            Assert.Equal(references.Length, validation.Diagnostics.Count);
+            foreach (var reference in references)
+                Assert.Contains(validation.Diagnostics,
+                    diagnostic => diagnostic.Contains(reference.AssetId.ToString(), StringComparison.OrdinalIgnoreCase)
+                                  && diagnostic.Contains(reference.SourcePath, StringComparison.Ordinal));
+
+            var exception = Assert.Throws<InvalidDataException>(() =>
+                EngineProjectPackage.Create(projectPath, packagePath));
+
+            foreach (var reference in references)
+                Assert.Contains(reference.AssetId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.False(Directory.Exists(packagePath));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(packagePath)!));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void PackageRejectsRegisteredSequenceWithMissingSceneObjectBeforeCreatingOutput()
     {
         var root = NewDirectory();
