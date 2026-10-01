@@ -65,6 +65,27 @@ public sealed class SceneFileTests
     }
 
     [Fact]
+    public void SaveAndLoadPreservesStableAudioAssetReferencesAndRequiresSceneVersionTwentyOne()
+    {
+        var assetId = Guid.Parse("30303030-3030-3030-3030-303030303030");
+        var scene = new SceneGraph();
+        scene.SetAudioAssets([new SceneAudioAssetReference(assetId, @"Assets\Audio\.\Footstep.wav")]);
+
+        var json = SceneFile.ToJson(scene);
+        var loaded = SceneFile.FromJson(json);
+        var reference = Assert.Single(loaded.AudioAssets);
+        var olderVersionJson = json.Replace($"\"Version\": {SceneFile.CurrentVersion}",
+            "\"Version\": 20", StringComparison.Ordinal);
+
+        Assert.Contains($"\"Version\": {SceneFile.CurrentVersion}", json, StringComparison.Ordinal);
+        Assert.Equal(assetId, reference.AssetId);
+        Assert.Equal("Assets/Audio/Footstep.wav", reference.SourcePath);
+        Assert.Throws<InvalidDataException>(() => SceneFile.FromJson(olderVersionJson));
+        Assert.Throws<ArgumentException>(() =>
+            new SceneAudioAssetReference(Guid.NewGuid(), "../outside/footstep.wav"));
+    }
+
+    [Fact]
     public void SaveAndLoadPreservesTriggerActionAndRequiresTriggerCollider()
     {
         var objectId = Guid.NewGuid();

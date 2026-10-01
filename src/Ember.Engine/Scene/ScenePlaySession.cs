@@ -170,6 +170,7 @@ public static class SceneGraphCloner
     {
         ArgumentNullException.ThrowIfNull(source);
         var clone = new SceneGraph { PlaySettings = source.PlaySettings };
+        clone.SetAudioAssets(source.AudioAssets);
         foreach (var item in source.Objects)
         {
             var copy = new SceneObject(item.Id, item.Name)

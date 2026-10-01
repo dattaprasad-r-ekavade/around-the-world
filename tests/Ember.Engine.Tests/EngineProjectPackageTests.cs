@@ -29,15 +29,20 @@ public sealed class EngineProjectPackageTests
             var noticesPath = Path.Combine(sourceRoot, "ThirdPartyNotices.txt");
             var audioRelativePath = "Assets/Audio/Intro.wav";
             var audioPath = Path.Combine(sourceRoot, audioRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            var referencedAudioRelativePath = "Content/Audio/Theme.wav";
+            var referencedAudioPath = Path.Combine(sourceRoot,
+                referencedAudioRelativePath.Replace('/', Path.DirectorySeparatorChar));
             var sequenceRelativePath = "Content/Sequences/Intro.sequence.json";
             var sequencePath = Path.Combine(sourceRoot, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(referencedPath)!);
             Directory.CreateDirectory(Path.GetDirectoryName(audioPath)!);
+            Directory.CreateDirectory(Path.GetDirectoryName(referencedAudioPath)!);
             Directory.CreateDirectory(Path.GetDirectoryName(sequencePath)!);
             var foxPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Fox.glb");
             File.Copy(foxPath, referencedPath);
             File.WriteAllBytes(unusedPath, [5, 6, 7, 8]);
             File.WriteAllBytes(audioPath, [31, 32, 33, 34]);
+            File.WriteAllBytes(referencedAudioPath, [41, 42, 43, 44]);
             File.WriteAllText(noticesPath, "Fox attribution and license notice.");
 
             var objectId = Guid.NewGuid();
@@ -45,6 +50,8 @@ public sealed class EngineProjectPackageTests
             var startupScenePath = Path.Combine(sourceRoot, "Content", "Scenes", "Start.json");
             Directory.CreateDirectory(Path.GetDirectoryName(startupScenePath)!);
             var scene = new SceneGraph();
+            var audioAssetId = Guid.NewGuid();
+            scene.SetAudioAssets([new SceneAudioAssetReference(audioAssetId, referencedAudioRelativePath)]);
             scene.Add(new SceneObject(objectId, "Hero")
             {
                 GltfAsset = new GltfAssetReference(assetId, "Content/Models/hero.glb")
@@ -67,10 +74,13 @@ public sealed class EngineProjectPackageTests
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Scenes", "Start.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));
             Assert.True(File.Exists(Path.Combine(packagePath, audioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+            Assert.True(File.Exists(Path.Combine(packagePath, referencedAudioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.True(File.Exists(Path.Combine(packagePath, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.Equal(sequenceRelativePath, Assert.Single(project.ExtraContentPaths));
             Assert.Equal(File.ReadAllBytes(audioPath),
                 File.ReadAllBytes(Path.Combine(packagePath, audioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+            Assert.Equal(File.ReadAllBytes(referencedAudioPath),
+                File.ReadAllBytes(Path.Combine(packagePath, referencedAudioRelativePath.Replace('/', Path.DirectorySeparatorChar))));
             Assert.False(File.Exists(Path.Combine(packagePath, "Content", "Models", "unused.glb")));
             Assert.Equal(File.ReadAllText(noticesPath), File.ReadAllText(Path.Combine(packagePath, "ThirdPartyNotices.txt")));
             Assert.Equal(File.ReadAllBytes(referencedPath),
@@ -82,6 +92,9 @@ public sealed class EngineProjectPackageTests
             Assert.True(File.Exists(movedProject.ResolveContentPath(sequenceRelativePath)));
             var movedScene = SceneFile.Load(movedProject.ResolveStartupScenePath());
             Assert.Equal(objectId, Assert.Single(movedScene.Objects).Id);
+            var movedAudio = Assert.Single(movedScene.AudioAssets);
+            Assert.Equal(audioAssetId, movedAudio.AssetId);
+            Assert.True(File.Exists(movedProject.ResolveContentPath(movedAudio.SourcePath)));
             Assert.True(File.Exists(movedProject.ResolveContentPath("Content/Models/hero.glb")));
             Assert.Equal(File.ReadAllBytes(audioPath),
                 File.ReadAllBytes(movedProject.ResolveContentPath(audioRelativePath)));
@@ -252,6 +265,37 @@ public sealed class EngineProjectPackageTests
             Assert.Contains(assetId.ToString(), error.Message, StringComparison.Ordinal);
             Assert.Contains("Content/Missing/hero.glb", error.Message, StringComparison.Ordinal);
             Assert.False(Directory.Exists(packagePath));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PackageRejectsMissingReferencedAudioBeforeCreatingOutput()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var packagePath = Path.Combine(root, "output", "StarterPackage");
+            var scenePath = Path.Combine(sourceRoot, "Content", "Scenes", "Start.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+            var assetId = Guid.NewGuid();
+            var scene = new SceneGraph();
+            scene.SetAudioAssets([new SceneAudioAssetReference(assetId, "Assets/Audio/Missing.wav")]);
+            SceneFile.SaveAtomic(scene, scenePath);
+            EngineProjectFile.SaveAtomic(Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName),
+                "Content/Scenes/Start.json");
+
+            var exception = Assert.Throws<FileNotFoundException>(() =>
+                EngineProjectPackage.Create(Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName), packagePath));
+
+            Assert.Contains(assetId.ToString(), exception.Message, StringComparison.OrdinalIgnoreCase);
+            Assert.Contains("Assets/Audio/Missing.wav", exception.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(packagePath));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(packagePath)!));
         }
         finally
         {

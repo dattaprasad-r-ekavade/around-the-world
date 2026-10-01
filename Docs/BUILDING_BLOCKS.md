@@ -543,9 +543,13 @@ from the same directory and rejects paths that escape the project root. Characte
 GLBs from the project root, regardless of the process working directory.
 
 `EngineProjectPackage.Create()` writes a portable project folder containing its project file,
-startup scene, referenced GLBs, and any project-local buffer/image files named by GLB URIs. Missing
-or out-of-root dependencies report the scene object ID, asset ID, and path. Remote external URIs
-are rejected, and the destination must not already exist. If the project root contains an optional
+startup and world-cell scenes, referenced GLBs and audio, and any project-local buffer/image files
+named by GLB URIs. Scene audio references use stable IDs and project-relative paths in scene version
+21; `SceneGraph.SetAudioAssets()` rejects duplicate IDs and paths. Missing referenced audio reports
+its asset ID and path before the output directory is created. Every file under `Assets/Audio` is also
+copied automatically. Missing or out-of-root dependencies report the owning scene object or asset
+ID and path. Remote external URIs are rejected, and the destination must not already exist. If the
+project root contains an optional
 `ThirdPartyNotices.txt`, the package preserves it beside the project file for bundled asset credits
 and licenses. `EngineProjectFile.RegisterExtraContentPath()` atomically registers an existing
 project-relative file or folder for packaging. CharacterStudio uses it when a sequence is saved
@@ -553,9 +557,12 @@ inside an open project, so the sequence JSON travels with the packaged project; 
 outside the project is not included. Before staging, the package validates registered
 `.sequence.json` files against a single packaged scene, its skinned GLBs and animation clips, camera
 tracks, and optional Reach goal trigger. Missing or ambiguous references stop publication before
-the output directory is created. Files under `Assets/Audio` are copied recursively, and new projects
-create that folder. The scene format does not yet store audio references, so package preflight cannot
-report a missing referenced sound or exclude unused files.
+the output directory is created. New projects create `Assets/Audio`; package creation copies every
+file there, plus any audio file directly referenced by a packaged scene.
+
+Scene audio references are package metadata, not a playback component. Register them with
+`scene.SetAudioAssets([new SceneAudioAssetReference(assetId, "Assets/Audio/step.wav")])`; playback
+still uses `ImportedAudioClip` and a `SceneBehaviour` until editor audio authoring is implemented.
 
 `tools/new-engine-project.ps1` generates `templates/MinimalGame` into an empty external directory.
 The generated `Directory.Build.props` points to the selected Ember checkout's

@@ -15,7 +15,7 @@ namespace Ember.Scene;
 /// <summary>Versioned JSON persistence for scene identity, hierarchy, and transforms.</summary>
 public static class SceneFile
 {
-    public const int CurrentVersion = 20;
+    public const int CurrentVersion = 21;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -82,12 +82,15 @@ public static class SceneFile
             throw new InvalidDataException("Scene play settings require scene version 17.");
         if (document.Version < 18 && document.PlaySettings?.PlayerObjectId is not null)
             throw new InvalidDataException("Scene player assignment requires scene version 18.");
+        ValidateAudioAssets(document.AudioAssets, document.Version);
         foreach (var data in document.Objects) ValidateData(data, document.Version);
         ValidateAssetReferences(document.Objects);
         ValidateAttachmentIds(document.Objects);
         ValidateWorldEntityInstanceIds(document.Objects);
 
         var scene = new SceneGraph();
+        scene.SetAudioAssets((document.AudioAssets ?? new List<SceneAudioAssetData>())
+            .Select(data => new SceneAudioAssetReference(data.AssetId, data.SourcePath!)));
         var parents = new Dictionary<Guid, Guid?>();
         foreach (var data in document.Objects)
         {
@@ -192,8 +195,40 @@ public static class SceneFile
         {
             Version = CurrentVersion,
             PlaySettings = ToPlaySettingsData(scene.PlaySettings),
+            AudioAssets = scene.AudioAssets.Count == 0
+                ? null
+                : scene.AudioAssets.Select(value => new SceneAudioAssetData
+                {
+                    AssetId = value.AssetId,
+                    SourcePath = value.SourcePath
+                }).ToList(),
             Objects = objects
         };
+    }
+
+    private static void ValidateAudioAssets(List<SceneAudioAssetData>? audioAssets, int documentVersion)
+    {
+        if (documentVersion < 21 && audioAssets is { Count: > 0 })
+            throw new InvalidDataException("Scene audio asset references require scene version 21.");
+
+        var ids = new HashSet<Guid>();
+        var paths = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var data in audioAssets ?? Enumerable.Empty<SceneAudioAssetData>())
+        {
+            if (data is null) throw new InvalidDataException("Scene audio asset list cannot contain null entries.");
+            try
+            {
+                var reference = new SceneAudioAssetReference(data.AssetId, data.SourcePath!);
+                if (!ids.Add(reference.AssetId))
+                    throw new InvalidDataException($"Scene repeats audio asset ID {reference.AssetId}.");
+                if (!paths.Add(reference.SourcePath))
+                    throw new InvalidDataException($"Scene repeats audio asset path '{reference.SourcePath}'.");
+            }
+            catch (ArgumentException exception)
+            {
+                throw new InvalidDataException($"Scene has an invalid audio asset reference: {exception.Message}", exception);
+            }
+        }
     }
 
     private static ScenePlaySettings ToPlaySettings(ScenePlaySettingsData? data)
@@ -962,7 +997,14 @@ public static class SceneFile
     {
         public int Version { get; set; }
         public ScenePlaySettingsData? PlaySettings { get; set; }
+        public List<SceneAudioAssetData>? AudioAssets { get; set; }
         public List<SceneObjectData>? Objects { get; set; }
+    }
+
+    private sealed class SceneAudioAssetData
+    {
+        public Guid AssetId { get; set; }
+        public string? SourcePath { get; set; }
     }
 
     private sealed class ScenePlaySettingsData

@@ -53,6 +53,7 @@ public static class EngineProjectPackage
     private static PackageContents CollectPackageContent(EngineProjectFile project)
     {
         var assetsById = new Dictionary<Guid, PackageAsset>();
+        var audioPathsById = new Dictionary<Guid, string>();
         var filesByPath = new Dictionary<string, PackageFile>(StringComparer.OrdinalIgnoreCase);
         var scenesByPath = new Dictionary<string, SceneGraph>(StringComparer.OrdinalIgnoreCase);
 
@@ -64,6 +65,7 @@ public static class EngineProjectPackage
             AddPackageFile(filesByPath, project.StartupScenePath, startupScenePath);
             scenesByPath[project.StartupScenePath] = scene;
             CollectSceneGlbAssets(project, scene, assetsById);
+            CollectSceneAudioAssets(project, scene, filesByPath, audioPathsById);
         }
 
         // 2. World manifest if present
@@ -89,6 +91,7 @@ public static class EngineProjectPackage
                 var cellScene = SceneFile.Load(cellSceneFullPath);
                 scenesByPath.TryAdd(cellSceneProjectRel, cellScene);
                 CollectSceneGlbAssets(project, cellScene, assetsById);
+                CollectSceneAudioAssets(project, cellScene, filesByPath, audioPathsById);
             }
 
             foreach (var pathFile in EnumerateWorldPathFiles(manifest.RootDirectory))
@@ -168,6 +171,59 @@ public static class EngineProjectPackage
         };
         foreach (var file in Directory.EnumerateFiles(audioDirectory, "*", options))
             yield return file;
+    }
+
+    private static void CollectSceneAudioAssets(
+        EngineProjectFile project,
+        SceneGraph scene,
+        IDictionary<string, PackageFile> filesByPath,
+        IDictionary<Guid, string> pathsByAssetId)
+    {
+        foreach (var reference in scene.AudioAssets)
+        {
+            if (pathsByAssetId.TryGetValue(reference.AssetId, out var existingPath)
+                && !string.Equals(existingPath, reference.SourcePath, StringComparison.OrdinalIgnoreCase))
+                throw new InvalidDataException(
+                    $"Audio asset ID {reference.AssetId} refers to both '{existingPath}' and '{reference.SourcePath}'.");
+            pathsByAssetId.TryAdd(reference.AssetId, reference.SourcePath);
+
+            string fullPath;
+            try
+            {
+                fullPath = project.ResolveContentPath(reference.SourcePath);
+            }
+            catch (Exception exception) when (exception is ArgumentException or InvalidDataException)
+            {
+                throw new InvalidDataException(
+                    $"Scene audio asset {reference.AssetId} has invalid project-relative path '{reference.SourcePath}': {exception.Message}",
+                    exception);
+            }
+
+            if (!File.Exists(fullPath))
+                throw new FileNotFoundException(
+                    $"Scene audio asset {reference.AssetId} is missing at project-relative path '{reference.SourcePath}'.",
+                    fullPath);
+            if (HasReparsePointInPath(project.RootDirectory, fullPath))
+                throw new InvalidDataException(
+                    $"Scene audio asset {reference.AssetId} at '{reference.SourcePath}' cannot be a symbolic link or junction.");
+
+            AddPackageFile(filesByPath, reference.SourcePath, fullPath);
+        }
+    }
+
+    private static bool HasReparsePointInPath(string projectRoot, string fullPath)
+    {
+        var currentPath = projectRoot;
+        var relativePath = Path.GetRelativePath(projectRoot, fullPath);
+        foreach (var segment in relativePath.Split(
+                     [Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar],
+                     StringSplitOptions.RemoveEmptyEntries))
+        {
+            currentPath = Path.Combine(currentPath, segment);
+            if (!File.Exists(currentPath) && !Directory.Exists(currentPath)) return false;
+            if ((File.GetAttributes(currentPath) & FileAttributes.ReparsePoint) != 0) return true;
+        }
+        return false;
     }
 
     private static void ValidateSequenceFiles(

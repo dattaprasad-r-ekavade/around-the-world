@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using Microsoft.Xna.Framework;
 
 namespace Ember.Scene;
@@ -11,9 +12,27 @@ namespace Ember.Scene;
 public sealed class SceneGraph
 {
     private readonly Dictionary<Guid, SceneObject> _objects = new();
+    private IReadOnlyList<SceneAudioAssetReference> _audioAssets = Array.Empty<SceneAudioAssetReference>();
     private ScenePlaySettings _playSettings = new();
 
     public IReadOnlyCollection<SceneObject> Objects => _objects.Values;
+
+    /// <summary>Stable project asset references used by authored scene audio.</summary>
+    public IReadOnlyList<SceneAudioAssetReference> AudioAssets => _audioAssets;
+
+    /// <summary>Replaces the scene audio asset catalog after checking stable IDs and paths.</summary>
+    public void SetAudioAssets(IEnumerable<SceneAudioAssetReference> audioAssets)
+    {
+        ArgumentNullException.ThrowIfNull(audioAssets);
+        var values = audioAssets.ToArray();
+        if (values.Any(value => value is null))
+            throw new ArgumentException("Scene audio assets cannot contain null references.", nameof(audioAssets));
+        if (values.Select(value => value.AssetId).Distinct().Count() != values.Length)
+            throw new ArgumentException("Scene audio asset IDs must be unique.", nameof(audioAssets));
+        if (values.Select(value => value.SourcePath).Distinct(StringComparer.OrdinalIgnoreCase).Count() != values.Length)
+            throw new ArgumentException("Scene audio asset paths must be unique.", nameof(audioAssets));
+        _audioAssets = Array.AsReadOnly(values);
+    }
 
     /// <summary>Saved gameplay defaults used by the scene's Play session.</summary>
     public ScenePlaySettings PlaySettings
