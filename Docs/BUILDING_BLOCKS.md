@@ -780,6 +780,11 @@ box collider appears as a colored wireframe in the scene view. Custom behavior t
 game-code registration; authoring and compiling project C# behaviors from the editor remains future
 work.
 
+`ScenePlaySession.Pause` and `Resume` suspend behaviour interactions and trigger actions. The
+CharacterStudio Play toolbar also pauses movement, physics steps, character and sequence preview
+advancement, and the active interaction-audio voice. Stop remains available while paused and still
+restores the authored scene. Saved trigger-to-sequence handoff is not implemented yet.
+
 ---
 
 ## RPG content, stats, and timed modifiers

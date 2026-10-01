@@ -96,6 +96,46 @@ public sealed class ScenePlaySessionTests
     }
 
     [Fact]
+    public void PausedPlaySessionSuppressesInteractionsAndTriggerActionsUntilResumed()
+    {
+        var ownerId = Guid.NewGuid();
+        var triggerId = Guid.NewGuid();
+        var scene = new SceneGraph();
+        scene.Add(new SceneObject(ownerId, "Switch"));
+        scene.Add(new SceneObject(triggerId, "Goal")
+        {
+            BoxCollider = new SceneBoxColliderComponent(Vector3.Zero, Vector3.One, isTrigger: true),
+            TriggerAction = new SceneTriggerActionComponent(SceneTriggerActionKind.ReachGoal)
+        });
+        var probe = new ProbeBehaviour();
+        using var session = new ScenePlaySession(scene, (_, runtime) => runtime.Add(ownerId, probe));
+        var physicsId = new PhysicsObjectId(44);
+        session.BindPhysicsCharacter(physicsId, ownerId);
+
+        session.Pause();
+
+        Assert.True(session.IsPaused);
+        Assert.Equal(0, session.Behaviours.Interact(ownerId, "Interact"));
+        Assert.Equal(0, session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Entered)
+        }));
+        Assert.Empty(probe.Actions);
+        Assert.False(session.HasReachedGoal);
+
+        session.Resume();
+
+        Assert.False(session.IsPaused);
+        Assert.Equal(1, session.Behaviours.Interact(ownerId, "Interact"));
+        Assert.Equal(new[] { "Interact" }, probe.Actions);
+        Assert.Equal(0, session.DispatchTriggerEvents(new[]
+        {
+            new SceneTriggerEvent(triggerId, physicsId, PhysicsTriggerTransition.Entered)
+        }));
+        Assert.True(session.HasReachedGoal);
+    }
+
+    [Fact]
     public void SavedCollectActionDisablesItsTriggerOnlyInThePlayClone()
     {
         var triggerId = Guid.NewGuid();
@@ -224,11 +264,34 @@ public sealed class ScenePlaySessionTests
             Assert.Equal(1, voice.PlayCount);
             Assert.Equal(1, session.Behaviours.Interact(ownerId, "Examine"));
             Assert.Equal(1, voice.PlayCount);
+            clip.Pause();
+            Assert.Equal(1, voice.PauseCount);
+            Assert.False(voice.IsPlaying);
+            clip.Resume();
+            Assert.Equal(1, voice.ResumeCount);
+            Assert.True(voice.IsPlaying);
         }
 
         Assert.Equal(1, voice.StopCount);
         Assert.Equal(1, voice.DisposeCount);
         Assert.True(clip.IsDisposed);
+    }
+
+    [Fact]
+    public void StoppingPausedAudioClearsPauseBeforeTheNextPlay()
+    {
+        var voice = new FakeAudioVoice();
+        using var clip = new ImportedAudioClip("interaction.wav", voice);
+
+        clip.Play();
+        clip.Pause();
+        clip.Stop();
+
+        Assert.False(voice.IsPlaying);
+        Assert.False(voice.IsPaused);
+        clip.Play();
+        Assert.True(voice.IsPlaying);
+        Assert.Equal(2, voice.PlayCount);
     }
 
     [Fact]
@@ -365,7 +428,10 @@ public sealed class ScenePlaySessionTests
     {
         public float Volume { get; set; } = 1f;
         public bool IsPlaying { get; private set; }
+        public bool IsPaused { get; private set; }
         public int PlayCount { get; private set; }
+        public int PauseCount { get; private set; }
+        public int ResumeCount { get; private set; }
         public int StopCount { get; private set; }
         public int DisposeCount { get; private set; }
 
@@ -373,12 +439,28 @@ public sealed class ScenePlaySessionTests
         {
             PlayCount++;
             IsPlaying = true;
+            IsPaused = false;
+        }
+
+        public void Pause()
+        {
+            PauseCount++;
+            if (IsPlaying) IsPlaying = false;
+            IsPaused = true;
+        }
+
+        public void Resume()
+        {
+            ResumeCount++;
+            if (IsPaused) IsPlaying = true;
+            IsPaused = false;
         }
 
         public void Stop()
         {
             StopCount++;
             IsPlaying = false;
+            IsPaused = false;
         }
 
         public void Dispose() => DisposeCount++;

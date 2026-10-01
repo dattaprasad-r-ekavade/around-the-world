@@ -36,7 +36,20 @@ public sealed class ScenePlaySession : IDisposable
     public SceneGraph RuntimeScene { get; }
     public SceneBehaviourRuntime Behaviours { get; }
     public bool IsDisposed => _disposed;
+    public bool IsPaused => Behaviours.IsPaused;
     public bool HasReachedGoal => _reachedGoals.Count > 0;
+
+    public void Pause()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Behaviours.Pause();
+    }
+
+    public void Resume()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        Behaviours.Resume();
+    }
 
     /// <summary>Raised when a saved trigger action runs or requests a world action.</summary>
     public event Action<SceneAuthoredActionEvent>? AuthoredActionExecuted;
@@ -77,6 +90,7 @@ public sealed class ScenePlaySession : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
         ArgumentNullException.ThrowIfNull(triggerEvents);
+        if (Behaviours.IsPaused) return 0;
 
         var callbacksInvoked = 0;
         foreach (var triggerEvent in triggerEvents)
@@ -262,12 +276,14 @@ public sealed class SceneBehaviourRuntime : IDisposable
     private readonly SceneResourceScope _resources = new();
     private readonly List<Binding> _bindings = new();
     private bool _started;
+    private bool _paused;
     private bool _disposed;
 
     public SceneBehaviourRuntime(SceneGraph scene) =>
         _scene = scene ?? throw new ArgumentNullException(nameof(scene));
 
     public bool IsStarted => _started;
+    public bool IsPaused => _paused;
     public bool IsDisposed => _disposed;
 
     public T Own<T>(T resource) where T : class, IDisposable => _resources.Own(resource);
@@ -315,6 +331,20 @@ public sealed class SceneBehaviourRuntime : IDisposable
         }
     }
 
+    public void Pause()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_started) throw new InvalidOperationException("Start the scene behaviour runtime before pausing it.");
+        _paused = true;
+    }
+
+    public void Resume()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_started) throw new InvalidOperationException("Start the scene behaviour runtime before resuming it.");
+        _paused = false;
+    }
+
     /// <returns>The number of behavior callbacks invoked for the enabled owner.</returns>
     public int Interact(Guid ownerId, string action, Guid? instigatorId = null,
         PhysicsObjectId? physicsInstigatorId = null)
@@ -322,6 +352,7 @@ public sealed class SceneBehaviourRuntime : IDisposable
         ObjectDisposedException.ThrowIf(_disposed, this);
         if (!_started) throw new InvalidOperationException("Start the scene behaviour runtime before sending interactions.");
         if (string.IsNullOrWhiteSpace(action)) throw new ArgumentException("An interaction action is required.", nameof(action));
+        if (_paused) return 0;
         if (_scene.Find(ownerId) is not { Enabled: true }) return 0;
         var interaction = new SceneInteraction(action.Trim(), instigatorId, physicsInstigatorId);
         var callbacksInvoked = 0;

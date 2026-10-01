@@ -9,6 +9,7 @@ public sealed partial class CharacterStudioGame
 {
     private void StartPlaySession() => _playController.StartPlaySession();
     private void StopPlaySession() => _playController.StopPlaySession();
+    private void TogglePlayPause() => _playController.TogglePlayPause();
     private void TriggerInteraction() => _playController.TriggerSelectedInteraction();
     private void SetInteractionVolume(float volume) => _playController.SetInteractionVolume(volume);
     private string StartPathFollow(Guid objectId, CellPathGraph graph, CellPathRoute route) =>

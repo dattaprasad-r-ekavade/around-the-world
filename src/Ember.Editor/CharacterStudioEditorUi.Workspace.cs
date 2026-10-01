@@ -76,6 +76,12 @@ internal sealed partial class CharacterStudioEditorUi
             if (_owner._isPlaying()) _owner._stopPlay();
             else _owner._startPlay();
         }
+        if (_owner._isPlaying())
+        {
+            ImGui.SameLine();
+            if (ImGui.Button(_owner._isPlayPaused() ? "Resume" : "Pause"))
+                _owner._togglePlayPause();
+        }
         ImGui.SameLine();
         var guideProjectPath = _owner._getCurrentProjectPath();
         var currentLesson = _owner._firstCreationLesson;

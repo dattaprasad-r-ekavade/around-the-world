@@ -99,6 +99,23 @@ The base editor does not include a game-specific behaviour module by default.
    Undo and redo the update and confirm assignments and the saved baseline return each time.
 7. Record the module build, project and scene paths, exact action sequence, console output and result.
 
+## Play pause and sequence handoff acceptance
+
+1. Start Play with a controllable character. Move, jump and trigger an interaction, then choose
+   **Pause** in the main toolbar. Confirm movement and animation stop, trigger actions do not fire,
+   and a playing interaction sound pauses.
+2. While paused, try the movement and interaction controls. Confirm the character and scene do not
+   advance. Choose **Resume** and confirm input, physics, animation and any interrupted interaction
+   sound continue. Choose **Stop** while paused and confirm the authored scene and editor controls
+   return normally.
+3. Repeat Play → Pause → Resume → Stop several times. Confirm no duplicate behaviour start/stop
+   callbacks or lingering sound voices. Record any exceptions and resource counts.
+4. After saved trigger-to-sequence authoring is available, trigger a cutscene during Play. Confirm
+   gameplay pauses, the sequence uses the active player's scene copy and camera, and completion
+   restores control to the same player and camera without registering behaviours a second time.
+5. Record the project and scene paths, exact action sequence, console output and result. Until the
+   trigger-to-sequence workflow exists, record that item as not implemented rather than passed.
+
 ## Scene-template workflow acceptance
 
 Use a project with a parent object and at least two children. Open **More tools → Scene templates**.

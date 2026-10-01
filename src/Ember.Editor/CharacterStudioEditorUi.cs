@@ -51,6 +51,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Action<Guid, bool> _setCharacterPlaying;
     private readonly SceneLighting _lighting;
     private readonly Func<bool> _isPlaying;
+    private readonly Func<bool> _isPlayPaused;
+    private readonly Action _togglePlayPause;
     private readonly Action _startPlay;
     private readonly Action _stopPlay;
     private readonly Action _interact;
@@ -184,7 +186,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Func<Guid, CharacterEditorInfo?> getCharacterInfo, Action<Guid, string> selectCharacterClip,
         Action<Guid, float> seekCharacter, Action<Guid, float, float> commitCharacterTimeEdit,
         Action<Guid, bool> setCharacterPlaying, SceneLighting lighting,
-        Func<bool> isPlaying, Action startPlay, Action stopPlay, Action interact,
+        Func<bool> isPlaying, Func<bool> isPlayPaused, Action togglePlayPause,
+        Action startPlay, Action stopPlay, Action interact,
         Func<float> getInteractionVolume, Action<float> setInteractionVolume,
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
         Action<float> seekSequence, Action<bool> setSequencePreviewEnabled,
@@ -232,6 +235,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _setCharacterPlaying = setCharacterPlaying ?? throw new ArgumentNullException(nameof(setCharacterPlaying));
         _lighting = lighting ?? throw new ArgumentNullException(nameof(lighting));
         _isPlaying = isPlaying ?? throw new ArgumentNullException(nameof(isPlaying));
+        _isPlayPaused = isPlayPaused ?? throw new ArgumentNullException(nameof(isPlayPaused));
+        _togglePlayPause = togglePlayPause ?? throw new ArgumentNullException(nameof(togglePlayPause));
         _startPlay = startPlay ?? throw new ArgumentNullException(nameof(startPlay));
         _stopPlay = stopPlay ?? throw new ArgumentNullException(nameof(stopPlay));
         _interact = interact ?? throw new ArgumentNullException(nameof(interact));

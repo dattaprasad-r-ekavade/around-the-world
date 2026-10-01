@@ -11,6 +11,8 @@ public interface IAudioClipVoice : IDisposable
     float Volume { get; set; }
     bool IsPlaying { get; }
     void Play();
+    void Pause();
+    void Resume();
     void Stop();
 }
 
@@ -19,6 +21,8 @@ public sealed class ImportedAudioClip : IDisposable
 {
     private readonly IAudioClipVoice _voice;
     private bool _disposed;
+    private bool _paused;
+    private bool _resumeAfterPause;
     private float _volume = 1f;
 
     public ImportedAudioClip(string sourcePath, IAudioClipVoice voice)
@@ -71,13 +75,39 @@ public sealed class ImportedAudioClip : IDisposable
     public void Play()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_paused) return;
         _voice.Play();
+    }
+
+    /// <summary>Suspends this clip's active voice until <see cref="Resume"/> is called.</summary>
+    public void Pause()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_paused) return;
+        _resumeAfterPause = _voice.IsPlaying;
+        if (_resumeAfterPause) _voice.Pause();
+        _paused = true;
+    }
+
+    /// <summary>Resumes this clip only if it was playing when <see cref="Pause"/> was called.</summary>
+    public void Resume()
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (!_paused) return;
+        if (_resumeAfterPause) _voice.Resume();
+        _resumeAfterPause = false;
+        _paused = false;
     }
 
     public void Stop()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
-        _voice.Stop();
+        try { _voice.Stop(); }
+        finally
+        {
+            _resumeAfterPause = false;
+            _paused = false;
+        }
     }
 
     public void Dispose()
@@ -93,6 +123,8 @@ public sealed class ImportedAudioClip : IDisposable
         public float Volume { get => instance.Volume; set => instance.Volume = value; }
         public bool IsPlaying => instance.State == SoundState.Playing;
         public void Play() => instance.Play();
+        public void Pause() => instance.Pause();
+        public void Resume() => instance.Resume();
         public void Stop() => instance.Stop();
         public void Dispose()
         {

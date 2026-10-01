@@ -25,6 +25,7 @@ public sealed partial class CharacterStudioGame
             _owner = owner ?? throw new ArgumentNullException(nameof(owner));
 
         public ScenePlaySession? Session { get; private set; }
+        public bool IsPaused => Session?.IsPaused == true;
         public SceneCommandHistory History { get; private set; } = new();
         public InputActionMap InputMap { get; } = new();
         public ImportedAudioClip? InteractionClip { get; set; }
@@ -141,7 +142,7 @@ public sealed partial class CharacterStudioGame
 
         public void AdvanceWorldTravelRequests()
         {
-            if (Session is null || !_pendingWorldTravelRequests.TryDequeue(out var request)) return;
+            if (Session is null || Session.IsPaused || !_pendingWorldTravelRequests.TryDequeue(out var request)) return;
             if (request.Door is not { } door)
             {
                 _owner._reimportStatus = $"Open action on '{request.SceneObjectName}' has no linked door.";
@@ -509,8 +510,24 @@ public sealed partial class CharacterStudioGame
 
         public void TriggerInteraction(Guid? ownerId)
         {
-            if (Session is { } session && ownerId is { } id)
+            if (Session is { IsPaused: false } session && ownerId is { } id)
                 session.Behaviours.Interact(id, "Interact");
+        }
+
+        public void TogglePlayPause()
+        {
+            if (Session is not { } session) return;
+            if (session.IsPaused)
+            {
+                InteractionClip?.Resume();
+                session.Resume();
+                _owner._reimportStatus = "Play resumed.";
+                return;
+            }
+
+            InteractionClip?.Pause();
+            session.Pause();
+            _owner._reimportStatus = "Play paused. Resume or stop to continue.";
         }
 
         public string StartPathFollow(Guid objectId, CellPathGraph graph, CellPathRoute route)
@@ -570,7 +587,7 @@ public sealed partial class CharacterStudioGame
 
         public void UpdatePathFollowers(float elapsedSeconds)
         {
-            if (PhysicsWorld is null || PhysicsStepper is null
+            if (Session?.IsPaused == true || PhysicsWorld is null || PhysicsStepper is null
                 || (PathFollowers.Count == 0 && CharacterController is null)) return;
             var step = PhysicsStepper.Advance(elapsedSeconds, delta =>
             {

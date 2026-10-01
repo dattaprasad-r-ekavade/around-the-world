@@ -354,7 +354,8 @@ public sealed partial class CharacterStudioGame : EngineHost
                 _editorHistory, AfterSceneStructureChange,
                 GetCharacterEditorInfo, SelectCharacterClip, SeekCharacter, CommitCharacterTimeEdit,
                 SetCharacterPlaying, _sceneLighting,
-                () => _playSession is not null, StartPlaySession, StopPlaySession, TriggerInteraction,
+                () => _playSession is not null, () => _playSession?.IsPaused == true,
+                TogglePlayPause, StartPlaySession, StopPlaySession, TriggerInteraction,
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
@@ -494,11 +495,18 @@ public sealed partial class CharacterStudioGame : EngineHost
 
         var sequenceExportRunning = _sequenceExportJob?.IsRunning == true;
         var playInput = _playInputMap.Sample(_input.CurrentKeyboard, IsActive,
-            _playSession is null || uiCapturesKeyboard || sequenceExportRunning);
+            _playSession is null || _playSession.IsPaused || uiCapturesKeyboard || sequenceExportRunning);
         if (_playSession is not null && _playCharacterController is { } playCharacter)
         {
-            playCharacter.SetMoveInput(ToOrbitCameraMovement(playInput.ReadMovement(), _camera.Yaw));
-            if (_playInputMap.ConsumePressed(GameplayActionNames.Jump)) playCharacter.RequestJump();
+            if (_playSession.IsPaused)
+            {
+                playCharacter.SetMoveInput(Vector3.Zero);
+            }
+            else
+            {
+                playCharacter.SetMoveInput(ToOrbitCameraMovement(playInput.ReadMovement(), _camera.Yaw));
+                if (_playInputMap.ConsumePressed(GameplayActionNames.Jump)) playCharacter.RequestJump();
+            }
         }
         if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard
             && _input.Pressed(_input.CurrentKeyboard, Keys.Escape)) Exit();
@@ -508,7 +516,8 @@ public sealed partial class CharacterStudioGame : EngineHost
             if (_playSession is null) StartPlaySession();
             else StopPlaySession();
         }
-        if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard && _playSession is not null
+        if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard
+            && _playSession is { IsPaused: false }
             && _input.Pressed(_input.CurrentKeyboard, Keys.E)) TriggerInteraction();
         if (!sequenceExportRunning && _viewportTransformDrag is null && !uiCapturesKeyboard
             && _playSession is null && _input.Pressed(_input.CurrentKeyboard, Keys.R)) ReimportAsset();
@@ -539,7 +548,7 @@ public sealed partial class CharacterStudioGame : EngineHost
         var preview = _preview?.Current;
         if (preview is not null)
         {
-            if (!sequenceExportRunning)
+            if (!sequenceExportRunning && !_playController.IsPaused)
             {
                 _sequencePlayer?.Advance((float)gameTime.ElapsedGameTime.TotalSeconds);
                 foreach (var state in preview.CharacterInstances.Values)
