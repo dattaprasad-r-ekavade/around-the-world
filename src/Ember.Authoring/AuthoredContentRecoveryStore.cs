@@ -6,6 +6,7 @@ using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Serialization;
+using Ember.IO;
 
 namespace Ember.Authoring;
 
@@ -96,23 +97,8 @@ public static class AuthoredContentRecoveryStore
             Files = entries
         };
 
-        Directory.CreateDirectory(storage);
         var destination = Path.Combine(storage, SnapshotFileName);
-        var temporary = destination + $".{Guid.NewGuid():N}.tmp";
-        try
-        {
-            using (var stream = new FileStream(temporary, FileMode.CreateNew, FileAccess.Write, FileShare.None))
-            {
-                JsonSerializer.Serialize(stream, document, JsonOptions);
-                stream.Flush(flushToDisk: true);
-            }
-            if (File.Exists(destination)) File.Replace(temporary, destination, null);
-            else File.Move(temporary, destination);
-        }
-        finally
-        {
-            if (File.Exists(temporary)) File.Delete(temporary);
-        }
+        AtomicFile.Write(destination, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
 
         return snapshot;
     }
