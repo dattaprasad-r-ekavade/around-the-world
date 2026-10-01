@@ -547,7 +547,13 @@ startup scene, referenced GLBs, and any project-local buffer/image files named b
 or out-of-root dependencies report the scene object ID, asset ID, and path. Remote external URIs
 are rejected, and the destination must not already exist. If the project root contains an optional
 `ThirdPartyNotices.txt`, the package preserves it beside the project file for bundled asset credits
-and licenses.
+and licenses. `EngineProjectFile.RegisterExtraContentPath()` atomically registers an existing
+project-relative file or folder for packaging. CharacterStudio uses it when a sequence is saved
+inside an open project, so the sequence JSON travels with the packaged project; a sequence saved
+outside the project is not included. Before staging, the package validates registered
+`.sequence.json` files against a single packaged scene, its skinned GLBs and animation clips, camera
+tracks, and optional Reach goal trigger. Missing or ambiguous references stop publication before
+the output directory is created. Audio dependency discovery is still open.
 
 `tools/new-engine-project.ps1` generates `templates/MinimalGame` into an empty external directory.
 The generated `Directory.Build.props` points to the selected Ember checkout's

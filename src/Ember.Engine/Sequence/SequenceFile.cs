@@ -36,30 +36,14 @@ public static class SequenceFile
     public static SceneSequence Load(string path, SceneGraph scene,
         IReadOnlyDictionary<Guid, IReadOnlyList<GltfAnimationClipData>> clipsByAssetId)
     {
-        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A sequence path is required.", nameof(path));
         ArgumentNullException.ThrowIfNull(scene);
         ArgumentNullException.ThrowIfNull(clipsByAssetId);
 
-        SequenceDocument document;
-        try
-        {
-            document = JsonSerializer.Deserialize<SequenceDocument>(File.ReadAllText(path), JsonOptions)
-                ?? throw new InvalidDataException("Sequence JSON is empty.");
-        }
-        catch (JsonException exception)
-        {
-            throw new InvalidDataException($"Sequence JSON is invalid: {exception.Message}", exception);
-        }
-
-        if (document.Version < 1 || document.Version > CurrentVersion)
-            throw new InvalidDataException($"Unsupported sequence version {document.Version}; supported versions are 1–{CurrentVersion}.");
-        if (document.Name is null) throw new InvalidDataException("Sequence name is missing.");
-        if (document.CharacterTracks is null) throw new InvalidDataException("Sequence character-track list is missing.");
-        if (document.CameraTracks is null) throw new InvalidDataException("Sequence camera-track list is missing.");
+        var document = ReadDocument(path);
 
         try
         {
-            var characters = document.CharacterTracks.Select((track, index) =>
+            var characters = document.CharacterTracks!.Select((track, index) =>
             {
                 if (track is null) throw new InvalidDataException($"Character track {index} is null.");
                 if (track.Id == Guid.Empty) throw new InvalidDataException($"Character track {index} has an empty ID.");
@@ -87,7 +71,7 @@ public static class SequenceFile
                     track.PlaybackSpeed, track.Loop, track.Id);
             }).ToArray();
 
-            var cameras = document.CameraTracks.Select((track, index) =>
+            var cameras = document.CameraTracks!.Select((track, index) =>
             {
                 if (track is null) throw new InvalidDataException($"Camera track {index} is null.");
                 if (track.Keys is null) throw new InvalidDataException($"Camera track {track.Id} has no key list.");
@@ -116,13 +100,50 @@ public static class SequenceFile
 
             var triggerObjectId = document.Version >= 2 ? document.TriggerObjectId : null;
             ValidateCutsceneTrigger(scene, triggerObjectId);
-            return new SceneSequence(document.Name, document.Duration, characters, cameras, cuts,
+            return new SceneSequence(document.Name!, document.Duration, characters, cameras, cuts,
                 triggerObjectId);
         }
         catch (ArgumentException exception)
         {
             throw new InvalidDataException($"Sequence data is invalid: {exception.Message}", exception);
         }
+    }
+
+    internal static FileDependencies ReadDependencies(string path)
+    {
+        var document = ReadDocument(path);
+        var tracks = document.CharacterTracks!.Select((track, index) =>
+        {
+            if (track is null) throw new InvalidDataException($"Character track {index} is null.");
+            if (track.Id == Guid.Empty) throw new InvalidDataException($"Character track {index} has an empty ID.");
+            if (track.AssetId == Guid.Empty) throw new InvalidDataException($"Character track {track.Id} has an empty asset ID.");
+            if (string.IsNullOrWhiteSpace(track.ClipName))
+                throw new InvalidDataException($"Character track {track.Id} has no clip name.");
+            return new CharacterDependency(track.Id, track.TargetObjectId, track.AssetId, track.ClipName);
+        }).ToArray();
+        return new FileDependencies(document.Version >= 2 ? document.TriggerObjectId : null, tracks);
+    }
+
+    private static SequenceDocument ReadDocument(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A sequence path is required.", nameof(path));
+        SequenceDocument document;
+        try
+        {
+            document = JsonSerializer.Deserialize<SequenceDocument>(File.ReadAllText(path), JsonOptions)
+                ?? throw new InvalidDataException("Sequence JSON is empty.");
+        }
+        catch (JsonException exception)
+        {
+            throw new InvalidDataException($"Sequence JSON is invalid: {exception.Message}", exception);
+        }
+
+        if (document.Version < 1 || document.Version > CurrentVersion)
+            throw new InvalidDataException($"Unsupported sequence version {document.Version}; supported versions are 1–{CurrentVersion}.");
+        if (document.Name is null) throw new InvalidDataException("Sequence name is missing.");
+        if (document.CharacterTracks is null) throw new InvalidDataException("Sequence character-track list is missing.");
+        if (document.CameraTracks is null) throw new InvalidDataException("Sequence camera-track list is missing.");
+        return document;
     }
 
     private static SequenceDocument ToDocument(SceneSequence sequence, SceneGraph scene)
@@ -242,4 +263,8 @@ public static class SequenceFile
         public float Time { get; set; }
         public Guid CameraId { get; set; }
     }
+
+    internal sealed record FileDependencies(Guid? TriggerObjectId,
+        IReadOnlyList<CharacterDependency> CharacterTracks);
+    internal sealed record CharacterDependency(Guid TrackId, Guid TargetObjectId, Guid AssetId, string ClipName);
 }

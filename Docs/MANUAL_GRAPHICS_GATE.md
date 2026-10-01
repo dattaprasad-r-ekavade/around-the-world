@@ -121,6 +121,22 @@ The base editor does not include a game-specific behaviour module by default.
    start twice, no interaction-audio voice remains active, and the same player remains controllable.
    Record the project, scene and sequence paths, exact action sequence, console output and result.
 
+## Sequence packaging acceptance
+
+Use a project that contains a skinned character and a saved sequence.
+
+1. Save the sequence from CharacterStudio into the open project. Confirm the status says it was added
+   to project packaging. Save again to an external folder and confirm the status explains that an
+   outside-project sequence will not be included.
+2. Package the project to a new folder outside the checkout, move that folder to a different
+   directory, and open the moved project. Confirm the registered sequence and its scene/GLB files
+   remain available. Open the sequence against the moved scene and confirm its references resolve.
+3. Break one target-object or clip reference in a copy of the sequence and package again. Confirm
+   preflight names the sequence and missing reference, and does not create the output directory.
+4. Record the source and relocated paths, screenshots, console output and result. This check remains
+   pending until audio dependencies, publication and the relocated playable-game workflow are also
+   covered by their later M2.3 acceptance steps.
+
 ## Scene-template workflow acceptance
 
 Use a project with a parent object and at least two children. Open **More tools → Scene templates**.

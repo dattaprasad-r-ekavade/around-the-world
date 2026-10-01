@@ -419,8 +419,19 @@ public sealed partial class CharacterStudioGame : EngineHost
                 var sequence = _sequence
                     ?? throw new InvalidOperationException("There is no character sequence to save.");
                 SequenceFile.SaveAtomic(sequence, _sceneData, saveSequencePath);
-                _sequenceFilePath = Path.GetFullPath(saveSequencePath);
-                Console.WriteLine($"Saved sequence '{sequence.Name}' to {Path.GetFullPath(saveSequencePath)}");
+                var savedSequencePath = Path.GetFullPath(saveSequencePath);
+                _sequenceFilePath = savedSequencePath;
+                Console.WriteLine($"Saved sequence '{sequence.Name}' to {savedSequencePath}");
+                try
+                {
+                    var packageStatus = RegisterSequenceForProjectPackaging(savedSequencePath);
+                    if (packageStatus is not null) Console.WriteLine(packageStatus);
+                }
+                catch (Exception exception)
+                {
+                    Console.Error.WriteLine($"Sequence was saved but could not be added to project packaging: {exception.Message}");
+                    Environment.ExitCode = 1;
+                }
             }
 
             if (_startupSequenceExportDirectory is { } exportDirectory)

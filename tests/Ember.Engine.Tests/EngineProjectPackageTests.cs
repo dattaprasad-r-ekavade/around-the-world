@@ -1,9 +1,14 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text;
+using Ember.Assets;
 using Ember.Project;
+using Ember.Sequence;
 using Ember.Scene;
 using Ember.World;
+using SharpGLTF.Schema2;
 using Xunit;
 
 namespace Ember.Engine.Tests;
@@ -22,8 +27,12 @@ public sealed class EngineProjectPackageTests
             var referencedPath = Path.Combine(sourceRoot, "Content", "Models", "hero.glb");
             var unusedPath = Path.Combine(sourceRoot, "Content", "Models", "unused.glb");
             var noticesPath = Path.Combine(sourceRoot, "ThirdPartyNotices.txt");
+            var sequenceRelativePath = "Content/Sequences/Intro.sequence.json";
+            var sequencePath = Path.Combine(sourceRoot, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar));
             Directory.CreateDirectory(Path.GetDirectoryName(referencedPath)!);
-            File.Copy(Path.Combine(AppContext.BaseDirectory, "Assets", "TextureCoordinateTest.glb"), referencedPath);
+            Directory.CreateDirectory(Path.GetDirectoryName(sequencePath)!);
+            var foxPath = Path.Combine(AppContext.BaseDirectory, "Assets", "Fox.glb");
+            File.Copy(foxPath, referencedPath);
             File.WriteAllBytes(unusedPath, [5, 6, 7, 8]);
             File.WriteAllText(noticesPath, "Fox attribution and license notice.");
 
@@ -37,8 +46,14 @@ public sealed class EngineProjectPackageTests
                 GltfAsset = new GltfAssetReference(assetId, "Content/Models/hero.glb")
             });
             SceneFile.SaveAtomic(scene, startupScenePath);
+            var character = GltfSkinnedCharacterData.Import(ModelRoot.Load(referencedPath));
+            var sequence = new SceneSequence("Intro", 2f,
+                [new CharacterClipTrack(objectId, character.Animations.Single(clip => clip.Name == "Walk"), loop: true)]);
+            SequenceFile.SaveAtomic(sequence, scene, sequencePath);
             var projectFilePath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
             EngineProjectFile.SaveAtomic(projectFilePath, "Content/Scenes/Start.json");
+            var project = EngineProjectFile.Load(projectFilePath)
+                .RegisterExtraContentPath(sequenceRelativePath);
 
             var result = EngineProjectPackage.Create(projectFilePath, packagePath);
 
@@ -47,6 +62,8 @@ public sealed class EngineProjectPackageTests
             Assert.True(File.Exists(Path.Combine(packagePath, EngineProjectFile.DefaultFileName)));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Scenes", "Start.json")));
             Assert.True(File.Exists(Path.Combine(packagePath, "Content", "Models", "hero.glb")));
+            Assert.True(File.Exists(Path.Combine(packagePath, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar))));
+            Assert.Equal(sequenceRelativePath, Assert.Single(project.ExtraContentPaths));
             Assert.False(File.Exists(Path.Combine(packagePath, "Content", "Models", "unused.glb")));
             Assert.Equal(File.ReadAllText(noticesPath), File.ReadAllText(Path.Combine(packagePath, "ThirdPartyNotices.txt")));
             Assert.Equal(File.ReadAllBytes(referencedPath),
@@ -55,9 +72,19 @@ public sealed class EngineProjectPackageTests
             Directory.CreateDirectory(Path.GetDirectoryName(movedPath)!);
             Directory.Move(packagePath, movedPath);
             var movedProject = EngineProjectFile.Load(Path.Combine(movedPath, EngineProjectFile.DefaultFileName));
+            Assert.True(File.Exists(movedProject.ResolveContentPath(sequenceRelativePath)));
             var movedScene = SceneFile.Load(movedProject.ResolveStartupScenePath());
             Assert.Equal(objectId, Assert.Single(movedScene.Objects).Id);
             Assert.True(File.Exists(movedProject.ResolveContentPath("Content/Models/hero.glb")));
+            var movedCharacter = GltfSkinnedCharacterData.Import(
+                ModelRoot.Load(movedProject.ResolveContentPath("Content/Models/hero.glb")));
+            var reopenedSequence = SequenceFile.Load(movedProject.ResolveContentPath(sequenceRelativePath), movedScene,
+                new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>
+                {
+                    [assetId] = movedCharacter.Animations
+                });
+            Assert.Equal("Intro", reopenedSequence.Name);
+            Assert.Equal(objectId, Assert.Single(reopenedSequence.CharacterTracks).TargetObjectId);
             Assert.Equal("Fox attribution and license notice.", File.ReadAllText(Path.Combine(movedPath, "ThirdPartyNotices.txt")));
         }
         finally
@@ -216,6 +243,52 @@ public sealed class EngineProjectPackageTests
             Assert.Contains(assetId.ToString(), error.Message, StringComparison.Ordinal);
             Assert.Contains("Content/Missing/hero.glb", error.Message, StringComparison.Ordinal);
             Assert.False(Directory.Exists(packagePath));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void PackageRejectsRegisteredSequenceWithMissingSceneObjectBeforeCreatingOutput()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var sourceRoot = Path.Combine(root, "source");
+            var scenePath = Path.Combine(sourceRoot, "Content", "Scenes", "Start.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(scenePath)!);
+            SceneFile.SaveAtomic(new SceneGraph(), scenePath);
+            var projectPath = Path.Combine(sourceRoot, EngineProjectFile.DefaultFileName);
+            EngineProjectFile.SaveAtomic(projectPath, "Content/Scenes/Start.json");
+
+            var missingObjectId = Guid.NewGuid();
+            var assetId = Guid.NewGuid();
+            const string sequenceRelativePath = "Content/Sequences/Broken.sequence.json";
+            var sequencePath = Path.Combine(sourceRoot, sequenceRelativePath.Replace('/', Path.DirectorySeparatorChar));
+            Directory.CreateDirectory(Path.GetDirectoryName(sequencePath)!);
+            File.WriteAllText(sequencePath, $$"""
+            {
+              "version": 2,
+              "name": "Broken",
+              "duration": 1,
+              "characterTracks": [
+                { "id": "{{Guid.NewGuid()}}", "targetObjectId": "{{missingObjectId}}", "assetId": "{{assetId}}", "clipName": "Walk", "startTime": 0, "playbackSpeed": 1, "loop": true }
+              ],
+              "cameraTracks": []
+            }
+            """);
+            _ = EngineProjectFile.Load(projectPath).RegisterExtraContentPath(sequenceRelativePath);
+            var packagePath = Path.Combine(root, "output", "package");
+
+            var error = Assert.Throws<InvalidDataException>(() =>
+                EngineProjectPackage.Create(projectPath, packagePath));
+
+            Assert.Contains(sequenceRelativePath, error.Message, StringComparison.Ordinal);
+            Assert.Contains(missingObjectId.ToString(), error.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(packagePath));
+            Assert.False(Directory.Exists(Path.GetDirectoryName(packagePath)));
         }
         finally
         {

@@ -78,6 +78,21 @@ public sealed class EngineProjectFile
         return fullPath;
     }
 
+    /// <summary>Registers an existing project-relative file or folder for inclusion in packages.</summary>
+    public EngineProjectFile RegisterExtraContentPath(string projectRelativePath)
+    {
+        var normalized = NormalizeRelativeContentPath(projectRelativePath);
+        var fullPath = ResolveContentPath(normalized);
+        if (!File.Exists(fullPath) && !Directory.Exists(fullPath))
+            throw new FileNotFoundException(
+                $"Project content '{normalized}' was not found and cannot be registered for packaging.", fullPath);
+        if (ExtraContentPaths.Contains(normalized, StringComparer.OrdinalIgnoreCase)) return this;
+
+        var updatedPaths = ExtraContentPaths.Append(normalized).ToArray();
+        SaveAtomic(FilePath, StartupScenePath, WorldManifestPath, updatedPaths);
+        return Load(FilePath);
+    }
+
     public static EngineProjectFile Load(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A project file path is required.", nameof(path));

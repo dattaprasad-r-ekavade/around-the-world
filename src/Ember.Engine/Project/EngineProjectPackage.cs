@@ -3,8 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using System.Text.Json;
+using Ember.Assets;
+using Ember.Sequence;
 using Ember.Scene;
 using Ember.World;
+using SharpGLTF.Schema2;
 
 namespace Ember.Project;
 
@@ -51,6 +54,7 @@ public static class EngineProjectPackage
     {
         var assetsById = new Dictionary<Guid, PackageAsset>();
         var filesByPath = new Dictionary<string, PackageFile>(StringComparer.OrdinalIgnoreCase);
+        var scenesByPath = new Dictionary<string, SceneGraph>(StringComparer.OrdinalIgnoreCase);
 
         // 1. Startup scene if present
         if (project.StartupScenePath is not null)
@@ -58,6 +62,7 @@ public static class EngineProjectPackage
             var startupScenePath = project.ResolveStartupScenePath();
             var scene = SceneFile.Load(startupScenePath);
             AddPackageFile(filesByPath, project.StartupScenePath, startupScenePath);
+            scenesByPath[project.StartupScenePath] = scene;
             CollectSceneGlbAssets(project, scene, assetsById);
         }
 
@@ -82,6 +87,7 @@ public static class EngineProjectPackage
                 AddPackageFile(filesByPath, cellSceneProjectRel, cellSceneFullPath);
 
                 var cellScene = SceneFile.Load(cellSceneFullPath);
+                scenesByPath.TryAdd(cellSceneProjectRel, cellScene);
                 CollectSceneGlbAssets(project, cellScene, assetsById);
             }
 
@@ -114,6 +120,9 @@ public static class EngineProjectPackage
             }
         }
 
+        // 3. Validate every registered sequence against the scenes and character assets being packaged.
+        ValidateSequenceFiles(filesByPath.Values, scenesByPath, assetsById);
+
         // 4. For each collected GLB asset, inspect external URIs (buffers/images)
         foreach (var asset in assetsById.Values)
         {
@@ -136,6 +145,101 @@ public static class EngineProjectPackage
             .OrderBy(file => file.ProjectRelativePath, StringComparer.OrdinalIgnoreCase)
             .ToArray();
         return new PackageContents(files, assetsById.Count);
+    }
+
+    private static void ValidateSequenceFiles(
+        IEnumerable<PackageFile> files,
+        IReadOnlyDictionary<string, SceneGraph> scenesByPath,
+        IReadOnlyDictionary<Guid, PackageAsset> assetsById)
+    {
+        var scenes = scenesByPath.ToArray();
+        var clipCatalogByAssetId = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
+        foreach (var file in files.Where(file =>
+                     file.ProjectRelativePath.EndsWith(".sequence.json", StringComparison.OrdinalIgnoreCase)))
+        {
+            SequenceFile.FileDependencies dependencies;
+            try
+            {
+                dependencies = SequenceFile.ReadDependencies(file.FullPath);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
+            }
+
+            var candidates = scenes.Where(scene =>
+            {
+                var hasTracks = dependencies.CharacterTracks.All(track =>
+                    scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId);
+                var hasTrigger = dependencies.TriggerObjectId is not { } triggerId
+                    || scene.Value.Find(triggerId) is not null;
+                return hasTracks && hasTrigger;
+            }).ToArray();
+
+            if (dependencies.CharacterTracks.Count == 0 && dependencies.TriggerObjectId is null)
+                candidates = scenes.Take(1).ToArray();
+
+            if (candidates.Length == 0)
+            {
+                var missingTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
+                    !scenes.Any(scene => scene.Value.Find(track.TargetObjectId) is not null));
+                if (missingTrack is not null)
+                    throw new InvalidDataException(
+                        $"Sequence '{file.ProjectRelativePath}' track {missingTrack.TrackId} refers to scene object {missingTrack.TargetObjectId}, which is not in any packaged scene.");
+
+                var mismatchedTrack = dependencies.CharacterTracks.FirstOrDefault(track =>
+                    !scenes.Any(scene => scene.Value.Find(track.TargetObjectId)?.GltfAsset?.AssetId == track.AssetId));
+                if (mismatchedTrack is not null)
+                    throw new InvalidDataException(
+                        $"Sequence '{file.ProjectRelativePath}' track {mismatchedTrack.TrackId} expects asset {mismatchedTrack.AssetId} on scene object {mismatchedTrack.TargetObjectId}, but no packaged scene has that assignment.");
+
+                if (dependencies.TriggerObjectId is { } missingTrigger
+                    && !scenes.Any(scene => scene.Value.Find(missingTrigger) is not null))
+                    throw new InvalidDataException(
+                        $"Sequence '{file.ProjectRelativePath}' cutscene trigger {missingTrigger} is not in any packaged scene.");
+
+                throw new InvalidDataException(
+                    $"Sequence '{file.ProjectRelativePath}' does not resolve all of its scene references in one packaged scene.");
+            }
+
+            if (candidates.Length > 1)
+                throw new InvalidDataException(
+                    $"Sequence '{file.ProjectRelativePath}' is ambiguous because its scene object IDs match more than one packaged scene.");
+
+            var clipsByAssetId = new Dictionary<Guid, IReadOnlyList<GltfAnimationClipData>>();
+            foreach (var track in dependencies.CharacterTracks)
+            {
+                if (!assetsById.TryGetValue(track.AssetId, out var asset))
+                    throw new InvalidDataException(
+                        $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} refers to asset {track.AssetId}, which is not included by any packaged scene.");
+                if (!clipCatalogByAssetId.TryGetValue(track.AssetId, out var clips))
+                {
+                    try
+                    {
+                        clips = GltfSkinnedCharacterData.Import(ModelRoot.Load(asset.FullPath)).Animations;
+                        clipCatalogByAssetId.Add(track.AssetId, clips);
+                    }
+                    catch (Exception exception)
+                    {
+                        throw new InvalidDataException(
+                            $"Sequence '{file.ProjectRelativePath}' track {track.TrackId} cannot load character asset '{asset.Reference.SourcePath}': {exception.Message}",
+                            exception);
+                    }
+                }
+                clipsByAssetId[track.AssetId] = clips;
+            }
+
+            try
+            {
+                _ = SequenceFile.Load(file.FullPath, candidates[0].Value, clipsByAssetId);
+            }
+            catch (Exception exception)
+            {
+                throw new InvalidDataException(
+                    $"Cannot package sequence '{file.ProjectRelativePath}': {exception.Message}", exception);
+            }
+        }
     }
 
     private static void CollectSceneGlbAssets(

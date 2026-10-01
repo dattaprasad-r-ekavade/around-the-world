@@ -320,16 +320,42 @@ public sealed partial class CharacterStudioGame
             initialDirectory, suggestedName, GraphicsDevice.PresentationParameters.DeviceWindowHandle);
         if (path is null) return;
 
+        var fullPath = Path.GetFullPath(path);
         try
         {
-            SequenceFile.SaveAtomic(_sequence, _sceneData, path);
-            _sequenceFilePath = Path.GetFullPath(path);
-            _reimportStatus = $"Saved sequence '{_sequence.Name}' to {Path.GetFileName(path)}.";
+            SequenceFile.SaveAtomic(_sequence, _sceneData, fullPath);
+            _sequenceFilePath = fullPath;
         }
         catch (Exception exception)
         {
             _reimportStatus = $"Could not save sequence: {exception.Message}";
+            return;
         }
+
+        var savedMessage = $"Saved sequence '{_sequence.Name}' to {Path.GetFileName(fullPath)}.";
+        try
+        {
+            var packageStatus = RegisterSequenceForProjectPackaging(fullPath);
+            _reimportStatus = packageStatus is null ? savedMessage : $"{savedMessage} {packageStatus}";
+        }
+        catch (Exception exception)
+        {
+            _reimportStatus = $"{savedMessage} Could not add it to project packaging: {exception.Message}";
+        }
+    }
+
+    private string? RegisterSequenceForProjectPackaging(string sequencePath)
+    {
+        if (_project is null) return null;
+        var fullPath = Path.GetFullPath(sequencePath);
+        var relativePath = Path.GetRelativePath(_project.RootDirectory, fullPath);
+        if (Path.IsPathRooted(relativePath) || relativePath == ".."
+            || relativePath.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            || relativePath.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal))
+            return "It is outside the project, so it will not be included when packaging.";
+
+        _project = _project.RegisterExtraContentPath(relativePath);
+        return "Added to project packaging.";
     }
 
     internal void StartSequenceCutsceneFromTrigger()
