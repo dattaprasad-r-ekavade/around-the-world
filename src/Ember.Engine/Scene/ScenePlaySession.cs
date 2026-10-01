@@ -257,6 +257,18 @@ public sealed class SceneBehaviourRuntime : IDisposable
 
     public T Own<T>(T resource) where T : class, IDisposable => _resources.Own(resource);
 
+    /// <summary>Creates and binds a registered behaviour before this scene starts.</summary>
+    public void AddRegistered(Guid ownerId, string behaviourId, SceneBehaviourRegistry registry)
+    {
+        ObjectDisposedException.ThrowIf(_disposed, this);
+        if (_started)
+            throw new InvalidOperationException("Behaviours must be registered before the scene starts.");
+        ArgumentNullException.ThrowIfNull(registry);
+        var owner = _scene.Find(ownerId)
+            ?? throw new ArgumentException($"Behaviour owner {ownerId} is not in this scene.", nameof(ownerId));
+        Add(ownerId, registry.Create(behaviourId, owner));
+    }
+
     public void Add(Guid ownerId, SceneBehaviour behaviour)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
