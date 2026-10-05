@@ -16,6 +16,28 @@ namespace Ember.Engine.Tests;
 public sealed class EngineProjectPackageTests
 {
     [Fact]
+    public void PackageDestinationInsideSourceProjectIsRejectedBeforeCreatingOutput()
+    {
+        var root = NewDirectory();
+        try
+        {
+            var projectRoot = Path.Combine(root, "SourceProject");
+            var project = EngineProjectWorkspace.CreateEmpty(projectRoot);
+            var destination = Path.Combine(projectRoot, "Distribution");
+
+            var exception = Assert.Throws<ArgumentException>(() =>
+                EngineProjectPackage.Create(project.FilePath, destination));
+
+            Assert.Contains("outside the project directory", exception.Message, StringComparison.Ordinal);
+            Assert.False(Directory.Exists(destination));
+        }
+        finally
+        {
+            if (Directory.Exists(root)) Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
     public void PackageContainsReferencedGlbsProjectAudioAndRegisteredSequenceAndCanMove()
     {
         var root = NewDirectory();

@@ -49,6 +49,10 @@ public static class EngineProjectPackage
             throw new ArgumentException("A package destination directory is required.", nameof(destinationDirectory));
 
         var destination = Path.GetFullPath(destinationDirectory);
+        if (IsWithinOrSame(project.RootDirectory, destination))
+            throw new ArgumentException(
+                $"Package destination must be outside the project directory '{project.RootDirectory}'.",
+                nameof(destinationDirectory));
         if (Directory.Exists(destination) || File.Exists(destination))
             throw new IOException($"Package destination already exists: '{destination}'.");
 
@@ -649,6 +653,15 @@ public static class EngineProjectPackage
     private static bool IsPackageContentFailure(Exception exception) =>
         exception is IOException or InvalidDataException or JsonException or UnauthorizedAccessException
             or ArgumentException or InvalidOperationException or NotSupportedException or UriFormatException;
+
+    private static bool IsWithinOrSame(string directory, string path)
+    {
+        var relative = Path.GetRelativePath(directory, path);
+        return !Path.IsPathRooted(relative)
+            && relative != ".."
+            && !relative.StartsWith(".." + Path.DirectorySeparatorChar, StringComparison.Ordinal)
+            && !relative.StartsWith(".." + Path.AltDirectorySeparatorChar, StringComparison.Ordinal);
+    }
 
     private static IEnumerable<string> EnumerateWorldPathFiles(string worldRoot)
     {

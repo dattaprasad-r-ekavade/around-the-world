@@ -19,6 +19,14 @@ if (-not (Test-Path -LiteralPath $engineProjectFile -PathType Leaf)) {
 }
 
 $destination = [System.IO.Path]::GetFullPath($DestinationPath)
+$destinationRelativeToProject = [System.IO.Path]::GetRelativePath($projectRoot, $destination)
+$destinationOutsideProject = [System.IO.Path]::IsPathRooted($destinationRelativeToProject) `
+    -or ($destinationRelativeToProject -eq '..') `
+    -or $destinationRelativeToProject.StartsWith('..' + [System.IO.Path]::DirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase) `
+    -or $destinationRelativeToProject.StartsWith('..' + [System.IO.Path]::AltDirectorySeparatorChar, [System.StringComparison]::OrdinalIgnoreCase)
+if (-not $destinationOutsideProject) {
+    throw "Distribution destination must be outside the project directory '$projectRoot'."
+}
 if (Test-Path -LiteralPath $destination) {
     throw "Distribution destination already exists: '$destination'."
 }
