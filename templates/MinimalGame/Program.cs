@@ -88,9 +88,7 @@ internal sealed class MinimalGame : EngineHost
     private readonly List<string> _faults = new();
     private readonly OrbitCamera _camera = new();
     private readonly List<PointLight> _lights = new();
-    private readonly Dictionary<Guid, CharacterAsset> _characterAssets = new();
-    private Dictionary<Guid, CharacterInstance> _characterInstances = new();
-    private readonly Dictionary<Guid, StaticAsset> _staticAssets = new();
+    private SceneAssetSet _sceneAssets = new();
     private readonly InputActionMap _actions = CreateInputActions();
     private EngineProjectFile _project = null!;
     private SceneGraph _sceneGraph = null!;
@@ -156,9 +154,9 @@ internal sealed class MinimalGame : EngineHost
         _staticEffect.EnableDefaultLighting();
         _staticEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
         _maskedStaticEffect = new AlphaTestEffect(GraphicsDevice);
-        _characterInstances = LoadSceneAssets(_sceneGraph);
+        _sceneAssets = LoadSceneAssets(_sceneGraph);
         InitializeGameplayRuntime();
-        if (_controlSmoke && (_playerObjectId is null || _characterInstances.Count == 0))
+        if (_controlSmoke && (_playerObjectId is null || _sceneAssets.CharacterInstances.Count == 0))
             throw new InvalidOperationException("--smoke-controls requires a startup scene with a skinned character.");
         _scene = new SceneRenderer(GraphicsDevice);
         AttachCanvas();
@@ -188,7 +186,7 @@ internal sealed class MinimalGame : EngineHost
                 : Vector3.Transform(Vector3.Zero, _sceneGraph.GetWorldMatrix(firstObject.Id));
             _camera.Reset(target, distance: 6f, yaw: 0.55f, pitch: -0.24f);
         }
-        Console.WriteLine($"Loaded {_sceneEntryDescription} with {_sceneGraph.Objects.Count} objects and {_characterInstances.Count} animated character(s).");
+        Console.WriteLine($"Loaded {_sceneEntryDescription} with {_sceneGraph.Objects.Count} objects and {_sceneAssets.CharacterInstances.Count} animated character(s).");
         foreach (var fault in _faults) Console.WriteLine($"ember project: {fault}");
     }
 
@@ -216,7 +214,7 @@ internal sealed class MinimalGame : EngineHost
 
         var elapsed = _controlSmoke ? 0.1f : RealSeconds(gameTime);
         _doorTravelCooldownSeconds = MathF.Max(0f, _doorTravelCooldownSeconds - elapsed);
-        foreach (var character in _characterInstances.Values)
+        foreach (var character in _sceneAssets.CharacterInstances.Values)
             character.Advance(elapsed);
 
         var movement2D = input.ReadMovement();
@@ -282,11 +280,11 @@ internal sealed class MinimalGame : EngineHost
         foreach (var item in _sceneGraph.Objects.Where(item => item.Enabled))
         {
             var world = _sceneGraph.GetWorldMatrix(item.Id);
-            if (_characterInstances.TryGetValue(item.Id, out var character))
+            if (_sceneAssets.CharacterInstances.TryGetValue(item.Id, out var character))
                 character.Asset.Draw(GraphicsDevice, character.Pose,
                     world, _camera.View, _camera.Projection);
             else if (GetMeshAssetReference(item) is { } reference
-                     && _staticAssets.TryGetValue(reference.AssetId, out var staticAsset))
+                     && _sceneAssets.StaticAssets.TryGetValue(reference.AssetId, out var staticAsset))
                 staticAsset.Draw(GraphicsDevice, _staticEffect!, _maskedStaticEffect!,
                     world, _camera.View, _camera.Projection);
             else
@@ -319,26 +317,31 @@ internal sealed class MinimalGame : EngineHost
 
     protected override void UnloadContent()
     {
-        DisposeGameplayRuntime();
-        foreach (var character in _characterAssets.Values)
-            character.Dispose();
-        _characterAssets.Clear();
-        _characterInstances.Clear();
-        foreach (var asset in _staticAssets.Values)
-            asset.Dispose();
-        _staticAssets.Clear();
-        _staticEffect?.Dispose();
+        var failures = new List<Exception>();
+        TryCleanup(DisposeGameplayRuntime);
+        TryCleanup(_sceneAssets.Dispose);
+        var staticEffect = _staticEffect;
         _staticEffect = null;
-        _maskedStaticEffect?.Dispose();
+        if (staticEffect is not null) TryCleanup(staticEffect.Dispose);
+        var maskedStaticEffect = _maskedStaticEffect;
         _maskedStaticEffect = null;
-        DisposeHost();
-        base.UnloadContent();
+        if (maskedStaticEffect is not null) TryCleanup(maskedStaticEffect.Dispose);
+        TryCleanup(DisposeHost);
+        TryCleanup(base.UnloadContent);
+        if (failures.Count > 0)
+            throw new AggregateException("MinimalGame content cleanup reported one or more failures.", failures);
+
+        void TryCleanup(Action cleanup)
+        {
+            try { cleanup(); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
     }
 
     private void InitializeGameplayRuntime()
     {
         var session = _playSession ?? throw new InvalidOperationException("The Play scene is not initialized.");
-        var prepared = CreateGameplayPhysics(session);
+        var prepared = CreateGameplayPhysics(session, _sceneAssets);
         ApplyGameplayPhysics(prepared);
         if (_playerObjectId is null)
             _actionStatus = "No playable character found. Add an animated character or actor to control the scene.";
@@ -346,11 +349,11 @@ internal sealed class MinimalGame : EngineHost
             _sceneGraph.PlaySettings = _sceneGraph.PlaySettings with { PlayerObjectId = _playerObjectId };
     }
 
-    private PreparedGameplayPhysics CreateGameplayPhysics(ScenePlaySession session)
+    private PreparedGameplayPhysics CreateGameplayPhysics(ScenePlaySession session, SceneAssetSet assets)
     {
         var scene = session.RuntimeScene;
         var settings = scene.PlaySettings.ValidatedCopy();
-        var playerObjectId = FindPlayCharacter(scene, settings);
+        var playerObjectId = FindPlayCharacter(scene, settings, assets);
         var world = new PhysicsWorld();
         SceneStaticColliderSet? colliders = null;
         PhysicsCharacterController? controller = null;
@@ -382,15 +385,28 @@ internal sealed class MinimalGame : EngineHost
             return new PreparedGameplayPhysics(
                 world, colliders, new PhysicsFixedStepper(), controller, playerObjectId);
         }
-        catch
+        catch (Exception initializationException)
         {
+            var cleanupFailures = new List<Exception>();
             if (controller is not null)
             {
-                session.UnbindPhysicsCharacter(controller.PhysicsBodyId);
-                controller.Dispose();
+                try { session.UnbindPhysicsCharacter(controller.PhysicsBodyId); }
+                catch (Exception exception) { cleanupFailures.Add(exception); }
+                try { controller.Dispose(); }
+                catch (Exception exception) { cleanupFailures.Add(exception); }
             }
-            colliders?.Dispose();
-            world.Dispose();
+            if (colliders is not null)
+            {
+                try { colliders.Dispose(); }
+                catch (Exception exception) { cleanupFailures.Add(exception); }
+            }
+            try { world.Dispose(); }
+            catch (Exception exception) { cleanupFailures.Add(exception); }
+            if (cleanupFailures.Count > 0)
+            {
+                cleanupFailures.Insert(0, initializationException);
+                throw new AggregateException("Gameplay physics initialization and cleanup both failed.", cleanupFailures);
+            }
             throw;
         }
     }
@@ -407,13 +423,20 @@ internal sealed class MinimalGame : EngineHost
     private static void DisposePreparedGameplayPhysics(ScenePlaySession session,
         PreparedGameplayPhysics prepared)
     {
+        var failures = new List<Exception>();
         if (prepared.Controller is { } controller)
         {
-            session.UnbindPhysicsCharacter(controller.PhysicsBodyId);
-            controller.Dispose();
+            try { session.UnbindPhysicsCharacter(controller.PhysicsBodyId); }
+            catch (Exception exception) { failures.Add(exception); }
+            try { controller.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
         }
-        prepared.Colliders.Dispose();
-        prepared.World.Dispose();
+        try { prepared.Colliders.Dispose(); }
+        catch (Exception exception) { failures.Add(exception); }
+        try { prepared.World.Dispose(); }
+        catch (Exception exception) { failures.Add(exception); }
+        if (failures.Count > 0)
+            throw new AggregateException("Prepared gameplay physics cleanup reported failures.", failures);
     }
 
     private void TryTravelToWorldDoor(WorldDoorComponent door, Guid? instigatorId)
@@ -438,6 +461,7 @@ internal sealed class MinimalGame : EngineHost
         }
 
         ScenePlaySession? candidateSession = null;
+        SceneAssetSet? candidateAssets = null;
         PreparedGameplayPhysics? candidatePhysics = null;
         try
         {
@@ -448,27 +472,29 @@ internal sealed class MinimalGame : EngineHost
             candidateSession = new ScenePlaySession(destinationScene);
             candidateSession.AuthoredActionExecuted += OnAuthoredActionExecuted;
             candidateSession.RuntimeScene.PlaySettings.ApplyInputBindings(_actions);
-            var candidateCharacters = LoadSceneAssets(candidateSession.RuntimeScene);
-            candidatePhysics = CreateGameplayPhysics(candidateSession);
+            candidateAssets = LoadSceneAssets(candidateSession.RuntimeScene);
+            candidatePhysics = CreateGameplayPhysics(candidateSession, candidateAssets);
 
             var previousController = _playerController;
             var previousColliders = _sceneColliders;
             var previousWorld = _physicsWorld;
+            var previousAssets = _sceneAssets;
+            _worldCellScenes[transfer.DestinationCellId] = candidateSession.RuntimeScene;
             sourceSession.AuthoredActionExecuted -= OnAuthoredActionExecuted;
             _playSession = candidateSession;
             _sceneGraph = candidateSession.RuntimeScene;
-            _characterInstances = candidateCharacters;
+            _sceneAssets = candidateAssets;
             ApplyGameplayPhysics(candidatePhysics);
             _currentWorldCellId = transfer.DestinationCellId;
-            _worldCellScenes[transfer.DestinationCellId] = _sceneGraph;
             _doorTravelCooldownSeconds = 0.6f;
             candidateSession = null;
+            candidateAssets = null;
             candidatePhysics = null;
 
             _sceneEntryDescription = $"World cell: {manifest.FindCell(transfer.DestinationCellId)?.ScenePath}";
             var settings = _sceneGraph.PlaySettings;
             var cleanupIssues = DisposeReplacedGameplayRuntime(sourceSession,
-                previousController, previousColliders, previousWorld);
+                previousController, previousColliders, previousWorld, previousAssets);
             try
             {
                 var cameraTarget = _playerController is { } playerController
@@ -501,12 +527,21 @@ internal sealed class MinimalGame : EngineHost
                     exception = new AggregateException(exception, cleanupException);
                 }
             }
+            if (candidateAssets is { } failedAssets)
+            {
+                try { failedAssets.Dispose(); }
+                catch (Exception cleanupException)
+                {
+                    exception = new AggregateException(exception, cleanupException);
+                }
+            }
             _actionStatus = $"Could not enter door: {exception.Message}";
         }
     }
 
     private static List<string> DisposeReplacedGameplayRuntime(ScenePlaySession session,
-        PhysicsCharacterController? controller, SceneStaticColliderSet? colliders, PhysicsWorld? world)
+        PhysicsCharacterController? controller, SceneStaticColliderSet? colliders, PhysicsWorld? world,
+        SceneAssetSet assets)
     {
         var issues = new List<string>();
         if (controller is not null)
@@ -528,16 +563,18 @@ internal sealed class MinimalGame : EngineHost
         }
         try { session.Dispose(); }
         catch (Exception exception) { issues.Add($"play session: {exception.Message}"); }
+        try { assets.Dispose(); }
+        catch (Exception exception) { issues.Add($"scene graphics assets: {exception.Message}"); }
         return issues;
     }
 
-    private Guid? FindPlayCharacter(SceneGraph scene, ScenePlaySettings settings)
+    private Guid? FindPlayCharacter(SceneGraph scene, ScenePlaySettings settings, SceneAssetSet assets)
     {
         bool IsPlayableCharacter(SceneObject item) => item.Enabled && item.TriggerAction is null
             && (item.CharacterSettings is not null
                 || item.WorldEntity?.Kind == WorldEntityKind.Actor
                 || (GetMeshAssetReference(item) is { } reference
-                    && _characterAssets.ContainsKey(reference.AssetId)));
+                    && assets.CharacterAssets.ContainsKey(reference.AssetId)));
 
         if (settings.PlayerObjectId is { } assignedId)
         {
@@ -583,23 +620,44 @@ internal sealed class MinimalGame : EngineHost
 
     private void DisposeGameplayRuntime()
     {
-        if (_playerController is { } controller)
-        {
-            _playSession?.UnbindPhysicsCharacter(controller.PhysicsBodyId);
-            controller.Dispose();
-            _playerController = null;
-        }
-        _sceneColliders?.Dispose();
+        var failures = new List<Exception>();
+        var controller = _playerController;
+        var colliders = _sceneColliders;
+        var world = _physicsWorld;
+        var session = _playSession;
+        _playerController = null;
         _sceneColliders = null;
-        _physicsWorld?.Dispose();
         _physicsWorld = null;
         _physicsStepper = null;
-        if (_playSession is { } session)
+        _playSession = null;
+        if (controller is not null)
+        {
+            if (session is not null)
+            {
+                try { session.UnbindPhysicsCharacter(controller.PhysicsBodyId); }
+                catch (Exception exception) { failures.Add(exception); }
+            }
+            try { controller.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        if (colliders is not null)
+        {
+            try { colliders.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        if (world is not null)
+        {
+            try { world.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
+        }
+        if (session is not null)
         {
             session.AuthoredActionExecuted -= OnAuthoredActionExecuted;
-            session.Dispose();
-            _playSession = null;
+            try { session.Dispose(); }
+            catch (Exception exception) { failures.Add(exception); }
         }
+        if (failures.Count > 0)
+            throw new AggregateException("Gameplay runtime cleanup reported one or more failures.", failures);
     }
 
     private static float CharacterCenterOffset(ScenePlaySettings settings) =>
@@ -630,41 +688,53 @@ internal sealed class MinimalGame : EngineHost
         item.Transform.Position = worldPosition;
     }
 
-    private Dictionary<Guid, CharacterInstance> LoadSceneAssets(SceneGraph sceneGraph)
+    private SceneAssetSet LoadSceneAssets(SceneGraph sceneGraph)
     {
-        foreach (var item in sceneGraph.Objects)
+        var assets = new SceneAssetSet();
+        try
         {
-            var reference = GetMeshAssetReference(item);
-            if (reference is null
-                || _characterAssets.ContainsKey(reference.AssetId)
-                || _staticAssets.ContainsKey(reference.AssetId)) continue;
-            var assetPath = _project.ResolveContentPath(reference.SourcePath);
-            if (!File.Exists(assetPath))
-                throw new FileNotFoundException(
-                    $"Scene object {item.Id} references missing GLB asset {reference.AssetId} at '{reference.SourcePath}'.",
-                    assetPath);
+            foreach (var item in sceneGraph.Objects)
+            {
+                var reference = GetMeshAssetReference(item);
+                if (reference is null
+                    || assets.CharacterAssets.ContainsKey(reference.AssetId)
+                    || assets.StaticAssets.ContainsKey(reference.AssetId)) continue;
+                var assetPath = _project.ResolveContentPath(reference.SourcePath);
+                if (!File.Exists(assetPath))
+                    throw new FileNotFoundException(
+                        $"Scene object {item.Id} references missing GLB asset {reference.AssetId} at '{reference.SourcePath}'.",
+                        assetPath);
 
-            var model = ModelRoot.Load(assetPath);
-            if (model.LogicalNodes.Any(node => node.Skin is not null))
-            {
-                var character = GltfSkinnedCharacterData.Import(model);
-                var asset = new CharacterAsset(GraphicsDevice, character);
-                _characterAssets.Add(reference.AssetId, asset);
+                var model = ModelRoot.Load(assetPath);
+                if (model.LogicalNodes.Any(node => node.Skin is not null))
+                {
+                    var character = GltfSkinnedCharacterData.Import(model);
+                    assets.CharacterAssets.Add(reference.AssetId, new CharacterAsset(GraphicsDevice, character));
+                }
+                else
+                {
+                    var imported = GltfSceneImporter.Import(model);
+                    assets.StaticAssets.Add(reference.AssetId, new StaticAsset(GraphicsDevice, imported));
+                }
             }
-            else
+
+            foreach (var item in sceneGraph.Objects)
             {
-                var imported = GltfSceneImporter.Import(model);
-                _staticAssets.Add(reference.AssetId, new StaticAsset(GraphicsDevice, imported));
+                if (item.GltfAsset is { } reference
+                    && assets.CharacterAssets.TryGetValue(reference.AssetId, out var asset))
+                    assets.CharacterInstances.Add(item.Id, new CharacterInstance(item, asset));
             }
+            return assets;
         }
-
-        var instances = new Dictionary<Guid, CharacterInstance>();
-        foreach (var item in sceneGraph.Objects)
+        catch (Exception loadException)
         {
-            if (item.GltfAsset is { } reference && _characterAssets.TryGetValue(reference.AssetId, out var asset))
-                instances.Add(item.Id, new CharacterInstance(item, asset));
+            try { assets.Dispose(); }
+            catch (Exception cleanupException)
+            {
+                throw new AggregateException(loadException, cleanupException);
+            }
+            throw;
         }
-        return instances;
     }
 
     private static GltfAssetReference? GetMeshAssetReference(SceneObject item) =>
@@ -707,15 +777,46 @@ internal sealed class MinimalGame : EngineHost
         {
             var world = _sceneGraph.GetWorldMatrix(item.Id);
             Bounds3? bounds = null;
-            if (_characterInstances.TryGetValue(item.Id, out var character))
+            if (_sceneAssets.CharacterInstances.TryGetValue(item.Id, out var character))
                 bounds = character.Asset.FramingBounds.Transform(world);
             else if (GetMeshAssetReference(item) is { } reference
-                     && _staticAssets.TryGetValue(reference.AssetId, out var staticAsset))
+                     && _sceneAssets.StaticAssets.TryGetValue(reference.AssetId, out var staticAsset))
                 bounds = staticAsset.GetWorldBounds(world);
             if (bounds is not { } objectBounds) continue;
             combined = combined is { } current ? current.Encapsulate(objectBounds) : objectBounds;
         }
         return combined;
+    }
+
+    private sealed class SceneAssetSet : IDisposable
+    {
+        private bool _disposed;
+
+        public Dictionary<Guid, CharacterAsset> CharacterAssets { get; } = new();
+        public Dictionary<Guid, CharacterInstance> CharacterInstances { get; } = new();
+        public Dictionary<Guid, StaticAsset> StaticAssets { get; } = new();
+
+        public void Dispose()
+        {
+            if (_disposed) return;
+            _disposed = true;
+            List<Exception>? failures = null;
+            foreach (var asset in CharacterAssets.Values)
+            {
+                try { asset.Dispose(); }
+                catch (Exception exception) { (failures ??= new()).Add(exception); }
+            }
+            foreach (var asset in StaticAssets.Values)
+            {
+                try { asset.Dispose(); }
+                catch (Exception exception) { (failures ??= new()).Add(exception); }
+            }
+            CharacterAssets.Clear();
+            CharacterInstances.Clear();
+            StaticAssets.Clear();
+            if (failures is not null)
+                throw new AggregateException("One or more scene graphics assets failed to dispose.", failures);
+        }
     }
 
     private sealed class CharacterInstance
