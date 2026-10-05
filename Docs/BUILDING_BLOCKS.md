@@ -566,6 +566,14 @@ counts, or actionable diagnostics for all discovered content errors. It does not
 destination; the caller must validate that separately. `Create()` repeats dependency preflight before
 staging and only publishes when the complete dependency graph is valid.
 
+`MissionProjectCheckpointStore.Capture()` writes a versioned, checksummed project snapshot outside
+the project. `Restore()` verifies the mission and project identity, extracts into a sibling staging
+directory, validates the staged project file, and swaps the project directory only after staging
+succeeds. It carries the current `.ember/learning-progress.json` forward so rewinding a mission
+does not erase learner progress; `.git`, `.vs`, `.vscode`, `bin` and `obj` are preserved from the
+current project. Reparse points are rejected. `MissionProjectRewindResult.RetainedBackupPath` is
+set only when the restored project is live but cleanup of its recoverable pre-rewind backup failed.
+
 Scene audio references are package metadata, not a playback component. Register them with
 `scene.SetAudioAssets([new SceneAudioAssetReference(assetId, "Assets/Audio/step.wav")])`; playback
 still uses `ImportedAudioClip` and a `SceneBehaviour` until editor audio authoring is implemented.

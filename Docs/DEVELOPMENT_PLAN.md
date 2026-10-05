@@ -84,7 +84,7 @@ Goal: lessons become content, not code, so stages can be written quickly.
   the same behaviour.
 - *(new)* Mission test harness: CI replays a scripted solution for each mission and checks
   its completion conditions.
-- *(new)* "Rewind mission": a checkpoint before each mission that restores the project.
+- L.6: "Rewind mission": a versioned project checkpoint before each mission, with safe restore.
 - *(new)* Codex skeleton: concept pages with plain text, industry term and a "try it" scene.
 - *(new)* Mission authoring template with a "pain point" field for each mission.
 - L.5: concept progress view.

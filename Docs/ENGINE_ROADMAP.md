@@ -111,8 +111,10 @@ was promoted.
 
 ## Next actions
 
-Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). Do not add
-new default editor panels until the M1 gate passes.
+Follow this order. Later phases are in [DEVELOPMENT_PLAN.md](DEVELOPMENT_PLAN.md). The owner has
+asked to defer computer-driven tests, record the remaining UI checks, and continue code work; keep
+those gates In progress. The current code-only slice is L.6: wire the checkpoint service into the
+existing mission flow. Do not add new default editor panels until the M1 gate passes.
 
 1. **M0.4:** finish the visible editor checks in [MANUAL_GRAPHICS_GATE.md](MANUAL_GRAPHICS_GATE.md):
    folder/project controls, scene transform save/reopen, Play/Stop and recovery
@@ -254,7 +256,7 @@ needed for the demonstrated workflow. Full RPG systems are not this gate. Includ
 ## L — Learning path from presets to code
 
 Dependency: L.1 depends on UX.4; L.2 depends on M2.1 and L.1; L.3 depends on L.2 and M2.2;
-L.4 and L.5 depend on L.3. The concept order, missions and transfer checks are in
+L.4 and L.5 depend on L.3; L.6 depends on L.1. The concept order, missions and transfer checks are in
 [CURRICULUM.md](CURRICULUM.md). The L track extends the teaching goal beyond action presets,
 so learners can progress to semi-professional skills. It does not replace M1–M5 gates, and
 a mission becomes available only after its feature gate passes.
@@ -266,6 +268,7 @@ a mission becomes available only after its feature gate passes.
 | L.3 | C# behaviours with reload in Play. | Create a project behaviour from the editor, edit it in an in-editor or external editor, and reload it without restarting the editor. Compile and run-time errors name the file, line and owning object in plain language. Public properties appear in the Inspector. A visual rule can be shown as equivalent C#. Behaviours package with M2.3 output. Custom code cannot corrupt authored data during Play. | Not started |
 | L.4 | Programming puzzles. | Ship at least three code missions with fixed goals checked from game state, and optional measures (time, steps or code size) shown as feedback, never as locks. A learner who solves one puzzle solves a different one without hints. | Not started |
 | L.5 | Concept progress view. | Show learned concepts and creations from the project-local progress record, with links to replay any mission. No tool is hidden or disabled by progress. | Not started |
+| L.6 | Mission checkpoint and rewind. | Capture each mission's authored project tree in a versioned, checksummed archive outside the project. Rewind restores modified, added and removed project files from staged content; preserve current lesson progress and version-control/editor metadata. A mismatched or corrupt checkpoint fails before changing the open project, and a failed directory swap rolls back. Expose Rewind from the existing mission flow with an actionable result. | In progress |
 
 Gate: an observed learner moves one interaction from preset to visual rule to C#
 behaviour in the same project, explains the rule at each level, and makes a different
