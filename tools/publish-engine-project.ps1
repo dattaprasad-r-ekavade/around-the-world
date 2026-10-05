@@ -92,6 +92,14 @@ try {
         }
     }
 
+    Write-Output 'Rechecking the staged project content...'
+    $packagedProjectFile = Join-Path $projectContentDirectory 'ember.project.json'
+    & dotnet $managedAssembly --validate-package --project $packagedProjectFile
+    $packagedPreflightExitCode = $LASTEXITCODE
+    if ($packagedPreflightExitCode -ne 0) {
+        throw "Packaged project content preflight failed with exit code $packagedPreflightExitCode; see the diagnostics above."
+    }
+
     [System.IO.Directory]::Move($publishDirectory, $destination)
     Write-Output "Created self-contained win-x64 distribution at '$destination'."
     Write-Output "Launch 'MinimalEmberGame.exe'; bundled project content is under 'Project'."

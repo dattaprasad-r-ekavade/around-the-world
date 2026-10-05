@@ -579,10 +579,11 @@ supported static and skinned GLB references from its startup scene; objects with
 are shown as cubes.
 
 `tools/publish-engine-project.ps1` builds a self-contained `win-x64` distribution, runs the
-read-only dependency preflight, and packages the project's startup scene and dependencies under
-`Project/` only when content is valid. It verifies the runtime, engine, and graphics assemblies are
-present. In the published app, that bundled project becomes the default. The app can launch from
-any working directory without `dotnet` or the engine source checkout.
+read-only dependency preflight before copying content, then validates the staged
+`Project/ember.project.json` after copying. A failed check removes the owned staging directory
+without creating the final destination. The script also verifies the runtime, engine, and graphics
+assemblies are present. In the published app, that bundled project becomes the default. The app can
+launch from any working directory without `dotnet` or the engine source checkout.
 
 ## Interface
 
