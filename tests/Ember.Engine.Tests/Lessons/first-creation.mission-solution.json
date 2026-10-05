@@ -1,0 +1,71 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "first-creation",
+  "initialObjects": [
+    { "id": "a3c883b7-8c26-48c8-bc26-d93d2ab74600", "name": "Starter object" }
+  ],
+  "actions": [
+    {
+      "type": "add-object",
+      "objectId": "88fe4fbd-2154-41e6-8156-ccff61a82b22",
+      "name": "Lesson object",
+      "expectedStepId": "move-object"
+    },
+    {
+      "type": "move-object",
+      "objectId": "88fe4fbd-2154-41e6-8156-ccff61a82b22",
+      "position": [1, 0, 0],
+      "expectedStepId": "predict-play"
+    },
+    {
+      "type": "answer-choice",
+      "choiceId": "saved-scene-changes",
+      "accepted": false,
+      "expectedStepId": "predict-play"
+    },
+    {
+      "type": "answer-choice",
+      "choiceId": "temporary-copy",
+      "accepted": true,
+      "expectedStepId": "play"
+    },
+    {
+      "type": "playback",
+      "isPlaying": true,
+      "expectedStepId": "play"
+    },
+    {
+      "type": "playback",
+      "isPlaying": false,
+      "expectedStepId": "reflect"
+    },
+    {
+      "type": "answer-choice",
+      "choiceId": "play-edits-were-saved",
+      "accepted": false,
+      "expectedStepId": "reflect"
+    },
+    {
+      "type": "answer-choice",
+      "choiceId": "authored-scene-stayed-the-same",
+      "accepted": true,
+      "expectedStepId": "undo"
+    },
+    {
+      "type": "undo",
+      "accepted": true,
+      "expectedStepId": "try-another-object"
+    },
+    {
+      "type": "move-object",
+      "objectId": "a3c883b7-8c26-48c8-bc26-d93d2ab74600",
+      "position": [0, 0, 1],
+      "expectedStepId": "save"
+    },
+    {
+      "type": "save-reopen",
+      "expectedStepId": null,
+      "expectedComplete": true
+    }
+  ]
+}

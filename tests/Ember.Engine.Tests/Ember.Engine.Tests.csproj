@@ -39,6 +39,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <None Update="Lessons\*.mission-solution.json"
+          CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Compile Include="..\..\samples\RpgSlice\RpgSliceTransitionSoak.cs"
              Link="RpgSliceTransitionSoak.cs" />
     <Compile Include="..\..\samples\RpgSlice\RpgSliceLifecycleCheck.cs"

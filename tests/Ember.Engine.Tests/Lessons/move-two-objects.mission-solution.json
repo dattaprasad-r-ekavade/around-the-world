@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "lessonId": "move-two-objects",
+  "initialObjects": [
+    { "id": "a3c883b7-8c26-48c8-bc26-d93d2ab74600", "name": "First object" },
+    { "id": "68c9351c-3b44-4ce5-a19e-68bf110604ad", "name": "Second object" }
+  ],
+  "actions": [
+    {
+      "type": "move-object",
+      "objectId": "a3c883b7-8c26-48c8-bc26-d93d2ab74600",
+      "position": [1, 0, 0],
+      "expectedStepId": "move-different-object"
+    },
+    {
+      "type": "move-object",
+      "objectId": "68c9351c-3b44-4ce5-a19e-68bf110604ad",
+      "position": [0, 0, 1],
+      "expectedStepId": null,
+      "expectedComplete": true
+    }
+  ]
+}
