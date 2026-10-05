@@ -2,6 +2,7 @@ using System;
 using System.IO;
 using System.Text;
 using System.Text.Json;
+using Ember.IO;
 
 namespace Campaign;
 
@@ -111,7 +112,7 @@ public sealed class BotLog : IDisposable
     public void WriteSummary(int worldSeed, int botSeed, string goal)
     {
         var min = GoldMin == int.MaxValue ? GoldLast : GoldMin;
-        var body = JsonSerializer.Serialize(new
+        var summary = new
         {
             worldSeed,
             botSeed,
@@ -132,8 +133,13 @@ public sealed class BotLog : IDisposable
             gold = GoldLast,
             lastGoal = goal,
             log = Path
-        }, new JsonSerializerOptions { WriteIndented = true, PropertyNamingPolicy = JsonNamingPolicy.CamelCase });
-        File.WriteAllText(SummaryPath, body);
+        };
+        var options = new JsonSerializerOptions
+        {
+            WriteIndented = true,
+            PropertyNamingPolicy = JsonNamingPolicy.CamelCase
+        };
+        AtomicFile.Write(SummaryPath, stream => JsonSerializer.Serialize(stream, summary, options));
         Event("end", StatusLine(), null);
     }
 

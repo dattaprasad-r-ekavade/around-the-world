@@ -1,4 +1,5 @@
 using Ember.Audio;
+using Ember.IO;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Audio;
 using System;
@@ -178,20 +179,22 @@ public sealed class LocationBeds : IDisposable
 
     private static void WriteWav(string path, byte[] pcm)
     {
-        using var stream = File.Create(path);
-        using var writer = new BinaryWriter(stream, Encoding.ASCII);
-        writer.Write(Encoding.ASCII.GetBytes("RIFF"));
-        writer.Write(36 + pcm.Length);
-        writer.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
-        writer.Write(16);
-        writer.Write((short)1);
-        writer.Write((short)1);
-        writer.Write(SoundForge.SampleRate);
-        writer.Write(SoundForge.SampleRate * 2);
-        writer.Write((short)2);
-        writer.Write((short)16);
-        writer.Write(Encoding.ASCII.GetBytes("data"));
-        writer.Write(pcm.Length);
-        writer.Write(pcm);
+        AtomicFile.Write(path, stream =>
+        {
+            using var writer = new BinaryWriter(stream, Encoding.ASCII, leaveOpen: true);
+            writer.Write(Encoding.ASCII.GetBytes("RIFF"));
+            writer.Write(36 + pcm.Length);
+            writer.Write(Encoding.ASCII.GetBytes("WAVEfmt "));
+            writer.Write(16);
+            writer.Write((short)1);
+            writer.Write((short)1);
+            writer.Write(SoundForge.SampleRate);
+            writer.Write(SoundForge.SampleRate * 2);
+            writer.Write((short)2);
+            writer.Write((short)16);
+            writer.Write(Encoding.ASCII.GetBytes("data"));
+            writer.Write(pcm.Length);
+            writer.Write(pcm);
+        });
     }
 }

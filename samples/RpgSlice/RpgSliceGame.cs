@@ -1,5 +1,6 @@
 using Ember;
 using Ember.Authoring;
+using Ember.IO;
 using Ember.Input;
 using Ember.Physics;
 using Ember.Render;
@@ -599,7 +600,7 @@ public sealed class RpgSliceGame : EngineHost
                 ? "ember-rpgslice-settlement-benchmark.txt"
                 : "ember-rpgslice-outdoor-benchmark.txt";
             var reportPath = Path.Combine(Path.GetTempPath(), reportFileName);
-            File.WriteAllText(reportPath, report, Encoding.UTF8);
+            WriteTextAtomically(reportPath, report);
             Console.WriteLine(report);
             Console.WriteLine($"RpgSlice benchmark report saved to {reportPath}");
             Exit();
@@ -886,8 +887,8 @@ public sealed class RpgSliceGame : EngineHost
             var adapter = GraphicsDevice.Adapter.Description;
             var width = GraphicsDevice.Viewport.Width;
             var height = GraphicsDevice.Viewport.Height;
-            File.WriteAllText(jsonPath, _transitionSoak.BuildRawData(adapter, width, height), Encoding.UTF8);
-            File.WriteAllText(markdownPath, _transitionSoak.BuildReport(adapter, width, height), Encoding.UTF8);
+            WriteTextAtomically(jsonPath, _transitionSoak.BuildRawData(adapter, width, height));
+            WriteTextAtomically(markdownPath, _transitionSoak.BuildReport(adapter, width, height));
         }
         catch (Exception error)
         {
@@ -966,8 +967,8 @@ public sealed class RpgSliceGame : EngineHost
             var adapter = GraphicsDevice.Adapter.Description;
             var width = GraphicsDevice.Viewport.Width;
             var height = GraphicsDevice.Viewport.Height;
-            File.WriteAllText(jsonPath, _lifecycleCheck.BuildRawData(adapter, width, height), Encoding.UTF8);
-            File.WriteAllText(markdownPath, _lifecycleCheck.BuildReport(adapter, width, height), Encoding.UTF8);
+            WriteTextAtomically(jsonPath, _lifecycleCheck.BuildRawData(adapter, width, height));
+            WriteTextAtomically(markdownPath, _lifecycleCheck.BuildReport(adapter, width, height));
         }
         catch (Exception error)
         {
@@ -1005,6 +1006,16 @@ public sealed class RpgSliceGame : EngineHost
         var yaw = MathF.Atan2(-forward.X, -forward.Z);
         _camera.Reset(spawn.Position, distance: 9f, yaw, pitch: -0.18f);
         _camera.Follow(_physics, spawn.Position);
+    }
+
+    private static void WriteTextAtomically(string path, string content)
+    {
+        AtomicFile.Write(path, stream =>
+        {
+            using var writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 1024, leaveOpen: true);
+            writer.Write(content);
+            writer.Flush();
+        });
     }
 
     private SceneObject? FindNearbyDoor()
