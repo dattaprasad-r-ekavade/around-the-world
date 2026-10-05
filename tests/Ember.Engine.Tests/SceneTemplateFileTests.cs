@@ -57,6 +57,37 @@ public sealed class SceneTemplateFileTests
     }
 
     [Fact]
+    public void SavingSubtreeExcludesSceneWidePlayerAndAudioSettings()
+    {
+        var path = TemporaryTemplatePath();
+        try
+        {
+            var scene = new SceneGraph();
+            var player = new SceneObject(Guid.NewGuid(), "Player")
+            {
+                GltfAsset = new GltfAssetReference(Guid.NewGuid(), "Assets/Characters/Player.glb")
+            };
+            var root = new SceneObject(Guid.NewGuid(), "Furniture");
+            scene.Add(player);
+            scene.Add(root);
+            scene.PlaySettings = new ScenePlaySettings { PlayerObjectId = player.Id, MoveSpeed = 5f };
+            scene.SetAudioAssets([new SceneAudioAssetReference(Guid.NewGuid(), "Assets/Audio/step.wav")]);
+
+            SceneTemplateFile.Save(scene, root.Id, "Furniture", path);
+            var loaded = SceneTemplateFile.Load(path);
+
+            Assert.Equal(new ScenePlaySettings(), loaded.Scene.PlaySettings);
+            Assert.Empty(loaded.Scene.AudioAssets);
+            Assert.Null(loaded.Scene.Find(player.Id));
+            Assert.NotNull(loaded.Scene.Find(root.Id));
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
     public void SavingOverTemplateKeepsItsIdAndAdvancesTheRevision()
     {
         var path = TemporaryTemplatePath();

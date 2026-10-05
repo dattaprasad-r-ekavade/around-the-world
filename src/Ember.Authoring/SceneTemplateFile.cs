@@ -129,6 +129,11 @@ public static class SceneTemplateFile
         foreach (var id in snapshot.Objects.Select(item => item.Id).Where(id => !includedIds.Contains(id)).ToArray())
             snapshot.Remove(id);
 
+        // These settings belong to the containing scene, not to the selected hierarchy. Keeping
+        // them leaks unrelated gameplay defaults and audio assets into reusable template files.
+        snapshot.PlaySettings = new ScenePlaySettings();
+        snapshot.SetAudioAssets(Array.Empty<SceneAudioAssetReference>());
+
         return ValidateAndCreate(templateId, revision, name, rootObjectId, snapshot);
     }
 
