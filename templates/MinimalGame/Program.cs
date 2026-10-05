@@ -2,6 +2,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Security.Cryptography;
+using System.Text;
 using Ember;
 using Ember.Assets;
 using Ember.Input;
@@ -81,6 +83,7 @@ internal static class Program
 internal sealed class MinimalGame : EngineHost
 {
     private const string ExitActionName = "Exit";
+    private const string QuickSaveActionName = "QuickSave";
     private static readonly Keys[] ControlSmokeMovementKeys = { Keys.W, Keys.A, Keys.S, Keys.D };
 
     private readonly string _projectPath;
@@ -99,6 +102,11 @@ internal sealed class MinimalGame : EngineHost
     private PhysicsCharacterController? _playerController;
     private Guid? _playerObjectId;
     private WorldManifest? _worldManifest;
+    private WorldPersistenceSession? _worldPersistence;
+    private WorldPlayerLocation? _restoredPlayerLocation;
+    private string? _worldSavePath;
+    private bool _worldSaveLoadFailed;
+    private bool? _lastWorldSaveSucceeded;
     private Dictionary<Guid, SceneGraph> _worldCellScenes = new();
     private Guid? _currentWorldCellId;
     private WorldDoorComponent? _pendingWorldDoor;
@@ -130,17 +138,46 @@ internal sealed class MinimalGame : EngineHost
         if (_project.WorldManifestPath is not null)
             _worldManifest = WorldManifest.LoadForValidation(_project.ResolveWorldManifestPath());
 
-        var initialScenePath = EngineProjectWorkspace.ResolveInitialScenePath(_project);
+        WorldSaveSnapshot? restoredSave = null;
         if (_worldManifest is { } manifest)
         {
+            _worldSavePath = ResolveWorldSavePath(_project.RootDirectory);
+            if (File.Exists(_worldSavePath))
+            {
+                try
+                {
+                    restoredSave = WorldSaveFile.Load(_worldSavePath, manifest);
+                    _restoredPlayerLocation = restoredSave.PlayerLocation;
+                    _currentWorldCellId = restoredSave.PlayerLocation.CellId;
+                }
+                catch (Exception exception) when (exception is IOException or InvalidDataException
+                    or UnauthorizedAccessException or ArgumentException or InvalidOperationException
+                    or KeyNotFoundException)
+                {
+                    _worldSaveLoadFailed = true;
+                    _actionStatus = $"World save could not be loaded. Press F5 to replace it after checking the game state. {exception.Message}";
+                    _faults.Add($"World save at '{_worldSavePath}': {exception.Message}");
+                }
+            }
+
+            _worldPersistence = new WorldPersistenceSession(manifest, restoredSave);
+        }
+
+        var initialScenePath = restoredSave is not null
+            ? _worldManifest!.ResolveScenePath(restoredSave.PlayerLocation.CellId)
+            : EngineProjectWorkspace.ResolveInitialScenePath(_project);
+        if (_worldManifest is { } worldManifest && _currentWorldCellId is null)
+        {
             var fullInitialScenePath = Path.GetFullPath(initialScenePath);
-            _currentWorldCellId = manifest.Cells
-                .Where(cell => string.Equals(Path.GetFullPath(manifest.ResolveScenePath(cell.Id)),
+            _currentWorldCellId = worldManifest.Cells
+                .Where(cell => string.Equals(Path.GetFullPath(worldManifest.ResolveScenePath(cell.Id)),
                     fullInitialScenePath, StringComparison.OrdinalIgnoreCase))
                 .Select(cell => (Guid?)cell.Id)
                 .FirstOrDefault();
         }
-        _sceneEntryDescription = _project.StartupScenePath is { } startupScene
+        _sceneEntryDescription = restoredSave is not null
+            ? $"World cell: {_worldManifest!.FindCell(restoredSave.PlayerLocation.CellId)?.ScenePath} (continued)"
+            : _project.StartupScenePath is { } startupScene
             ? $"Startup scene: {startupScene}"
             : $"World cell: {Path.GetRelativePath(_project.RootDirectory, initialScenePath)}";
         var authoredScene = SceneFile.Load(initialScenePath);
@@ -148,13 +185,17 @@ internal sealed class MinimalGame : EngineHost
         _playSession.AuthoredActionExecuted += OnAuthoredActionExecuted;
         _sceneGraph = _playSession.RuntimeScene;
         if (_currentWorldCellId is { } currentCellId)
+        {
+            _worldPersistence?.PrepareCell(currentCellId, _sceneGraph);
             _worldCellScenes[currentCellId] = _sceneGraph;
+        }
         _sceneGraph.PlaySettings.ApplyInputBindings(_actions);
         _staticEffect = new BasicEffect(GraphicsDevice);
         _staticEffect.EnableDefaultLighting();
         _staticEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
         _maskedStaticEffect = new AlphaTestEffect(GraphicsDevice);
         _sceneAssets = LoadSceneAssets(_sceneGraph);
+        RestorePlayerLocationIfAvailable();
         InitializeGameplayRuntime();
         if (_controlSmoke && (_playerObjectId is null || _sceneAssets.CharacterInstances.Count == 0))
             throw new InvalidOperationException("--smoke-controls requires a startup scene with a skinned character.");
@@ -206,9 +247,27 @@ internal sealed class MinimalGame : EngineHost
                     throw new InvalidOperationException("Control smoke received Escape before all WASD directions ran.");
                 Console.WriteLine("PASS control smoke: W/A/S/D moved the character and Escape requested exit.");
             }
+            if (_worldPersistence is not null && !_controlSmoke)
+            {
+                if (_worldSaveLoadFailed)
+                {
+                    _actionStatus = "World save was not loaded. Press F5 to replace it before saving on exit.";
+                    Console.WriteLine(_actionStatus);
+                    Exit();
+                    return;
+                }
+                if (RequestWorldSave())
+                {
+                    ProcessWorldSavesAtStableBoundary();
+                    if (_worldPersistence.PendingSaveCount > 0 || _lastWorldSaveSucceeded != true)
+                        return;
+                }
+            }
             Exit();
             return;
         }
+        if (_actions.ConsumePressed(QuickSaveActionName))
+            RequestWorldSave();
         if (_controlSmoke && _controlSmokeFrame == 8)
             throw new InvalidOperationException("Control smoke failed: Escape action was not detected.");
 
@@ -266,6 +325,7 @@ internal sealed class MinimalGame : EngineHost
         if (_controlSmoke && (_controlSmokeFrame & 1) == 0 && movement2D.LengthSquared() == 0f)
             throw new InvalidOperationException("Control smoke failed: a movement key did not move the character.");
         if (_controlSmoke) _controlSmokeFrame++;
+        ProcessWorldSavesAtStableBoundary();
         base.Update(gameTime);
     }
 
@@ -297,9 +357,17 @@ internal sealed class MinimalGame : EngineHost
         _ui.TextFit($"{_sceneEntryDescription} | {_sceneGraph.Objects.Count} objects",
             new Vector2(38, 65), 684f, 1f, new Color(197, 207, 220));
         var settings = _sceneGraph.PlaySettings;
-        var controls = _playerController is null
+        var movementControls = _playerController is null
+            ? string.Empty
+            : $"{settings.MoveForward}/{settings.MoveLeft}/{settings.MoveBackward}/{settings.MoveRight} move | {settings.Jump} jump";
+        var saveControls = !CanSaveWorld
             ? "ESC exit"
-            : $"{settings.MoveForward}/{settings.MoveLeft}/{settings.MoveBackward}/{settings.MoveRight} move | {settings.Jump} jump | ESC exit";
+            : _worldSaveLoadFailed
+                ? "F5 replace save | ESC exit"
+                : "F5 save | ESC save & exit";
+        var controls = string.IsNullOrEmpty(movementControls)
+            ? saveControls
+            : $"{movementControls} | {saveControls}";
         _ui.TextFit(controls, new Vector2(38, 89), 684f, 1f, new Color(164, 190, 207));
         var actionStatus = _playSession?.HasReachedGoal == true
             && !_actionStatus.StartsWith("Reached goal:", StringComparison.Ordinal)
@@ -472,6 +540,7 @@ internal sealed class MinimalGame : EngineHost
             candidateSession = new ScenePlaySession(destinationScene);
             candidateSession.AuthoredActionExecuted += OnAuthoredActionExecuted;
             candidateSession.RuntimeScene.PlaySettings.ApplyInputBindings(_actions);
+            _worldPersistence?.PrepareCell(transfer.DestinationCellId, candidateSession.RuntimeScene);
             candidateAssets = LoadSceneAssets(candidateSession.RuntimeScene);
             candidatePhysics = CreateGameplayPhysics(candidateSession, candidateAssets);
 
@@ -593,6 +662,18 @@ internal sealed class MinimalGame : EngineHost
 
     private void OnAuthoredActionExecuted(SceneAuthoredActionEvent action)
     {
+        if (action.Kind == SceneTriggerActionKind.Collect
+            && _worldPersistence is { } persistence
+            && _currentWorldCellId is { } cellId
+            && _sceneGraph.Find(action.SceneObjectId) is { } collectedObject)
+        {
+            try { persistence.SetEnabled(cellId, collectedObject, enabled: false); }
+            catch (Exception exception)
+            {
+                _faults.Add($"Collected object '{action.SceneObjectName}' could not be saved: {exception.Message}");
+            }
+        }
+
         if (action.Kind == SceneTriggerActionKind.Open && action.Door is { } door)
         {
             if (_worldManifest is null)
@@ -688,6 +769,123 @@ internal sealed class MinimalGame : EngineHost
         item.Transform.Position = worldPosition;
     }
 
+    private void RestorePlayerLocationIfAvailable()
+    {
+        if (_restoredPlayerLocation is not { } location) return;
+        var playerId = FindPlayCharacter(_sceneGraph, _sceneGraph.PlaySettings, _sceneAssets);
+        if (playerId is not { } id || _sceneGraph.Find(id) is not { } player)
+        {
+            _worldSaveLoadFailed = true;
+            _actionStatus = "The saved location could not be restored because this cell has no playable character.";
+            _faults.Add(_actionStatus);
+            return;
+        }
+
+        try { SetObjectWorldTransform(_sceneGraph, player, location.Position, location.Facing); }
+        catch (Exception exception) when (exception is ArgumentException or InvalidOperationException)
+        {
+            _worldSaveLoadFailed = true;
+            _actionStatus = $"The saved player location could not be restored. Press F5 to replace it after checking the game state. {exception.Message}";
+            _faults.Add(_actionStatus);
+        }
+    }
+
+    private static void SetObjectWorldTransform(SceneGraph scene, SceneObject item,
+        Vector3 worldPosition, Quaternion worldRotation)
+    {
+        var currentWorld = scene.GetWorldMatrix(item.Id);
+        if (!currentWorld.Decompose(out var worldScale, out _, out _))
+            throw new InvalidOperationException($"Cannot restore player '{item.Name}' because its current world transform cannot be decomposed.");
+
+        var desiredWorld = Matrix.CreateScale(worldScale)
+            * Matrix.CreateFromQuaternion(Quaternion.Normalize(worldRotation))
+            * Matrix.CreateTranslation(worldPosition);
+        var desiredLocal = desiredWorld;
+        if (item.ParentId is { } parentId)
+        {
+            var parentWorld = scene.GetWorldMatrix(parentId);
+            var determinant = parentWorld.Determinant();
+            if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 1e-8f)
+                throw new InvalidOperationException($"Cannot restore player '{item.Name}' because its parent transform is not invertible.");
+            desiredLocal *= Matrix.Invert(parentWorld);
+        }
+
+        if (!desiredLocal.Decompose(out var localScale, out var localRotation, out var localPosition))
+            throw new InvalidOperationException($"Cannot restore player '{item.Name}' because the saved world transform is incompatible with its parent.");
+        item.Transform = new Transform
+        {
+            Position = localPosition,
+            Rotation = Quaternion.Normalize(localRotation),
+            Scale = localScale
+        };
+    }
+
+    private static string ResolveWorldSavePath(string projectRoot)
+    {
+        var stableRoot = Path.GetFullPath(projectRoot).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var projectKey = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(stableRoot.ToUpperInvariant())))
+            .ToLowerInvariant();
+        return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "Ember", "MinimalGame", "Saves", projectKey, "world-save.json");
+    }
+
+    private bool CanSaveWorld => _worldPersistence is not null && _worldSavePath is not null
+        && _currentWorldCellId is not null && _playerObjectId is not null;
+
+    private bool RequestWorldSave()
+    {
+        if (_worldPersistence is null || _worldSavePath is null)
+        {
+            _actionStatus = "Quick save is available for projects with a world manifest.";
+            return false;
+        }
+        if (_currentWorldCellId is null || _playerObjectId is null)
+        {
+            _actionStatus = "This scene has no active world cell and playable character to save.";
+            return false;
+        }
+
+        _lastWorldSaveSucceeded = null;
+        _worldPersistence.RequestSave(_worldSavePath, CaptureWorldPlayerLocation);
+        _actionStatus = "Saving world...";
+        return true;
+    }
+
+    private WorldPlayerLocation CaptureWorldPlayerLocation()
+    {
+        if (_currentWorldCellId is not { } cellId || _playerObjectId is not { } playerId
+            || _sceneGraph.Find(playerId) is null)
+            throw new InvalidOperationException("This world has no active cell and playable character to save.");
+        var world = _sceneGraph.GetWorldMatrix(playerId);
+        if (!world.Decompose(out _, out var facing, out var position))
+            throw new InvalidOperationException("The playable character world transform cannot be saved.");
+        return new WorldPlayerLocation(cellId, position, facing);
+    }
+
+    private void ProcessWorldSavesAtStableBoundary()
+    {
+        if (_worldPersistence is not { } persistence) return;
+        while (persistence.PendingSaveCount > 0 && persistence.ProcessStableBoundary(travelInProgress: false))
+        {
+            while (persistence.TryDequeueSaveResult(out var result))
+            {
+                if (result.Failure is null)
+                {
+                    _lastWorldSaveSucceeded = true;
+                    _worldSaveLoadFailed = false;
+                    _actionStatus = "Game saved.";
+                    Console.WriteLine($"World save written to '{result.Path}'.");
+                }
+                else
+                {
+                    _lastWorldSaveSucceeded = false;
+                    _actionStatus = $"Could not save game: {result.Failure.Message}";
+                    Console.Error.WriteLine(_actionStatus);
+                }
+            }
+        }
+    }
+
     private SceneAssetSet LoadSceneAssets(SceneGraph sceneGraph)
     {
         var assets = new SceneAssetSet();
@@ -744,6 +942,7 @@ internal sealed class MinimalGame : EngineHost
     {
         var actions = new InputActionMap();
         actions.Bind(ExitActionName, Keys.Escape);
+        actions.Bind(QuickSaveActionName, Keys.F5);
         return actions;
     }
 
