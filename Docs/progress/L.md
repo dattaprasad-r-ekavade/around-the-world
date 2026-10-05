@@ -78,3 +78,19 @@ focused CPU test covers first-capture idempotence and restoration; the test has 
 
 Still open: run the CPU tests and visible checks above. L.6 remains In progress; this source change
 does not claim rewind was exercised in the editor.
+
+## L.1/L.6 lesson and checkpoint CPU verification — 5 October 2026
+
+The Release CPU suite on `8b401b0` ran the previously deferred lesson/checkpoint tests. Full
+logs and `engine-tests.trx` are in [the M0 verification artifact root](M0.md#m04-resumed-automated-and-runtime-verification--5-october-2026).
+
+| Check | Result |
+| --- | --- |
+| FirstCreationLessonTests | PASS — 6/6 |
+| LessonMissionScenarioTests | PASS — 1/1 scripted mission scenario |
+| MissionProjectCheckpointStoreTests | PASS — 5/5 capture, restore, corruption/identity/failure and first-capture coverage |
+| ProjectLearningProgressStoreTests | PASS — 1/1 |
+| Visible lesson/replay/rewind, retained progress and novice transfer checks | NOT RUN — no control automation or novice observation |
+
+Still open: data-driven lesson acceptance and the visible Rewind success/failure workflow. These
+CPU checks verify services and scripted progression; they do not complete the teaching gates.

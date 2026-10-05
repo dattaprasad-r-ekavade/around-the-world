@@ -431,3 +431,15 @@ keyboard focus remains unverified.
 | Interactive keyboard focus | NOT VERIFIED — automation could not confirm focus movement; physical input was unavailable |
 
 UX.3 remains **In progress**. M0.4's project and scene interaction checks also remain open.
+
+## UX.1–UX.4 refreshed rendering and lesson checks — 5 October 2026
+
+On `8b401b0`, self-running CharacterStudio captures exited successfully and produced 1280×720
+Home and showcase PNGs. Visual inspection confirmed readable Home choices and a rendered courtyard
+with two Fox characters in the scene-first workspace. The captures are `home.png` and `showcase.png`
+under [the M0 verification artifact root](M0.md#m04-resumed-automated-and-runtime-verification--5-october-2026).
+FirstCreationLessonTests passed 6/6 and the scripted lesson mission test passed 1/1 in the full suite.
+
+Still open: actual button interactions, layout measurement, resize/DPI and keyboard focus, the
+complete no-typed-path workflow, visible lesson replay/rewind and three novice observations.
+Captures and CPU tests do not verify those acceptance gates.
