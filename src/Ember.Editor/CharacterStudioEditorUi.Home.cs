@@ -69,10 +69,16 @@ internal sealed partial class CharacterStudioEditorUi
             var windowPosition = ImGui.GetWindowPos();
             background.AddRectFilled(windowPosition, windowPosition + ImGui.GetWindowSize(),
                 ImGui.GetColorU32(new NumericsVector4(0.025f, 0.035f, 0.05f, 1f)));
-            if (_owner._history.IsDirty)
+            if (_owner._history.IsDirty || _owner._isSequenceDirty())
             {
+                var unsavedLabel = (_owner._history.IsDirty, _owner._isSequenceDirty()) switch
+                {
+                    (true, true) => "scene and sequence changes",
+                    (false, true) => "sequence changes",
+                    _ => "scene changes"
+                };
                 ImGui.TextColored(new NumericsVector4(1f, 0.76f, 0.30f, 1f),
-                    "Unsaved scene changes · save before opening another project.");
+                    $"Unsaved {unsavedLabel} · save before opening another project.");
                 ImGui.Separator();
             }
 

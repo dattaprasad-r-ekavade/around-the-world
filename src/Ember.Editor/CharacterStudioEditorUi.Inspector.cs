@@ -231,6 +231,11 @@ internal sealed partial class CharacterStudioEditorUi
         }
 
         ImGui.Text(sequence.Name);
+        if (sequence.IsDirty)
+        {
+            ImGui.SameLine();
+            ImGui.TextDisabled("Unsaved sequence changes");
+        }
         var canEditSequence = !_owner._isPlaying();
         if (!canEditSequence) ImGui.BeginDisabled();
         ImGui.SetNextItemWidth(-1f);
@@ -253,7 +258,8 @@ internal sealed partial class CharacterStudioEditorUi
             ImGui.EndCombo();
         }
         ImGui.TextWrapped("A Reach goal trigger can pause Play and start this sequence.");
-        if (ImGui.Button("Open sequence…")) _owner._openSequence();
+        if (ImGui.Button("Open sequence…"))
+            _owner.RequestSaveBeforeContinue("opening another sequence", _owner._openSequence);
         ImGui.SameLine();
         if (ImGui.Button("Save sequence…")) _owner._saveSequence();
         if (!canEditSequence) ImGui.EndDisabled();

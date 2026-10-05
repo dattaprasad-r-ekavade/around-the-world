@@ -101,6 +101,14 @@ The base editor does not include a game-specific behaviour module by default.
 
 ## Play pause and sequence handoff acceptance
 
+Before the playback handoff checks, change the saved **Cutscene trigger** in the existing sequence
+tool. Confirm it shows **Unsaved sequence changes** and appears as unsaved on Home. Try opening a
+different sequence and cancel; confirm the current sequence remains active and unsaved. Repeat and
+save; confirm the new file contains the trigger and its unsaved indicator clears. Change the trigger
+again, then try a project switch and window close. Confirm each offers a save prompt, Cancel keeps the
+sequence open, Save preserves the change, and **Close without saving** is explicit. Repeat with both
+scene and sequence edits pending to confirm the save prompt handles each one.
+
 1. Start Play with a controllable character. Move, jump and trigger an interaction, then choose
    **Pause** in the main toolbar. Confirm movement and animation stop, trigger actions do not fire,
    and a playing interaction sound pauses.

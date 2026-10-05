@@ -71,7 +71,7 @@ public sealed partial class CharacterStudioGame
         }
 
         _editorUi.CompletePendingEdit(_sceneData);
-        if (!_editorHistory.IsDirty) return;
+        if (!_editorHistory.IsDirty && !_sequenceIsDirty) return;
         args.Cancel = true;
         _editorUi.RequestCloseConfirmation();
     }
@@ -146,6 +146,8 @@ public sealed partial class CharacterStudioGame
     {
         if (_playSession is not null)
             throw new InvalidOperationException("Stop play mode before opening another project.");
+        if (_sequenceIsDirty)
+            throw new IOException("The current sequence has unsaved edits. Save it before switching projects.");
         if (_sequenceExportJob?.IsRunning == true)
             throw new InvalidOperationException("Wait for sequence export to finish before opening another project.");
         if (string.IsNullOrWhiteSpace(projectPath))
@@ -186,6 +188,12 @@ public sealed partial class CharacterStudioGame
             _blockedSaveReason = null;
             _editorHistory = new SceneCommandHistory();
             _editorUi?.SetHistory(_editorHistory);
+            _sequence = null;
+            _sequencePlayer = null;
+            _sequenceFilePath = null;
+            _sequenceIsDirty = false;
+            _sequencePreviewEnabled = false;
+            _activeSequenceCameraName = null;
             _editorUi?.OnProjectOpened(project.RootDirectory, project.WorldManifestPath is null
                 ? null
                 : project.ResolveWorldManifestPath());

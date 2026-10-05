@@ -447,6 +447,11 @@ internal sealed partial class CharacterStudioEditorUi
             _owner._lessonCheckpointStatus = "Stop Play before rewinding this mission.";
             return;
         }
+        if (_owner._isSequenceDirty())
+        {
+            _owner._lessonCheckpointStatus = "Save the current sequence before rewinding this mission.";
+            return;
+        }
         if (!CharacterStudioEditorUi.IsSamePath(lesson.ProjectFilePath, _owner._getCurrentProjectPath()))
         {
             _owner._lessonCheckpointStatus = "Open this mission's project before rewinding it.";
@@ -491,7 +496,7 @@ internal sealed partial class CharacterStudioEditorUi
         switch (actionId)
         {
             case "reopen-project":
-                ReopenFirstCreationProject(lesson);
+                _owner.RequestSaveBeforeContinue("reopening this project", () => ReopenFirstCreationProject(lesson));
                 break;
             case "replay-lesson":
                 _owner.BeginLesson(scene, lesson.ProjectFilePath, lesson.Definition.Id);

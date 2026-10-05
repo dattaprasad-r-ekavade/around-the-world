@@ -159,6 +159,7 @@ public sealed partial class CharacterStudioGame : EngineHost
     private SceneSequence? _sequence;
     private SceneSequencePlayer? _sequencePlayer;
     private string? _sequenceFilePath;
+    private bool _sequenceIsDirty;
     private bool _sequencePreviewEnabled;
     private string? _activeSequenceCameraName;
     private SequenceFrameExportJob? _sequenceExportJob;
@@ -360,6 +361,7 @@ public sealed partial class CharacterStudioGame : EngineHost
                 () => _interactionVolume, SetInteractionVolume, GetSequenceEditorInfo,
                 SetSequencePlaying, SeekSequence, SetSequencePreviewEnabled,
                 SetSequenceTrigger, OpenSequenceFromUi, SaveSequenceFromUi,
+                () => _sequenceIsDirty, SaveSequenceForUnsavedDecision,
                 GetSequenceExportEditorInfo, StartSequenceExport, CancelSequenceExport,
                 SaveSceneAs, OpenWorldCell, OnWorldCellRenamed, () => _sceneSavePath,
                 ApplyRecoveredProject,

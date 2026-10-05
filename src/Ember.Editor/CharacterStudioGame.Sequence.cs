@@ -32,7 +32,14 @@ public sealed partial class CharacterStudioGame
         if (_sequence is null || _sequencePlayer is null) return null;
         var cameraName = _sequence.SampleCamera(_sequencePlayer.Time).CameraName;
         return new SequenceEditorInfo(_sequence.Name, _sequencePlayer.Time, _sequence.Duration,
-            _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName, _sequence.TriggerObjectId);
+            _sequencePlayer.IsPlaying, _sequencePreviewEnabled, cameraName, _sequence.TriggerObjectId,
+            _sequenceIsDirty);
+    }
+
+    private void SetSequenceStatus(string status)
+    {
+        _reimportStatus = status;
+        _editorUi?.ReportWorkspaceStatus(status);
     }
 
     private SequenceExportEditorInfo GetSequenceExportEditorInfo()
@@ -210,7 +217,7 @@ public sealed partial class CharacterStudioGame
                 try { _playController.BeginSequenceCutscene(); }
                 catch (Exception exception)
                 {
-                    _reimportStatus = $"Could not pause Play for the sequence: {exception.Message}";
+                    SetSequenceStatus($"Could not pause Play for the sequence: {exception.Message}");
                     return;
                 }
             }
@@ -227,9 +234,10 @@ public sealed partial class CharacterStudioGame
     private void SetSequenceTrigger(Guid? triggerObjectId)
     {
         if (_sequence is null || _sequencePlayer is null) return;
+        if (_sequence.TriggerObjectId == triggerObjectId) return;
         if (_playSession is not null)
         {
-            _reimportStatus = "Stop Play before changing the saved cutscene trigger.";
+            SetSequenceStatus("Stop Play before changing the saved cutscene trigger.");
             return;
         }
         if (triggerObjectId is { } id)
@@ -238,7 +246,7 @@ public sealed partial class CharacterStudioGame
             if (trigger is null || !trigger.Enabled || trigger.BoxCollider is not { IsTrigger: true }
                 || trigger.TriggerAction?.Kind != SceneTriggerActionKind.ReachGoal)
             {
-                _reimportStatus = $"Choose an enabled Reach goal trigger with a trigger collider; object {id} does not qualify.";
+                SetSequenceStatus($"Choose an enabled Reach goal trigger with a trigger collider; object {id} does not qualify.");
                 return;
             }
         }
@@ -252,21 +260,27 @@ public sealed partial class CharacterStudioGame
             _sequencePlayer = new SceneSequencePlayer(_sequence);
             _sequencePlayer.Seek(previousPlayer.Time);
             if (previousPlayer.IsPlaying) _sequencePlayer.Play();
-            _reimportStatus = triggerObjectId is { } selectedId
+            _sequenceIsDirty = true;
+            SetSequenceStatus(triggerObjectId is { } selectedId
                 ? $"Cutscene will start at Reach goal trigger '{_sceneData.Find(selectedId)!.Name}'. Save the sequence to keep this link."
-                : "Cutscene trigger cleared. Save the sequence to keep this change.";
+                : "Cutscene trigger cleared. Save the sequence to keep this change.");
         }
         catch (Exception exception)
         {
-            _reimportStatus = $"Could not change the cutscene trigger: {exception.Message}";
+            SetSequenceStatus($"Could not change the cutscene trigger: {exception.Message}");
         }
     }
 
     private void OpenSequenceFromUi()
     {
+        if (_sequenceIsDirty)
+        {
+            SetSequenceStatus("Save the current sequence before opening another one.");
+            return;
+        }
         if (_playSession is not null)
         {
-            _reimportStatus = "Stop Play before opening a different sequence.";
+            SetSequenceStatus("Stop Play before opening a different sequence.");
             return;
         }
 
@@ -286,13 +300,14 @@ public sealed partial class CharacterStudioGame
             _sequence = candidate;
             _sequencePlayer = new SceneSequencePlayer(candidate);
             _sequenceFilePath = Path.GetFullPath(path);
+            _sequenceIsDirty = false;
             _sequencePreviewEnabled = false;
             _activeSequenceCameraName = null;
-            _reimportStatus = $"Opened sequence '{candidate.Name}'.";
+            SetSequenceStatus($"Opened sequence '{candidate.Name}'.");
         }
         catch (Exception exception)
         {
-            _reimportStatus = $"Could not open sequence '{Path.GetFileName(path)}': {exception.Message}";
+            SetSequenceStatus($"Could not open sequence '{Path.GetFileName(path)}': {exception.Message}");
         }
     }
 
@@ -300,48 +315,84 @@ public sealed partial class CharacterStudioGame
     {
         if (_playSession is not null)
         {
-            _reimportStatus = "Stop Play before saving an authored sequence.";
+            SetSequenceStatus("Stop Play before saving an authored sequence.");
             return;
         }
         if (_sequence is null)
         {
-            _reimportStatus = "Add a skinned character before saving a sequence.";
+            SetSequenceStatus("Add a skinned character before saving a sequence.");
             return;
         }
 
+        var path = PickSequenceSavePath();
+        if (path is null) return;
+
+        _ = SaveSequenceToPath(path);
+    }
+
+    private bool SaveSequenceForUnsavedDecision()
+    {
+        if (!_sequenceIsDirty) return true;
+        if (_playSession is not null)
+        {
+            SetSequenceStatus("Stop Play before saving an authored sequence.");
+            return false;
+        }
+        if (_sequence is null)
+        {
+            SetSequenceStatus("There is no sequence to save.");
+            return false;
+        }
+
+        var path = _sequenceFilePath ?? PickSequenceSavePath();
+        return path is not null && SaveSequenceToPath(path);
+    }
+
+    private string? PickSequenceSavePath()
+    {
         var initialPath = _sequenceFilePath ?? _sceneSavePath;
         var initialDirectory = initialPath is null
             ? _project?.RootDirectory
             : Path.GetDirectoryName(Path.GetFullPath(initialPath));
         var suggestedName = string.IsNullOrWhiteSpace(_sequenceFilePath)
-            ? $"{string.Concat(_sequence.Name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))}.sequence.json"
+            ? $"{string.Concat(_sequence!.Name.Split(Path.GetInvalidFileNameChars(), StringSplitOptions.RemoveEmptyEntries))}.sequence.json"
             : Path.GetFileName(_sequenceFilePath);
-        var path = CharacterStudioFilePickers.PickSequenceSaveFile(
+        return CharacterStudioFilePickers.PickSequenceSaveFile(
             initialDirectory, suggestedName, GraphicsDevice.PresentationParameters.DeviceWindowHandle);
-        if (path is null) return;
+    }
 
-        var fullPath = Path.GetFullPath(path);
+    private bool SaveSequenceToPath(string path)
+    {
+        if (_sequence is null)
+        {
+            SetSequenceStatus("Add a skinned character before saving a sequence.");
+            return false;
+        }
+        string fullPath;
         try
         {
+            fullPath = Path.GetFullPath(path);
             SequenceFile.SaveAtomic(_sequence, _sceneData, fullPath);
             _sequenceFilePath = fullPath;
+            _sequenceIsDirty = false;
         }
         catch (Exception exception)
         {
-            _reimportStatus = $"Could not save sequence: {exception.Message}";
-            return;
+            SetSequenceStatus($"Could not save sequence: {exception.Message}");
+            return false;
         }
 
         var savedMessage = $"Saved sequence '{_sequence.Name}' to {Path.GetFileName(fullPath)}.";
         try
         {
             var packageStatus = RegisterSequenceForProjectPackaging(fullPath);
-            _reimportStatus = packageStatus is null ? savedMessage : $"{savedMessage} {packageStatus}";
+            SetSequenceStatus(packageStatus is null ? savedMessage : $"{savedMessage} {packageStatus}");
         }
         catch (Exception exception)
         {
-            _reimportStatus = $"{savedMessage} Could not add it to project packaging: {exception.Message}";
+            SetSequenceStatus($"{savedMessage} Could not add it to project packaging: {exception.Message}");
         }
+        return true;
     }
 
     private string? RegisterSequenceForProjectPackaging(string sequencePath)
@@ -371,12 +422,12 @@ public sealed partial class CharacterStudioGame
             _sequencePlayer.Play();
             _sequencePreviewEnabled = true;
             ApplySequenceAtCurrentTime();
-            _reimportStatus = $"Reached the cutscene trigger. Playing '{_sequence.Name}'.";
+            SetSequenceStatus($"Reached the cutscene trigger. Playing '{_sequence.Name}'.");
         }
         catch (Exception exception)
         {
             _playController.CancelSequenceCutscene();
-            _reimportStatus = $"Could not start '{_sequence.Name}': {exception.Message}";
+            SetSequenceStatus($"Could not start '{_sequence.Name}': {exception.Message}");
         }
     }
 
@@ -517,11 +568,11 @@ public sealed partial class CharacterStudioGame
             if (_playController.IsSequenceCutsceneActive)
             {
                 _playController.CompleteSequenceCutscene();
-                _reimportStatus = $"Sequence preview stopped: {exception.Message} Play was restored.";
+                SetSequenceStatus($"Sequence preview stopped: {exception.Message} Play was restored.");
             }
             else
             {
-                _reimportStatus = $"Sequence preview stopped: {exception.Message}";
+                SetSequenceStatus($"Sequence preview stopped: {exception.Message}");
             }
         }
     }

@@ -23,7 +23,7 @@ internal sealed record CharacterEditorInfo(
     IReadOnlyList<string> ClipNames, string? ClipName, float Time, float Duration, bool IsPlaying);
 internal sealed record SequenceEditorInfo(
     string Name, float Time, float Duration, bool IsPlaying, bool PreviewEnabled, string? CameraName,
-    Guid? TriggerObjectId);
+    Guid? TriggerObjectId, bool IsDirty);
 internal sealed record SequenceExportEditorInfo(
     bool IsRunning, int CompletedFrames, int TotalFrames, string Status, string? OutputDirectory, string? Error);
 internal sealed record SequenceExportEditorRequest(
@@ -66,6 +66,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private readonly Action<Guid?> _setSequenceTrigger;
     private readonly Action _openSequence;
     private readonly Action _saveSequence;
+    private readonly Func<bool> _isSequenceDirty;
+    private readonly Func<bool> _saveSequenceForContinue;
     private readonly Func<SequenceExportEditorInfo> _getSequenceExportInfo;
     private readonly Action<SequenceExportEditorRequest> _startSequenceExport;
     private readonly Action _cancelSequenceExport;
@@ -199,6 +201,7 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         Func<SequenceEditorInfo?> getSequenceInfo, Action<bool> setSequencePlaying,
         Action<float> seekSequence, Action<bool> setSequencePreviewEnabled,
         Action<Guid?> setSequenceTrigger, Action openSequence, Action saveSequence,
+        Func<bool> isSequenceDirty, Func<bool> saveSequenceForContinue,
         Func<SequenceExportEditorInfo> getSequenceExportInfo,
         Action<SequenceExportEditorRequest> startSequenceExport, Action cancelSequenceExport,
         Action<string> saveSceneAs, Func<string, string, string?> openWorldCell,
@@ -257,6 +260,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         _setSequenceTrigger = setSequenceTrigger ?? throw new ArgumentNullException(nameof(setSequenceTrigger));
         _openSequence = openSequence ?? throw new ArgumentNullException(nameof(openSequence));
         _saveSequence = saveSequence ?? throw new ArgumentNullException(nameof(saveSequence));
+        _isSequenceDirty = isSequenceDirty ?? throw new ArgumentNullException(nameof(isSequenceDirty));
+        _saveSequenceForContinue = saveSequenceForContinue
+            ?? throw new ArgumentNullException(nameof(saveSequenceForContinue));
         _getSequenceExportInfo = getSequenceExportInfo ?? throw new ArgumentNullException(nameof(getSequenceExportInfo));
         _startSequenceExport = startSequenceExport ?? throw new ArgumentNullException(nameof(startSequenceExport));
         _cancelSequenceExport = cancelSequenceExport ?? throw new ArgumentNullException(nameof(cancelSequenceExport));
@@ -347,6 +353,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     public void SetHistory(SceneCommandHistory history) =>
         _history = history ?? throw new ArgumentNullException(nameof(history));
+
+    internal void ReportWorkspaceStatus(string message) => _projectWorkspaceStatus = message;
 
     public void CompletePendingEdit(SceneGraph scene)
     {
