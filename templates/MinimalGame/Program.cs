@@ -5,9 +5,11 @@ using System.Linq;
 using Ember;
 using Ember.Assets;
 using Ember.Input;
+using Ember.Physics;
 using Ember.Project;
 using Ember.Render;
 using Ember.Scene;
+using Ember.World;
 using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using Microsoft.Xna.Framework.Input;
@@ -92,10 +94,17 @@ internal sealed class MinimalGame : EngineHost
     private readonly InputActionMap _actions = CreateInputActions();
     private EngineProjectFile _project = null!;
     private SceneGraph _sceneGraph = null!;
+    private ScenePlaySession? _playSession;
+    private PhysicsWorld? _physicsWorld;
+    private SceneStaticColliderSet? _sceneColliders;
+    private PhysicsFixedStepper? _physicsStepper;
+    private PhysicsCharacterController? _playerController;
+    private Guid? _playerObjectId;
     private SceneRenderer _scene = null!;
     private BasicEffect? _staticEffect;
     private AlphaTestEffect? _maskedStaticEffect;
     private int _controlSmokeFrame;
+    private string _actionStatus = "Walk into marked triggers to collect items or reach goals.";
 
     public MinimalGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: "Minimal Ember Game")
@@ -109,13 +118,18 @@ internal sealed class MinimalGame : EngineHost
     protected override void LoadContent()
     {
         _project = EngineProjectFile.Load(_projectPath);
-        _sceneGraph = SceneFile.Load(_project.ResolveStartupScenePath());
+        var authoredScene = SceneFile.Load(_project.ResolveStartupScenePath());
+        _playSession = new ScenePlaySession(authoredScene);
+        _playSession.AuthoredActionExecuted += OnAuthoredActionExecuted;
+        _sceneGraph = _playSession.RuntimeScene;
+        _sceneGraph.PlaySettings.ApplyInputBindings(_actions);
         _staticEffect = new BasicEffect(GraphicsDevice);
         _staticEffect.EnableDefaultLighting();
         _staticEffect.AmbientLightColor = new Vector3(0.54f, 0.57f, 0.62f);
         _maskedStaticEffect = new AlphaTestEffect(GraphicsDevice);
         LoadSceneAssets();
-        if (_controlSmoke && _characterInstances.Count == 0)
+        InitializeGameplayRuntime();
+        if (_controlSmoke && (_playerObjectId is null || _characterInstances.Count == 0))
             throw new InvalidOperationException("--smoke-controls requires a startup scene with a skinned character.");
         _scene = new SceneRenderer(GraphicsDevice);
         AttachCanvas();
@@ -125,7 +139,14 @@ internal sealed class MinimalGame : EngineHost
         _camera.SetProjection(GraphicsDevice.Viewport.AspectRatio, far: 1000f);
         _camera.MaxDistance = 500f;
         var sceneBounds = GetFramingBounds();
-        if (sceneBounds is { } bounds)
+        if (_playerObjectId is { } playerId)
+        {
+            var settings = _sceneGraph.PlaySettings;
+            var playerPosition = _sceneGraph.GetWorldMatrix(playerId).Translation;
+            _camera.Reset(playerPosition + new Vector3(0f, settings.CameraTargetOffsetY, 0f),
+                settings.CameraDistance, yaw: 0.55f, pitch: -0.24f);
+        }
+        else if (sceneBounds is { } bounds)
         {
             _camera.Reset(bounds.Center, distance: 8f, yaw: 0.55f, pitch: -0.24f);
             _camera.Frame(bounds);
@@ -169,31 +190,45 @@ internal sealed class MinimalGame : EngineHost
             character.Advance(elapsed);
 
         var movement2D = input.ReadMovement();
-        var movement = new Vector3(movement2D.X, 0f, -movement2D.Y);
-        if (movement.LengthSquared() > 0f && _characterInstances.Count > 0)
+        var previousPlayerPosition = _playerObjectId is { } selectedId
+            ? _sceneGraph.GetWorldMatrix(selectedId).Translation
+            : Vector3.Zero;
+        if (_playerController is { } controller)
         {
-            movement.Normalize();
-            var character = _sceneGraph.Objects.First(item => _characterInstances.ContainsKey(item.Id));
-            var previousWorldPosition = Vector3.Transform(Vector3.Zero, _sceneGraph.GetWorldMatrix(character.Id));
-            var parentWorld = character.ParentId is { } parentId
-                ? _sceneGraph.GetWorldMatrix(parentId)
-                : Matrix.Identity;
-            var parentDeterminant = parentWorld.Determinant();
-            if (!float.IsFinite(parentDeterminant) || parentDeterminant == 0f)
-                throw new InvalidOperationException(
-                    $"Cannot move character {character.Id} because its parent transform is not invertible.");
+            controller.SetMoveInput(ToOrbitCameraMovement(movement2D, _camera.Yaw));
+            if (_actions.ConsumePressed(GameplayActionNames.Jump)) controller.RequestJump();
+        }
 
-            var localMovement = Vector3.TransformNormal(movement, Matrix.Invert(parentWorld));
-            character.Transform.Position += localMovement * (4f * elapsed);
-            var worldPosition = Vector3.Transform(Vector3.Zero, _sceneGraph.GetWorldMatrix(character.Id));
-            _camera.Reset(worldPosition, _camera.Distance, _camera.Yaw, _camera.Pitch);
-            if (_controlSmoke)
-                VerifyControlSmokeMovement(previousWorldPosition, worldPosition, movement, elapsed);
-        }
-        else if (_controlSmoke && (_controlSmokeFrame & 1) == 0)
+        PhysicsStepResult? physicsStep = null;
+        if (_physicsWorld is { } world && _physicsStepper is { } stepper)
         {
-            throw new InvalidOperationException("Control smoke failed: a movement key did not move the character.");
+            physicsStep = stepper.Advance(elapsed, delta =>
+            {
+                world.Step(delta);
+                if (_playSession is { } session && _sceneColliders is { } colliders)
+                    session.DispatchTriggerEvents(colliders.TriggerEvents);
+            });
         }
+
+        if (_playerController is { } playerController
+            && _playerObjectId is { } playerObjectId
+            && _sceneGraph.Find(playerObjectId) is { } player)
+        {
+            var step = physicsStep ?? throw new InvalidOperationException("Player physics did not advance.");
+            var settings = _sceneGraph.PlaySettings;
+            var centerOffset = CharacterCenterOffset(settings);
+            var position = _physicsWorld!.GetInterpolatedPose(playerController.PhysicsBodyId,
+                step.InterpolationAlpha).Position;
+            SetObjectWorldPosition(_sceneGraph, player, position - new Vector3(0f, centerOffset, 0f));
+            var worldPosition = _sceneGraph.GetWorldMatrix(playerObjectId).Translation;
+            _camera.Reset(worldPosition + new Vector3(0f, settings.CameraTargetOffsetY, 0f),
+                settings.CameraDistance, _camera.Yaw, _camera.Pitch);
+            if (_controlSmoke && movement2D.LengthSquared() > 0f)
+                VerifyControlSmokeMovement(previousPlayerPosition, worldPosition, movement2D, elapsed);
+        }
+
+        if (_controlSmoke && (_controlSmokeFrame & 1) == 0 && movement2D.LengthSquared() == 0f)
+            throw new InvalidOperationException("Control smoke failed: a movement key did not move the character.");
         if (_controlSmoke) _controlSmokeFrame++;
         base.Update(gameTime);
     }
@@ -221,11 +256,20 @@ internal sealed class MinimalGame : EngineHost
         }
 
         _ui.Begin();
-        _ui.Panel(new Rectangle(20, 20, 620, 104), new Color(12, 16, 24, 220), new Color(94, 120, 148));
+        _ui.Panel(new Rectangle(20, 20, 720, 132), new Color(12, 16, 24, 220), new Color(94, 120, 148));
         _ui.Text("MINIMAL EMBER GAME", new Vector2(38, 34), 19, Color.White);
         _ui.TextFit($"Startup scene: {_project.StartupScenePath} | {_sceneGraph.Objects.Count} objects",
-            new Vector2(38, 65), 584f, 1f, new Color(197, 207, 220));
-        _ui.Text("WASD move character | ESC exit", new Vector2(38, 89), 1f, new Color(164, 190, 207));
+            new Vector2(38, 65), 684f, 1f, new Color(197, 207, 220));
+        var settings = _sceneGraph.PlaySettings;
+        var controls = _playerController is null
+            ? "ESC exit"
+            : $"{settings.MoveForward}/{settings.MoveLeft}/{settings.MoveBackward}/{settings.MoveRight} move | {settings.Jump} jump | ESC exit";
+        _ui.TextFit(controls, new Vector2(38, 89), 684f, 1f, new Color(164, 190, 207));
+        var actionStatus = _playSession?.HasReachedGoal == true
+            && !_actionStatus.StartsWith("Reached goal:", StringComparison.Ordinal)
+                ? "Goal reached. " + _actionStatus
+            : _actionStatus;
+        _ui.TextFit(actionStatus, new Vector2(38, 111), 684f, 1f, new Color(222, 205, 150));
         _ui.End();
 
         base.Draw(gameTime);
@@ -237,6 +281,7 @@ internal sealed class MinimalGame : EngineHost
 
     protected override void UnloadContent()
     {
+        DisposeGameplayRuntime();
         foreach (var character in _characterAssets.Values)
             character.Dispose();
         _characterAssets.Clear();
@@ -250,6 +295,144 @@ internal sealed class MinimalGame : EngineHost
         _maskedStaticEffect = null;
         DisposeHost();
         base.UnloadContent();
+    }
+
+    private void InitializeGameplayRuntime()
+    {
+        var session = _playSession ?? throw new InvalidOperationException("The Play scene is not initialized.");
+        var scene = session.RuntimeScene;
+        var settings = scene.PlaySettings.ValidatedCopy();
+        _playerObjectId = FindPlayCharacter(scene, settings);
+        if (_playerObjectId is null)
+            _actionStatus = "No playable character found. Add an animated character or actor to control the scene.";
+
+        var world = new PhysicsWorld();
+        SceneStaticColliderSet? colliders = null;
+        PhysicsCharacterController? controller = null;
+        try
+        {
+            world.AddStaticBox(new Vector3(0f, -0.5f, 0f), new Vector3(2000f, 1f, 2000f));
+            var dynamicCharacterIds = scene.Objects
+                .Where(item => item.CharacterSettings is not null
+                    || item.WorldEntity?.Kind == WorldEntityKind.Actor)
+                .Select(item => item.Id).ToHashSet();
+            if (_playerObjectId is { } playerId) dynamicCharacterIds.Add(playerId);
+            colliders = new SceneStaticColliderSet(scene, world, dynamicCharacterIds);
+
+            if (_playerObjectId is { } objectId)
+            {
+                var centerOffset = CharacterCenterOffset(settings);
+                var worldPosition = scene.GetWorldMatrix(objectId).Translation;
+                controller = new PhysicsCharacterController(world,
+                    worldPosition + new Vector3(0f, centerOffset, 0f), new PhysicsCharacterSettings
+                    {
+                        Radius = settings.CapsuleRadius,
+                        CylinderLength = settings.CapsuleCylinderLength,
+                        MoveSpeed = settings.MoveSpeed,
+                        JumpSpeed = settings.JumpSpeed
+                    });
+                session.BindPhysicsCharacter(controller.PhysicsBodyId, objectId);
+            }
+
+            _physicsWorld = world;
+            _sceneColliders = colliders;
+            _physicsStepper = new PhysicsFixedStepper();
+            _playerController = controller;
+        }
+        catch
+        {
+            if (controller is not null)
+            {
+                session.UnbindPhysicsCharacter(controller.PhysicsBodyId);
+                controller.Dispose();
+            }
+            colliders?.Dispose();
+            world.Dispose();
+            throw;
+        }
+    }
+
+    private Guid? FindPlayCharacter(SceneGraph scene, ScenePlaySettings settings)
+    {
+        bool IsPlayableCharacter(SceneObject item) => item.Enabled && item.TriggerAction is null
+            && (item.CharacterSettings is not null
+                || item.WorldEntity?.Kind == WorldEntityKind.Actor
+                || _characterInstances.ContainsKey(item.Id));
+
+        if (settings.PlayerObjectId is { } assignedId)
+        {
+            var assigned = scene.Find(assignedId)
+                ?? throw new InvalidOperationException(
+                    $"Saved Play player {assignedId} is missing. Choose a character in Play setup.");
+            if (!IsPlayableCharacter(assigned))
+                throw new InvalidOperationException(
+                    $"Saved Play player '{assigned.Name}' ({assigned.Id}) is disabled or is not an animated character/actor.");
+            return assigned.Id;
+        }
+
+        return scene.Objects.Where(IsPlayableCharacter).OrderBy(item => item.Id)
+            .Select(item => (Guid?)item.Id).FirstOrDefault();
+    }
+
+    private void OnAuthoredActionExecuted(SceneAuthoredActionEvent action)
+    {
+        _actionStatus = action.Kind switch
+        {
+            SceneTriggerActionKind.Collect => $"Collected: {action.SceneObjectName}.",
+            SceneTriggerActionKind.ReachGoal => $"Reached goal: {action.SceneObjectName}.",
+            SceneTriggerActionKind.Open =>
+                $"Door reached: {action.SceneObjectName}. This starter does not load world cells yet.",
+            _ => $"Triggered: {action.SceneObjectName}."
+        };
+    }
+
+    private void DisposeGameplayRuntime()
+    {
+        if (_playerController is { } controller)
+        {
+            _playSession?.UnbindPhysicsCharacter(controller.PhysicsBodyId);
+            controller.Dispose();
+            _playerController = null;
+        }
+        _sceneColliders?.Dispose();
+        _sceneColliders = null;
+        _physicsWorld?.Dispose();
+        _physicsWorld = null;
+        _physicsStepper = null;
+        if (_playSession is { } session)
+        {
+            session.AuthoredActionExecuted -= OnAuthoredActionExecuted;
+            session.Dispose();
+            _playSession = null;
+        }
+    }
+
+    private static float CharacterCenterOffset(ScenePlaySettings settings) =>
+        settings.CapsuleRadius + settings.CapsuleCylinderLength * 0.5f;
+
+    private static Vector3 ToOrbitCameraMovement(Vector2 localMovement, float cameraYaw)
+    {
+        if (localMovement.LengthSquared() > 1f) localMovement.Normalize();
+        var rotation = Matrix.CreateRotationY(cameraYaw);
+        var right = Vector3.Transform(Vector3.Right, rotation);
+        var forward = Vector3.Transform(Vector3.Forward, rotation);
+        var movement = right * localMovement.X + forward * localMovement.Y;
+        movement.Y = 0f;
+        return movement.LengthSquared() > 1f ? Vector3.Normalize(movement) : movement;
+    }
+
+    private static void SetObjectWorldPosition(SceneGraph scene, SceneObject item, Vector3 worldPosition)
+    {
+        if (item.ParentId is { } parentId)
+        {
+            var parentWorld = scene.GetWorldMatrix(parentId);
+            var determinant = parentWorld.Determinant();
+            if (!float.IsFinite(determinant) || MathF.Abs(determinant) < 1e-8f)
+                throw new InvalidOperationException(
+                    $"Cannot move character '{item.Name}' because its parent transform is not invertible.");
+            worldPosition = Vector3.Transform(worldPosition, Matrix.Invert(parentWorld));
+        }
+        item.Transform.Position = worldPosition;
     }
 
     private void LoadSceneAssets()
@@ -305,12 +488,16 @@ internal sealed class MinimalGame : EngineHost
     }
 
     private void VerifyControlSmokeMovement(Vector3 previousWorldPosition, Vector3 worldPosition,
-        Vector3 movement, float elapsedSeconds)
+        Vector2 movement, float elapsedSeconds)
     {
         var actualDelta = worldPosition - previousWorldPosition;
-        var expectedDelta = movement * (4f * elapsedSeconds);
-        if (Vector3.Distance(actualDelta, expectedDelta) > 0.001f
-            || Vector3.Distance(_camera.Target, worldPosition) > 0.001f)
+        actualDelta.Y = 0f;
+        var settings = _sceneGraph.PlaySettings;
+        var expectedDelta = ToOrbitCameraMovement(movement, _camera.Yaw) * (settings.MoveSpeed * elapsedSeconds);
+        var target = worldPosition + new Vector3(0f, settings.CameraTargetOffsetY, 0f);
+        if (Vector3.Distance(actualDelta, expectedDelta) > MathF.Max(0.06f, expectedDelta.Length() * 0.35f)
+            || Vector3.Dot(actualDelta, expectedDelta) <= 0f
+            || Vector3.Distance(_camera.Target, target) > 0.001f)
             throw new InvalidOperationException(
                 $"Control smoke failed at {_controlSmokeFrame}: expected movement {expectedDelta}, received {actualDelta}.");
         Console.WriteLine($"PASS control smoke: {ControlSmokeMovementKeys[_controlSmokeFrame / 2]} moved {actualDelta}.");
