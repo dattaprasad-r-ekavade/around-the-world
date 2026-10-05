@@ -103,4 +103,35 @@ public sealed class WorldSaveRequestQueueTests
             Directory.Delete(directory, recursive: true);
         }
     }
+
+    [Fact]
+    public void FailedCustomPersistenceReturnsAnErrorAndDoesNotBlockLaterRequests()
+    {
+        var directory = Path.Combine(Path.GetTempPath(), "ember-save-queue-custom-failure-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        try
+        {
+            var queue = new WorldSaveRequestQueue();
+            var failedPath = Path.Combine(directory, "custom.json");
+            var goodPath = Path.Combine(directory, "good.json");
+            var snapshot = new WorldSaveSnapshot(
+                new WorldPlayerLocation(Guid.NewGuid(), Vector3.Zero, Quaternion.Identity), [], [], []);
+            queue.Enqueue(failedPath, () => snapshot,
+                _ => throw new IOException("injected custom persistence failure"));
+            queue.Enqueue(goodPath, () => snapshot);
+
+            Assert.True(queue.ProcessStableBoundary(travelInProgress: false));
+            Assert.True(queue.TryDequeueResult(out var failed));
+            Assert.Contains("injected custom persistence failure", failed.Failure!.Message, StringComparison.Ordinal);
+            Assert.True(queue.ProcessStableBoundary(travelInProgress: false));
+            Assert.True(queue.TryDequeueResult(out var succeeded));
+            Assert.Null(succeeded.Failure);
+            Assert.True(File.Exists(goodPath));
+            Assert.Equal(0, queue.PendingCount);
+        }
+        finally
+        {
+            Directory.Delete(directory, recursive: true);
+        }
+    }
 }
