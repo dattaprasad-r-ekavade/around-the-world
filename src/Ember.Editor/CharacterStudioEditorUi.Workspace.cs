@@ -88,7 +88,7 @@ internal sealed partial class CharacterStudioEditorUi
         var lessonMatchesProject = currentLesson is not null
             && CharacterStudioEditorUi.IsSamePath(currentLesson.ProjectFilePath, guideProjectPath);
         var guideLabel = lessonMatchesProject && currentLesson is not null
-            ? currentLesson.Step == FirstCreationLessonStep.Complete
+            ? currentLesson.IsComplete
                 ? "Replay guide"
                 : _owner._showFirstCreationLesson ? "Hide guide" : "Show guide"
             : "First creation";
@@ -96,10 +96,14 @@ internal sealed partial class CharacterStudioEditorUi
         if (ImGui.Button(guideLabel) && guideProjectPath is not null)
         {
             if (lessonMatchesProject && currentLesson is not null
-                && currentLesson.Step != FirstCreationLessonStep.Complete)
+                && !currentLesson.IsComplete)
             {
                 _owner._showFirstCreationLesson = !_owner._showFirstCreationLesson;
                 if (_owner._showFirstCreationLesson) _owner._showAddLibrary = true;
+            }
+            else if (lessonMatchesProject && currentLesson is not null)
+            {
+                _owner.BeginLesson(scene, currentLesson.ProjectFilePath, currentLesson.Definition.Id);
             }
             else
             {
@@ -362,37 +366,44 @@ internal sealed partial class CharacterStudioEditorUi
             || !CharacterStudioEditorUi.IsSamePath(lesson.ProjectFilePath, _owner._getCurrentProjectPath())) return;
 
         ImGui.Separator();
-        ImGui.TextDisabled($"FIRST CREATION · {lesson.StepNumber}/{FirstCreationLesson.TotalSteps}");
+        var builtInLessons = LessonDefinitionCatalog.LoadBuiltIn().Where(item => item.Available);
+        if (ImGui.BeginCombo("Lesson", lesson.Definition.Title))
+        {
+            foreach (var available in builtInLessons)
+            {
+                var selected = string.Equals(available.Id, lesson.Definition.Id, StringComparison.Ordinal);
+                if (ImGui.Selectable($"{available.Title} · Tier {available.Tier}##lesson-{available.Id}", selected)
+                    && !selected)
+                    _owner.BeginLesson(scene, lesson.ProjectFilePath, available.Id);
+            }
+            ImGui.EndCombo();
+        }
+        var stepCount = lesson.IsComplete ? lesson.StepCount : lesson.StepNumber;
+        ImGui.TextDisabled($"TIER {lesson.Definition.Tier} · {stepCount}/{lesson.StepCount}");
         ImGui.Text(lesson.Title);
         ImGui.TextWrapped(lesson.Explanation);
         if (!string.IsNullOrWhiteSpace(lesson.Feedback))
             ImGui.TextWrapped(lesson.Feedback);
 
-        switch (lesson.Step)
+        if (lesson.IsComplete)
         {
-            case FirstCreationLessonStep.PredictPlay:
-                if (ImGui.Button("The saved scene changes", new NumericsVector2(-1f, 28f)))
-                    lesson.AnswerPlayPrediction(savedSceneChanges: true);
-                if (ImGui.Button("Play uses a temporary copy", new NumericsVector2(-1f, 28f)))
-                    lesson.AnswerPlayPrediction(savedSceneChanges: false);
-                break;
-            case FirstCreationLessonStep.Reflect:
-                if (ImGui.Button("My authored scene stayed the same", new NumericsVector2(-1f, 28f)))
-                    lesson.AnswerPlayReflection(authoredSceneStayedUnchanged: true);
-                if (ImGui.Button("Play edits were saved", new NumericsVector2(-1f, 28f)))
-                    lesson.AnswerPlayReflection(authoredSceneStayedUnchanged: false);
-                break;
-            case FirstCreationLessonStep.Reopen:
-                if (ImGui.Button("Reopen this project", new NumericsVector2(-1f, 30f)))
-                    ReopenFirstCreationProject(lesson);
-                break;
-            case FirstCreationLessonStep.Complete:
-                if (ImGui.Button("Replay guide", new NumericsVector2(-1f, 28f)))
-                    _owner.BeginFirstCreationLesson(scene, lesson.ProjectFilePath);
-                break;
+            ImGui.TextDisabled("Try it yourself:");
+            ImGui.TextWrapped(lesson.TransferTask);
+        }
+        else if (lesson.CurrentStep is { } step)
+        {
+            foreach (var choice in step.Choices)
+                if (ImGui.Button($"{choice.Label}##lesson-choice-{lesson.Definition.Id}-{choice.Id}",
+                    new NumericsVector2(-1f, 28f)))
+                    lesson.AnswerChoice(choice.Id);
+
+            if (step.Action is { } action
+                && ImGui.Button($"{action.Label}##lesson-action-{lesson.Definition.Id}-{action.Id}",
+                    new NumericsVector2(-1f, 30f)))
+                ExecuteLessonAction(lesson, action.Id, scene);
         }
 
-        if (lesson.Step != FirstCreationLessonStep.Complete)
+        if (!lesson.IsComplete)
         {
             if (ImGui.SmallButton(_owner._showLessonWhy ? "Hide Why?" : "Why?"))
                 _owner._showLessonWhy = !_owner._showLessonWhy;
@@ -411,9 +422,28 @@ internal sealed partial class CharacterStudioEditorUi
             if (_owner._lessonHintLevel > 0) ImGui.TextWrapped(lesson.Hint);
             if (_owner._lessonHintLevel > 1) ImGui.TextWrapped(lesson.MoreSpecificHint);
         }
-        else if (ImGui.SmallButton("Hide guide"))
+        else if (lesson.Definition.CompletionAction is { } completionAction
+            && ImGui.SmallButton($"{completionAction.Label}##lesson-complete-{lesson.Definition.Id}"))
         {
-            _owner._showFirstCreationLesson = false;
+            ExecuteLessonAction(lesson, completionAction.Id, scene);
+        }
+        if (lesson.IsComplete)
+        {
+            ImGui.SameLine();
+            if (ImGui.SmallButton("Hide guide")) _owner._showFirstCreationLesson = false;
+        }
+    }
+
+    private void ExecuteLessonAction(FirstCreationLesson lesson, string actionId, SceneGraph scene)
+    {
+        switch (actionId)
+        {
+            case "reopen-project":
+                ReopenFirstCreationProject(lesson);
+                break;
+            case "replay-lesson":
+                _owner.BeginLesson(scene, lesson.ProjectFilePath, lesson.Definition.Id);
+                break;
         }
     }
 

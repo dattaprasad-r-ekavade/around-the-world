@@ -1,5 +1,6 @@
 using System;
 using System.IO;
+using System.Linq;
 using Ember.Authoring;
 using Ember.Project;
 using Ember.Scene;
@@ -10,6 +11,81 @@ namespace Ember.Engine.Tests;
 
 public sealed class FirstCreationLessonTests
 {
+    [Fact]
+    public void BuiltInLessonCatalogLoadsFirstCreationAndDataOnlyTierOneMission()
+    {
+        var lessons = LessonDefinitionCatalog.LoadBuiltIn();
+
+        Assert.Contains(lessons, lesson => lesson.Id == "first-creation"
+            && lesson.Available && lesson.RequiredFeature is null && lesson.Steps.Count == 9);
+        Assert.Contains(lessons, lesson => lesson.Id == "move-two-objects"
+            && lesson.Tier == 1 && !lesson.Available && lesson.RequiredFeature == "M1.2"
+            && lesson.Steps.Count == 2);
+    }
+
+    [Fact]
+    public void LessonCompletesDataDefinedDifferentObjectPositionConditions()
+    {
+        var scene = new SceneGraph();
+        var first = new SceneObject(Guid.NewGuid(), "First");
+        var second = new SceneObject(Guid.NewGuid(), "Second");
+        scene.Add(first);
+        scene.Add(second);
+        var definition = LessonDefinitionCatalog.LoadBuiltIn()
+            .Single(lesson => lesson.Id == "move-two-objects");
+        var lesson = new FirstCreationLesson(scene,
+            Path.Combine(Path.GetTempPath(), "ember-lessons", EngineProjectFile.DefaultFileName), definition);
+
+        lesson.ObserveScene(scene);
+        Assert.Equal("move-first-object", lesson.CurrentStepId);
+        first.Transform.Position = Vector3.UnitX;
+        lesson.ObserveScene(scene);
+        Assert.Equal("move-different-object", lesson.CurrentStepId);
+        second.Transform.Position = Vector3.UnitZ;
+        lesson.ObserveScene(scene);
+
+        Assert.True(lesson.IsComplete);
+        Assert.Equal(definition.TransferTask, lesson.TransferTask);
+    }
+
+    [Fact]
+    public void InvalidLessonConditionNamesItsFileAndStep()
+    {
+        const string invalidLesson = """
+            {
+              "schemaVersion": 1,
+              "id": "invalid-lesson",
+              "tier": 1,
+              "title": "Invalid lesson",
+              "transferTask": "Try a variation.",
+              "completion": {
+                "title": "Done",
+                "explanation": "Complete.",
+                "why": "Why.",
+                "hints": ["Hint one.", "Hint two."]
+              },
+              "steps": [
+                {
+                  "id": "first-step",
+                  "title": "Start",
+                  "explanation": "Start here.",
+                  "why": "Learn this.",
+                  "completionFeedback": "Keep going.",
+                  "hints": ["Hint one.", "Hint two."],
+                  "completionFacts": ["scene.not-supported"]
+                }
+              ]
+            }
+            """;
+
+        var exception = Assert.Throws<InvalidDataException>(() =>
+            LessonDefinitionCatalog.Parse(invalidLesson, "invalid.lesson.json"));
+
+        Assert.Contains("invalid.lesson.json", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("first-step", exception.Message, StringComparison.Ordinal);
+        Assert.Contains("scene.not-supported", exception.Message, StringComparison.Ordinal);
+    }
+
     [Fact]
     public void LessonAdvancesOnlyAfterAuthoredActionsPredictionPlayUndoVariationAndReopen()
     {

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": 1,
+  "id": "move-two-objects",
+  "tier": 1,
+  "available": false,
+  "requiredFeature": "M1.2",
+  "title": "Move two objects",
+  "transferTask": "Move two different objects in another scene without hints, then explain how the two positions differ.",
+  "completion": {
+    "title": "You changed two objects",
+    "explanation": "Two objects can have different positions in the same scene.",
+    "why": "Each placed object has its own transform, even when both use the same model.",
+    "hints": [
+      "Choose two objects and give them different positions.",
+      "Select an object, use Move, and change one axis. Repeat with a different object."
+    ],
+    "action": {
+      "id": "replay-lesson",
+      "label": "Replay lesson"
+    }
+  },
+  "steps": [
+    {
+      "id": "move-first-object",
+      "title": "Move one object",
+      "explanation": "Choose an object and change where it sits in the scene.",
+      "why": "Position is part of this placed object, so the same model can appear in different places.",
+      "completionFeedback": "Good. Choose a different object for the next move.",
+      "hints": [
+        "Select any object in the scene.",
+        "Choose Move, then change one axis in the Inspector."
+      ],
+      "completionFacts": ["scene.any-object-position-changed"]
+    },
+    {
+      "id": "move-different-object",
+      "title": "Move a different object",
+      "explanation": "Choose another object and give it a position of its own.",
+      "why": "A scene is a group of independent placements, not one transform shared by every model.",
+      "completionFeedback": "You changed two objects. Now try the transfer task without hints.",
+      "hints": [
+        "Select an object other than the one you just moved.",
+        "Change one axis on a second object and compare the two positions."
+      ],
+      "completionFacts": ["scene.different-object-position-changed"]
+    }
+  ]
+}

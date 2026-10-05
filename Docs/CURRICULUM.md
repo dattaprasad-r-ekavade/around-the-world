@@ -103,6 +103,9 @@ New tools: editor basics, Add library, Move/Turn/Size, Play/Stop, Save, "What ha
 | 1.9 | Saving | Save, close and reopen the project | Explain what a save keeps | M1.4 | Feature in progress |
 
 The existing `FirstCreationLesson` covers the start of 1.1–1.4 and 1.9. L.1 converts it to data.
+L.1 also adds `move-two-objects` as a Tier 1 practice mission for concept 1.2. It checks two
+separate position changes and asks for a transfer in another scene; the mission stays unavailable
+until the M1.2 feature gate passes.
 
 ## Stage 2 — Game Jam Weekend
 

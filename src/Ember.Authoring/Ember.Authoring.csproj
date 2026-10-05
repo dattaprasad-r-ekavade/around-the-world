@@ -10,5 +10,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\Ember.Engine\Ember.Engine.csproj" />
+    <None Remove="Lessons\*.lesson.json" />
+    <EmbeddedResource Include="Lessons\*.lesson.json" />
   </ItemGroup>
 </Project>

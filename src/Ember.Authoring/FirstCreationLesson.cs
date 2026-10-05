@@ -19,153 +19,107 @@ public enum FirstCreationLessonStep
     TryAnotherObject,
     Save,
     Reopen,
-    Complete
+    Complete,
+    Custom
 }
 
-/// <summary>Tracks an optional first-creation lesson from changes to the real authored scene.</summary>
+/// <summary>Tracks lesson facts from authored scene state, Play events, history and project files.</summary>
 public sealed class FirstCreationLesson
 {
     public const int TotalSteps = 9;
 
     private readonly HashSet<Guid> _startingObjectIds;
+    private readonly LessonDefinition _definition;
     private readonly string _projectFilePath;
     private readonly Dictionary<Guid, TransformSnapshot> _variationStart = new();
+    private readonly Dictionary<Guid, TransformSnapshot> _genericStart = new();
+    private readonly HashSet<string> _completedFacts = new(StringComparer.Ordinal);
     private Guid? _lessonObjectId;
     private TransformSnapshot? _lessonObjectStart;
-    private bool _hasMoved;
-    private bool _predictionCorrect;
-    private bool _hasPlayed;
-    private bool _hasStopped;
-    private bool _reflectionCorrect;
-    private bool _undoRestoredMove;
-    private bool _variedAnotherObject;
-    private bool _saved;
-    private bool _reopened;
+    private Guid? _firstMovedObjectId;
     private string? _savedScenePath;
     private string? _savedSceneJson;
 
     public FirstCreationLesson(SceneGraph startingScene, string projectFilePath)
+        : this(startingScene, projectFilePath, FindBuiltInDefinition("first-creation"))
+    {
+    }
+
+    public FirstCreationLesson(SceneGraph startingScene, string projectFilePath,
+        LessonDefinition definition)
     {
         ArgumentNullException.ThrowIfNull(startingScene);
+        ArgumentNullException.ThrowIfNull(definition);
         if (string.IsNullOrWhiteSpace(projectFilePath))
             throw new ArgumentException("A project file path is required to start the lesson.", nameof(projectFilePath));
 
+        _definition = definition;
         _projectFilePath = Path.GetFullPath(projectFilePath);
         _startingObjectIds = startingScene.Objects.Select(item => item.Id).ToHashSet();
+        foreach (var item in startingScene.Objects)
+            _genericStart[item.Id] = TransformSnapshot.From(item.Transform);
         ProjectFilePath = _projectFilePath;
     }
 
     public string ProjectFilePath { get; }
-    public FirstCreationLessonStep Step
+    public LessonDefinition Definition => _definition;
+    public LessonStepDefinition? CurrentStep => CurrentStepIndex < StepCount
+        ? _definition.Steps[CurrentStepIndex]
+        : null;
+    public string? CurrentStepId => CurrentStep?.Id;
+    public bool IsComplete => CurrentStepIndex >= StepCount;
+    public int StepCount => _definition.Steps.Count;
+    public int StepNumber => IsComplete ? StepCount : CurrentStepIndex + 1;
+    public string Title => CurrentStep?.Title ?? _definition.CompletionTitle;
+    public string Explanation => CurrentStep?.Explanation ?? _definition.CompletionExplanation;
+    public string Why => CurrentStep?.Why ?? _definition.CompletionWhy;
+    public string Hint => CurrentStep?.Hints[0] ?? _definition.CompletionHint;
+    public string MoreSpecificHint => CurrentStep?.Hints[1] ?? _definition.CompletionMoreSpecificHint;
+    public IReadOnlyList<LessonChoiceDefinition> Choices =>
+        CurrentStep?.Choices ?? Array.Empty<LessonChoiceDefinition>();
+    public LessonStepActionDefinition? Action => CurrentStep?.Action;
+    public string TransferTask => _definition.TransferTask;
+    public string? Feedback { get; private set; }
+
+    /// <summary>Legacy view for existing callers; data-driven lessons use CurrentStepId.</summary>
+    public FirstCreationLessonStep Step => CurrentStep?.Id switch
+    {
+        null => FirstCreationLessonStep.Complete,
+        "add-object" => FirstCreationLessonStep.AddObject,
+        "move-object" => FirstCreationLessonStep.MoveObject,
+        "predict-play" => FirstCreationLessonStep.PredictPlay,
+        "play" => FirstCreationLessonStep.Play,
+        "reflect" => FirstCreationLessonStep.Reflect,
+        "undo" => FirstCreationLessonStep.Undo,
+        "try-another-object" => FirstCreationLessonStep.TryAnotherObject,
+        "save" => FirstCreationLessonStep.Save,
+        "reopen" => FirstCreationLessonStep.Reopen,
+        _ => FirstCreationLessonStep.Custom
+    };
+
+    private int CurrentStepIndex
     {
         get
         {
-            if (_lessonObjectId is null) return FirstCreationLessonStep.AddObject;
-            if (!_hasMoved) return FirstCreationLessonStep.MoveObject;
-            if (!_predictionCorrect) return FirstCreationLessonStep.PredictPlay;
-            if (!_hasPlayed || !_hasStopped) return FirstCreationLessonStep.Play;
-            if (!_reflectionCorrect) return FirstCreationLessonStep.Reflect;
-            if (!_undoRestoredMove) return FirstCreationLessonStep.Undo;
-            if (!_variedAnotherObject) return FirstCreationLessonStep.TryAnotherObject;
-            if (!_saved) return FirstCreationLessonStep.Save;
-            if (!_reopened) return FirstCreationLessonStep.Reopen;
-            return FirstCreationLessonStep.Complete;
+            for (var index = 0; index < _definition.Steps.Count; index++)
+                if (_definition.Steps[index].CompletionFacts.Any(fact => !_completedFacts.Contains(fact)))
+                    return index;
+            return _definition.Steps.Count;
         }
     }
 
-    public int StepNumber => Step switch
-    {
-        FirstCreationLessonStep.AddObject => 1,
-        FirstCreationLessonStep.MoveObject => 2,
-        FirstCreationLessonStep.PredictPlay => 3,
-        FirstCreationLessonStep.Play => 4,
-        FirstCreationLessonStep.Reflect => 5,
-        FirstCreationLessonStep.Undo => 6,
-        FirstCreationLessonStep.TryAnotherObject => 7,
-        FirstCreationLessonStep.Save => 8,
-        FirstCreationLessonStep.Reopen => 9,
-        _ => TotalSteps
-    };
+    private static LessonDefinition FindBuiltInDefinition(string id) =>
+        LessonDefinitionCatalog.LoadBuiltIn().FirstOrDefault(lesson =>
+            string.Equals(lesson.Id, id, StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidDataException($"Bundled lesson '{id}' was not found.");
 
-    public string Title => Step switch
-    {
-        FirstCreationLessonStep.AddObject => "Add an object",
-        FirstCreationLessonStep.MoveObject => "Change its position",
-        FirstCreationLessonStep.PredictPlay => "Make a prediction",
-        FirstCreationLessonStep.Play => "Try the scene",
-        FirstCreationLessonStep.Reflect => "What happened?",
-        FirstCreationLessonStep.Undo => "Undo the change",
-        FirstCreationLessonStep.TryAnotherObject => "Try it on something else",
-        FirstCreationLessonStep.Save => "Keep your work",
-        FirstCreationLessonStep.Reopen => "Check it after reopening",
-        _ => "You made your first scene"
-    };
-
-    public string Explanation => Step switch
-    {
-        FirstCreationLessonStep.AddObject => "A scene object is one placed thing. Add a model or an empty object to this scene.",
-        FirstCreationLessonStep.MoveObject => "Move changes where this placed object sits. The reusable model stays the same.",
-        FirstCreationLessonStep.PredictPlay => "Before you press Play, decide whether it changes your saved scene or a temporary copy.",
-        FirstCreationLessonStep.Play => "Press Play, try the scene, then press Stop to return to editing.",
-        FirstCreationLessonStep.Reflect => "When you stopped Play, what happened to the scene you were editing?",
-        FirstCreationLessonStep.Undo => "Undo reverses an edit. Undo the move and watch the object return to its earlier position.",
-        FirstCreationLessonStep.TryAnotherObject => "Change a different object. The same Move tool works on every placed object.",
-        FirstCreationLessonStep.Save => "Save writes the objects and their positions into your project scene.",
-        FirstCreationLessonStep.Reopen => "Reopen this project to check that the saved objects and positions return.",
-        _ => "You added, changed, tested, undid, saved and reopened a scene. Try the same idea on another object."
-    };
-
-    public string Why => Step switch
-    {
-        FirstCreationLessonStep.AddObject => "A scene is made from placed objects. Each one can have its own position and settings.",
-        FirstCreationLessonStep.MoveObject => "Position lets you arrange a world while reusing the same model in different places.",
-        FirstCreationLessonStep.PredictPlay => "Predicting first helps you notice whether a test changes your saved work.",
-        FirstCreationLessonStep.Play => "Trying the scene shows how your change feels before you decide to keep it.",
-        FirstCreationLessonStep.Reflect => "Comparing the result with your prediction teaches you how preview and editing differ.",
-        FirstCreationLessonStep.Undo => "Undo makes experimentation safer because you can return to an earlier edit.",
-        FirstCreationLessonStep.TryAnotherObject => "Trying the same tool on another object shows the idea works across the scene.",
-        FirstCreationLessonStep.Save => "Saving keeps the scene data with the project so you can return to it later.",
-        FirstCreationLessonStep.Reopen => "Reopening checks that your project really kept the scene you made.",
-        _ => "You used the same edit, preview and save loop that creators use to build games and films."
-    };
-
-    public string Hint => Step switch
-    {
-        FirstCreationLessonStep.AddObject => "Look in the Add panel for a way to place something new.",
-        FirstCreationLessonStep.MoveObject => "Select the object you added, then choose Move in the Inspector.",
-        FirstCreationLessonStep.PredictPlay => "Think about what should happen to your saved scene when you test it.",
-        FirstCreationLessonStep.Play => "Play and Stop are on the top bar. Stop returns to the authored scene.",
-        FirstCreationLessonStep.Reflect => "Compare the scene before Play with the one you see after Stop.",
-        FirstCreationLessonStep.Undo => "Use Undo on the top bar, then check where the object moved.",
-        FirstCreationLessonStep.TryAnotherObject => "Select a different object, then choose Move in the Inspector.",
-        FirstCreationLessonStep.Save => "Use Save on the top bar to keep your scene in this project.",
-        FirstCreationLessonStep.Reopen => "Use Reopen this project below; it opens the current project without typing a path.",
-        _ => "Replay the guide any time, or keep creating freely."
-    };
-
-    public string MoreSpecificHint => Step switch
-    {
-        FirstCreationLessonStep.AddObject => "Click Add empty object, or choose Browse for a model, preview it and click Add to scene.",
-        FirstCreationLessonStep.MoveObject => "With your object selected, click one of the X, Y or Z direction buttons under Move.",
-        FirstCreationLessonStep.PredictPlay => "Play tests a temporary copy. Your authored scene should still be there when you stop.",
-        FirstCreationLessonStep.Play => "Press Play, try the scene, then press Stop to return to editing.",
-        FirstCreationLessonStep.Reflect => "Play changes are temporary; stopping returns to the authored scene.",
-        FirstCreationLessonStep.Undo => "Click Undo once and confirm the object returns to the position it had before the move.",
-        FirstCreationLessonStep.TryAnotherObject => "Select another object, leave Move selected, then click one axis direction button.",
-        FirstCreationLessonStep.Save => "Wait for the Saved message. If an error appears, fix it before reopening.",
-        FirstCreationLessonStep.Reopen => "This reloads the project's startup scene and checks that the saved objects and positions return.",
-        _ => "Replay the guide any time, or keep creating freely."
-    };
-
-    public string? Feedback { get; private set; }
-
-    /// <summary>Call after normal editor actions; completion is inferred from authored object state.</summary>
+    /// <summary>Call after normal editor actions; completion facts are inferred from authored state.</summary>
     public void ObserveScene(SceneGraph scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
         if (_lessonObjectId is { } trackedId
             && scene.Find(trackedId) is null
-            && Step != FirstCreationLessonStep.Complete)
+            && !IsComplete)
         {
             RestartAfterLessonObjectRemoval(scene);
             Feedback = "The lesson object was removed. Add another object to continue; your other scene edits are unchanged.";
@@ -178,88 +132,123 @@ public sealed class FirstCreationLesson
             {
                 _lessonObjectId = added.Id;
                 _lessonObjectStart = TransformSnapshot.From(added.Transform);
-                Feedback = "Object added. Select it and change its position.";
+                RecordFact(LessonConditionFacts.ObjectAdded);
             }
-            return;
         }
 
-        if (!_hasMoved && scene.Find(_lessonObjectId.Value) is { } lessonObject
+        if (_lessonObjectId is { } lessonObjectId
+            && !_completedFacts.Contains(LessonConditionFacts.TrackedObjectPositionChanged)
             && _lessonObjectStart is { } start
+            && scene.Find(lessonObjectId) is { } lessonObject
             && TransformSnapshot.From(lessonObject.Transform).Position != start.Position)
         {
-            _hasMoved = true;
-            Feedback = "You changed this object's position. Next, predict what Play will do.";
+            RecordFact(LessonConditionFacts.TrackedObjectPositionChanged);
         }
 
-        if (!_undoRestoredMove || _variedAnotherObject) return;
+        ObserveGenericPositionFacts(scene);
+        ObserveDifferentObjectAfterUndo(scene);
+    }
+
+    private void ObserveGenericPositionFacts(SceneGraph scene)
+    {
         foreach (var item in scene.Objects)
         {
-            if (item.Id == _lessonObjectId.Value) continue;
+            var current = TransformSnapshot.From(item.Transform);
+            if (!_genericStart.TryGetValue(item.Id, out var before))
+            {
+                _genericStart[item.Id] = current;
+                continue;
+            }
+            if (current.Position == before.Position) continue;
+
+            if (_firstMovedObjectId is null)
+            {
+                _firstMovedObjectId = item.Id;
+                RecordFact(LessonConditionFacts.AnyObjectPositionChanged);
+            }
+            else if (_firstMovedObjectId != item.Id)
+            {
+                RecordFact(LessonConditionFacts.DifferentObjectPositionChanged);
+            }
+        }
+
+        foreach (var removedId in _genericStart.Keys.Where(id => scene.Find(id) is null).ToArray())
+            _genericStart.Remove(removedId);
+    }
+
+    private void ObserveDifferentObjectAfterUndo(SceneGraph scene)
+    {
+        if (!_completedFacts.Contains(LessonConditionFacts.TrackedMoveUndone)
+            || _completedFacts.Contains(LessonConditionFacts.OtherObjectPositionChangedAfterUndo)
+            || _lessonObjectId is not { } trackedId) return;
+
+        foreach (var item in scene.Objects)
+        {
+            if (item.Id == trackedId) continue;
             var current = TransformSnapshot.From(item.Transform);
             if (_variationStart.TryGetValue(item.Id, out var before)
                 && current.Position != before.Position)
             {
-                _variedAnotherObject = true;
-                Feedback = "You changed a different object too. The same tool works across the scene.";
+                RecordFact(LessonConditionFacts.OtherObjectPositionChangedAfterUndo);
                 return;
             }
 
-            // A new object is eligible for the variation only after it has appeared in the scene.
+            // A new object becomes eligible only after its initial scene state is observed.
             if (!_variationStart.ContainsKey(item.Id)) _variationStart[item.Id] = current;
         }
+    }
+
+    /// <summary>Accepts a choice declared by the current lesson step.</summary>
+    public bool AnswerChoice(string choiceId)
+    {
+        if (string.IsNullOrWhiteSpace(choiceId) || CurrentStep is not { } step) return false;
+        var choice = step.Choices.FirstOrDefault(item =>
+            string.Equals(item.Id, choiceId, StringComparison.Ordinal));
+        if (choice is null) return false;
+        if (!choice.IsCorrect)
+        {
+            Feedback = choice.Feedback;
+            return false;
+        }
+        if (choice.CompletionFact is { } fact) RecordFact(fact);
+        Feedback = choice.Feedback;
+        return true;
     }
 
     /// <summary>Returns true only for the correct prediction that Play uses a temporary copy.</summary>
     public bool AnswerPlayPrediction(bool savedSceneChanges)
     {
-        if (Step != FirstCreationLessonStep.PredictPlay) return false;
-        if (savedSceneChanges)
-        {
-            Feedback = "Play is temporary. Your authored scene remains available when you stop.";
-            return false;
-        }
-
-        _predictionCorrect = true;
-        Feedback = "Right: Play tests a temporary copy. Now try it and stop.";
-        return true;
+        var choice = Choices.FirstOrDefault(item => item.IsCorrect != savedSceneChanges);
+        return choice is not null && AnswerChoice(choice.Id);
     }
 
     /// <summary>Call with the actual editor Play state after each UI update.</summary>
     public void ObservePlayback(bool isPlaying)
     {
-        if (!_predictionCorrect) return;
+        if (!_completedFacts.Contains(LessonConditionFacts.PredictionCorrect)) return;
         if (isPlaying)
         {
-            _hasPlayed = true;
+            RecordFact(LessonConditionFacts.PlayStartedAfterPrediction);
             Feedback = "The temporary scene is running. Stop when you are ready to reflect.";
         }
-        else if (_hasPlayed)
+        else if (_completedFacts.Contains(LessonConditionFacts.PlayStartedAfterPrediction))
         {
-            _hasStopped = true;
-            Feedback = "You returned to the authored scene. Think about what remained.";
+            RecordFact(LessonConditionFacts.PlayStoppedAfterStart);
         }
     }
 
     /// <summary>Returns true only for recognizing that stopping Play leaves authored edits intact.</summary>
     public bool AnswerPlayReflection(bool authoredSceneStayedUnchanged)
     {
-        if (Step != FirstCreationLessonStep.Reflect) return false;
-        if (!authoredSceneStayedUnchanged)
-        {
-            Feedback = "Stopping Play restores the authored scene; try that answer again.";
-            return false;
-        }
-
-        _reflectionCorrect = true;
-        Feedback = "Yes. The test run was temporary, so your authored scene stayed intact.";
-        return true;
+        var choice = Choices.FirstOrDefault(item => item.IsCorrect == authoredSceneStayedUnchanged);
+        return choice is not null && AnswerChoice(choice.Id);
     }
 
-    /// <summary>Call after a real Undo; advances only if it restored the lesson object's move.</summary>
+    /// <summary>Call after a real Undo; advances only if it restored the tracked object's position.</summary>
     public bool ObserveUndo(SceneGraph scene, bool undoSucceeded)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (Step != FirstCreationLessonStep.Undo) return false;
+        if (!CurrentStepRequires(LessonConditionFacts.TrackedMoveUndone)) return false;
         if (!undoSucceeded || _lessonObjectId is not { } id
             || _lessonObjectStart is not { } start
             || scene.Find(id) is not { } item
@@ -269,11 +258,10 @@ public sealed class FirstCreationLesson
             return false;
         }
 
-        _undoRestoredMove = true;
+        RecordFact(LessonConditionFacts.TrackedMoveUndone);
         _variationStart.Clear();
         foreach (var other in scene.Objects)
             if (other.Id != id) _variationStart[other.Id] = TransformSnapshot.From(other.Transform);
-        Feedback = "The move was undone. Try a direction on a different object.";
         return true;
     }
 
@@ -281,26 +269,26 @@ public sealed class FirstCreationLesson
     public bool ObserveSaved(string projectFilePath, string scenePath, SceneGraph scene)
     {
         ArgumentNullException.ThrowIfNull(scene);
-        if (Step != FirstCreationLessonStep.Save) return false;
+        if (!CurrentStepRequires(LessonConditionFacts.ProjectSceneSaved)) return false;
         if (!SamePath(projectFilePath, _projectFilePath)
             || string.IsNullOrWhiteSpace(scenePath))
         {
-            Feedback = "Finish the different-object change, then save this project scene.";
+            Feedback = "Finish the lesson change, then save this project scene.";
             return false;
         }
 
         _savedScenePath = Path.GetFullPath(scenePath);
         _savedSceneJson = CaptureLessonSceneData(scene);
-        _saved = true;
-        Feedback = "Saved. Reopen this project to check that the scene comes back.";
+        RecordFact(LessonConditionFacts.ProjectSceneSaved);
         return true;
     }
 
-    /// <summary>Completes only when the same saved project scene reopens with the authored data intact.</summary>
+    /// <summary>Completes only when the same saved project scene reopens with its data intact.</summary>
     public bool ObserveReopened(string projectFilePath, string scenePath, SceneGraph reopenedScene)
     {
         ArgumentNullException.ThrowIfNull(reopenedScene);
-        if (Step != FirstCreationLessonStep.Reopen || !SamePath(projectFilePath, _projectFilePath)
+        if (!CurrentStepRequires(LessonConditionFacts.SameProjectSceneReopenedUnchanged)
+            || !SamePath(projectFilePath, _projectFilePath)
             || string.IsNullOrWhiteSpace(scenePath)
             || !SamePath(scenePath, _savedScenePath)
             || !string.Equals(CaptureLessonSceneData(reopenedScene), _savedSceneJson, StringComparison.Ordinal))
@@ -309,10 +297,21 @@ public sealed class FirstCreationLesson
             return false;
         }
 
-        _reopened = true;
-        Feedback = "Your scene reopened with the same objects and positions. You can replay the guide or keep creating.";
+        RecordFact(LessonConditionFacts.SameProjectSceneReopenedUnchanged);
         return true;
     }
+
+    private void RecordFact(string fact)
+    {
+        var currentIndex = CurrentStepIndex;
+        _completedFacts.Add(fact);
+        var nextIndex = CurrentStepIndex;
+        if (nextIndex > currentIndex)
+            Feedback = _definition.Steps[Math.Min(nextIndex - 1, StepCount - 1)].CompletionFeedback;
+    }
+
+    private bool CurrentStepRequires(string fact) =>
+        CurrentStep?.CompletionFacts.Contains(fact, StringComparer.Ordinal) == true;
 
     private static bool SamePath(string? first, string? second)
     {
@@ -326,15 +325,11 @@ public sealed class FirstCreationLesson
         _lessonObjectId = null;
         _lessonObjectStart = null;
         _variationStart.Clear();
-        _hasMoved = false;
-        _predictionCorrect = false;
-        _hasPlayed = false;
-        _hasStopped = false;
-        _reflectionCorrect = false;
-        _undoRestoredMove = false;
-        _variedAnotherObject = false;
-        _saved = false;
-        _reopened = false;
+        _genericStart.Clear();
+        _completedFacts.Clear();
+        _firstMovedObjectId = null;
+        foreach (var item in scene.Objects)
+            _genericStart[item.Id] = TransformSnapshot.From(item.Transform);
         _savedScenePath = null;
         _savedSceneJson = null;
     }

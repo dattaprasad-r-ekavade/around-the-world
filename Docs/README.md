@@ -43,6 +43,7 @@ first, then the roadmap.
 | [progress/M1.md](progress/M1.md) | M1 editor project workflow evidence |
 | [progress/UX.md](progress/UX.md) | UX beginner experience evidence |
 | [progress/M2.md](progress/M2.md) | M2 small-game evidence |
+| [progress/L.md](progress/L.md) | L declarative lesson and mission data evidence |
 | [progress/roadmap-changes.md](progress/roadmap-changes.md) | Roadmap resets and direction decisions |
 | [progress/legacy-tasks-01-144.md](progress/legacy-tasks-01-144.md) | History of tasks 01–144 (not current gates) |
 

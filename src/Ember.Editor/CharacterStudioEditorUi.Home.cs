@@ -27,6 +27,8 @@ internal sealed partial class CharacterStudioEditorUi
     private string GetWorkspaceReadyMessage() => _homePanel.GetWorkspaceReadyMessage();
     private void BeginFirstCreationLesson(SceneGraph scene, string projectFilePath) =>
         _homePanel.BeginFirstCreationLesson(scene, projectFilePath);
+    private void BeginLesson(SceneGraph scene, string projectFilePath, string lessonId) =>
+        _homePanel.BeginLesson(scene, projectFilePath, lessonId);
     private void RefreshLessonHelpForCurrentStep() => _homePanel.RefreshLessonHelpForCurrentStep();
     private static bool IsSamePath(string? first, string? second)
     {
@@ -282,20 +284,49 @@ internal sealed partial class CharacterStudioEditorUi
         }
 
         public void BeginFirstCreationLesson(SceneGraph scene, string projectFilePath)
+            => BeginLesson(scene, projectFilePath, "first-creation");
+
+        public void BeginLesson(SceneGraph scene, string projectFilePath, string lessonId)
         {
-            _owner._firstCreationLesson = new FirstCreationLesson(scene, projectFilePath);
+            try
+            {
+                var definition = LessonDefinitionCatalog.LoadBuiltIn().FirstOrDefault(item =>
+                    string.Equals(item.Id, lessonId, StringComparison.OrdinalIgnoreCase));
+                if (definition is null)
+                {
+                    _owner._projectWorkspaceStatus = $"Lesson '{lessonId}' is not available.";
+                    return;
+                }
+                if (!definition.Available)
+                {
+                    _owner._projectWorkspaceStatus =
+                        $"{definition.Title} will be available after the {definition.RequiredFeature} feature gate passes.";
+                    return;
+                }
+                _owner._firstCreationLesson = new FirstCreationLesson(scene, projectFilePath, definition);
+            }
+            catch (Exception exception) when (exception is InvalidDataException or IOException
+                or ArgumentException or InvalidOperationException)
+            {
+                _owner._projectWorkspaceStatus = $"Could not load lesson data: {exception.Message}";
+                _owner._showFirstCreationLesson = false;
+                return;
+            }
             _owner._showFirstCreationLesson = true;
             _owner._showLessonWhy = false;
             _owner._lessonHintLevel = 0;
             _owner._lastObservedLessonStep = null;
+            _owner._lessonCompletionRecordedForSession = false;
             _owner._showAddLibrary = true;
             _owner._showHome = false;
         }
 
         public void RefreshLessonHelpForCurrentStep()
         {
-            if (_owner._firstCreationLesson is not { } lesson || _owner._lastObservedLessonStep == lesson.Step) return;
-            _owner._lastObservedLessonStep = lesson.Step;
+            if (_owner._firstCreationLesson is not { } lesson) return;
+            var currentStepId = lesson.CurrentStepId ?? "complete";
+            if (_owner._lastObservedLessonStep == currentStepId) return;
+            _owner._lastObservedLessonStep = currentStepId;
             _owner._showLessonWhy = false;
             _owner._lessonHintLevel = 0;
         }

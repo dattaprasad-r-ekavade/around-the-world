@@ -1,0 +1,166 @@
+{
+  "schemaVersion": 1,
+  "id": "first-creation",
+  "tier": 1,
+  "available": true,
+  "requiredFeature": null,
+  "title": "First creation",
+  "transferTask": "Add a different model somewhere else and explain how its position differs.",
+  "completion": {
+    "title": "You made your first scene",
+    "explanation": "You added, changed, tested, undid, saved and reopened a scene. Try the same idea on another object.",
+    "why": "You used the same edit, preview and save loop that creators use to build games and films.",
+    "hints": [
+      "Replay the guide any time, or keep creating freely.",
+      "Try the same idea on another object without step-by-step help."
+    ],
+    "action": {
+      "id": "replay-lesson",
+      "label": "Replay guide"
+    }
+  },
+  "steps": [
+    {
+      "id": "add-object",
+      "title": "Add an object",
+      "explanation": "A scene object is one placed thing. Add a model or an empty object to this scene.",
+      "why": "A scene is made from placed objects. Each one can have its own position and settings.",
+      "completionFeedback": "Object added. Select it and change its position.",
+      "hints": [
+        "Look in the Add panel for a way to place something new.",
+        "Click Add empty object, or choose Browse for a model, preview it and click Add to scene."
+      ],
+      "completionFacts": ["scene.object-added"]
+    },
+    {
+      "id": "move-object",
+      "title": "Change its position",
+      "explanation": "Move changes where this placed object sits. The reusable model stays the same.",
+      "why": "Position lets you arrange a world while reusing the same model in different places.",
+      "completionFeedback": "You changed this object's position. Next, predict what Play will do.",
+      "hints": [
+        "Select the object you added, then choose Move in the Inspector.",
+        "With your object selected, click one of the X, Y or Z direction buttons under Move."
+      ],
+      "completionFacts": ["scene.tracked-object-position-changed"]
+    },
+    {
+      "id": "predict-play",
+      "title": "Make a prediction",
+      "explanation": "Before you press Play, decide whether it changes your saved scene or a temporary copy.",
+      "why": "Predicting first helps you notice whether a test changes your saved work.",
+      "completionFeedback": "Right: Play tests a temporary copy. Now try it and stop.",
+      "hints": [
+        "Think about what should happen to your saved scene when you test it.",
+        "Play tests a temporary copy. Your authored scene should still be there when you stop."
+      ],
+      "completionFacts": ["play.prediction-correct"],
+      "choices": [
+        {
+          "id": "saved-scene-changes",
+          "label": "The saved scene changes",
+          "feedback": "Play is temporary. Your authored scene remains available when you stop.",
+          "isCorrect": false
+        },
+        {
+          "id": "temporary-copy",
+          "label": "Play uses a temporary copy",
+          "feedback": "Right: Play tests a temporary copy. Now try it and stop.",
+          "isCorrect": true,
+          "completionFact": "play.prediction-correct"
+        }
+      ]
+    },
+    {
+      "id": "play",
+      "title": "Try the scene",
+      "explanation": "Press Play, try the scene, then press Stop to return to editing.",
+      "why": "Trying the scene shows how your change feels before you decide to keep it.",
+      "completionFeedback": "You returned to the authored scene. Think about what remained.",
+      "hints": [
+        "Play and Stop are on the top bar. Stop returns to the authored scene.",
+        "Press Play, try the scene, then press Stop to return to the authored scene."
+      ],
+      "completionFacts": ["play.started-after-prediction", "play.stopped-after-start"]
+    },
+    {
+      "id": "reflect",
+      "title": "What happened?",
+      "explanation": "When you stopped Play, what happened to the scene you were editing?",
+      "why": "Comparing the result with your prediction teaches you how preview and editing differ.",
+      "completionFeedback": "Yes. The test run was temporary, so your authored scene stayed intact.",
+      "hints": [
+        "Compare the scene before Play with the one you see after Stop.",
+        "Play changes are temporary; stopping returns to the authored scene."
+      ],
+      "completionFacts": ["play.reflection-correct"],
+      "choices": [
+        {
+          "id": "authored-scene-stayed-the-same",
+          "label": "My authored scene stayed the same",
+          "feedback": "Yes. The test run was temporary, so your authored scene stayed intact.",
+          "isCorrect": true,
+          "completionFact": "play.reflection-correct"
+        },
+        {
+          "id": "play-edits-were-saved",
+          "label": "Play edits were saved",
+          "feedback": "Stopping Play restores the authored scene; try that answer again.",
+          "isCorrect": false
+        }
+      ]
+    },
+    {
+      "id": "undo",
+      "title": "Undo the change",
+      "explanation": "Undo reverses an edit. Undo the move and watch the object return to its earlier position.",
+      "why": "Undo makes experimentation safer because you can return to an earlier edit.",
+      "completionFeedback": "The move was undone. Try a direction on a different object.",
+      "hints": [
+        "Use Undo on the top bar, then check where the object moved.",
+        "Click Undo once and confirm the object returns to the position it had before the move."
+      ],
+      "completionFacts": ["history.tracked-move-undone"]
+    },
+    {
+      "id": "try-another-object",
+      "title": "Try it on something else",
+      "explanation": "Change a different object. The same Move tool works on every placed object.",
+      "why": "Trying the same tool on another object shows the idea works across the scene.",
+      "completionFeedback": "You changed a different object too. The same tool works across the scene.",
+      "hints": [
+        "Select a different object, then choose Move in the Inspector.",
+        "Select another object, leave Move selected, then click one axis direction button."
+      ],
+      "completionFacts": ["scene.other-object-position-changed-after-undo"]
+    },
+    {
+      "id": "save",
+      "title": "Keep your work",
+      "explanation": "Save writes the objects and their positions into your project scene.",
+      "why": "Saving keeps the scene data with the project so you can return to it later.",
+      "completionFeedback": "Saved. Reopen this project to check that the scene comes back.",
+      "hints": [
+        "Use Save on the top bar to keep your scene in this project.",
+        "Wait for the Saved message. If an error appears, fix it before reopening."
+      ],
+      "completionFacts": ["file.project-scene-saved"]
+    },
+    {
+      "id": "reopen",
+      "title": "Check it after reopening",
+      "explanation": "Reopen this project to check that the saved objects and positions return.",
+      "why": "Reopening checks that your project really kept the scene you made.",
+      "completionFeedback": "Your scene reopened with the same objects and positions. You can replay the guide or keep creating.",
+      "hints": [
+        "Use Reopen this project below; it opens the current project without typing a path.",
+        "This reloads the project's startup scene and checks that the saved objects and positions return."
+      ],
+      "completionFacts": ["file.same-project-scene-reopened-unchanged"],
+      "action": {
+        "id": "reopen-project",
+        "label": "Reopen this project"
+      }
+    }
+  ]
+}

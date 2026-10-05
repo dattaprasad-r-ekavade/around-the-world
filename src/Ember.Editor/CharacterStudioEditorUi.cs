@@ -158,7 +158,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
     private bool _showFirstCreationLesson;
     private bool _showLessonWhy;
     private int _lessonHintLevel;
-    private FirstCreationLessonStep? _lastObservedLessonStep;
+    private string? _lastObservedLessonStep;
+    private bool _lessonCompletionRecordedForSession;
     private bool _guideNewProject;
     private bool _startLessonAfterProjectCreate;
     private bool _wantsMouse;
@@ -471,17 +472,6 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
                     scenePath ?? string.Empty, scene))
                 {
                     _showFirstCreationLesson = true;
-                    try
-                    {
-                        var project = EngineProjectFile.Load(projectPath!);
-                        ProjectLearningProgressStore.RecordCompletion(
-                            project, "first-creation", scenePath!);
-                        _projectWorkspaceStatus = "First creation completed. This project now remembers the lesson.";
-                    }
-                    catch (Exception exception)
-                    {
-                        _projectWorkspaceStatus = $"Guide completed, but lesson progress could not be saved: {exception.Message}";
-                    }
                 }
             }
         }
@@ -492,6 +482,9 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
             activeLesson.ObserveScene(scene);
             activeLesson.ObservePlayback(_isPlaying());
         }
+        if (_firstCreationLesson is { IsComplete: true } completedLesson
+            && !_lessonCompletionRecordedForSession)
+            RecordLessonCompletion(completedLesson);
         RefreshLessonHelpForCurrentStep();
 
         ImGui.NewFrame();
@@ -521,6 +514,24 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         ImGui.Render();
         _wantsMouse = _io.WantCaptureMouse;
         _wantsKeyboard = _io.WantCaptureKeyboard;
+    }
+
+    private void RecordLessonCompletion(FirstCreationLesson lesson)
+    {
+        _lessonCompletionRecordedForSession = true;
+        var projectPath = _getCurrentProjectPath();
+        var scenePath = _getCurrentScenePath();
+        if (string.IsNullOrWhiteSpace(projectPath) || string.IsNullOrWhiteSpace(scenePath)) return;
+        try
+        {
+            var project = EngineProjectFile.Load(projectPath);
+            ProjectLearningProgressStore.RecordCompletion(project, lesson.Definition.Id, scenePath);
+            _projectWorkspaceStatus = $"{lesson.Definition.Title} completed. This project now remembers the lesson.";
+        }
+        catch (Exception exception)
+        {
+            _projectWorkspaceStatus = $"Lesson completed, but its progress could not be saved: {exception.Message}";
+        }
     }
 
     private void DrawActiveToolExtension(SceneGraph scene)
