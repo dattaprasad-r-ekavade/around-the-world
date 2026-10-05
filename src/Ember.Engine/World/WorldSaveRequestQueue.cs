@@ -22,12 +22,17 @@ public sealed class WorldSaveRequestQueue
     }
 
     public Guid Enqueue(string path, Func<WorldSaveSnapshot> capture)
+        => Enqueue(path, capture, snapshot => WorldSaveFile.SaveAtomic(path, snapshot));
+
+    /// <summary>Queues custom persistence for the snapshot captured at the stable simulation boundary.</summary>
+    public Guid Enqueue(string path, Func<WorldSaveSnapshot> capture, Action<WorldSaveSnapshot> persist)
     {
         EnsureOwnerThread();
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A world-save path is required.", nameof(path));
         ArgumentNullException.ThrowIfNull(capture);
+        ArgumentNullException.ThrowIfNull(persist);
         var requestId = Guid.NewGuid();
-        _pending.Enqueue(new PendingRequest(requestId, path, capture));
+        _pending.Enqueue(new PendingRequest(requestId, path, capture, persist));
         return requestId;
     }
 
@@ -44,7 +49,7 @@ public sealed class WorldSaveRequestQueue
         {
             var snapshot = request.Capture()
                 ?? throw new InvalidOperationException("World save capture returned no snapshot.");
-            WorldSaveFile.SaveAtomic(request.Path, snapshot);
+            request.Persist(snapshot);
             _completed.Enqueue(new WorldSaveRequestResult(request.Id, request.Path, null));
         }
         catch (Exception exception)
@@ -69,5 +74,6 @@ public sealed class WorldSaveRequestQueue
                 $"World save requests must be accessed on owning thread {_ownerThreadId}; current thread is {currentThreadId}.");
     }
 
-    private sealed record PendingRequest(Guid Id, string Path, Func<WorldSaveSnapshot> Capture);
+    private sealed record PendingRequest(Guid Id, string Path, Func<WorldSaveSnapshot> Capture,
+        Action<WorldSaveSnapshot> Persist);
 }

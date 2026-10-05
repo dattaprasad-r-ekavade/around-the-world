@@ -54,6 +54,7 @@ public sealed class RpgSliceGame : EngineHost
     private readonly bool _timePaused;
     private readonly string _worldSavePath;
     private readonly string _rpgSavePath;
+    private readonly string _gameSaveBundlePath;
     private readonly bool _deleteSmokeSaveOnExit;
     private readonly InputActionMap _actions = new();
     private readonly PhysicsFixedStepper _physicsStepper = new();
@@ -143,6 +144,7 @@ public sealed class RpgSliceGame : EngineHost
                 : Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
                     "Ember", "RpgSlice", "world-save.json"));
         _rpgSavePath = _worldSavePath + ".rpg.json";
+        _gameSaveBundlePath = _worldSavePath + ".bundle.json";
         if (_benchmarkRequested || _settlementBenchmarkRequested || _transitionSoakRequested || _lifecycleCheckRequested)
             _graphics.SynchronizeWithVerticalRetrace = false;
         if (ParseOption(args, "--time-hours") is { } timeText)
@@ -174,13 +176,16 @@ public sealed class RpgSliceGame : EngineHost
         var originCell = _world.GetExteriorCoordinate(Vector3.Zero);
         if (!_world.TryGetExterior(originCell, out var originDefinition) || originDefinition is null)
             throw new InvalidDataException($"World manifest needs an exterior cell at coordinate ({originCell.X}, {originCell.Z}).");
-        var loadedSave = File.Exists(_worldSavePath)
-            ? WorldSaveFile.Load(_worldSavePath, _world)
+        var loadedBundle = File.Exists(_gameSaveBundlePath)
+            ? RpgSliceSaveBundle.Load(_gameSaveBundlePath)
             : null;
+        var loadedSave = loadedBundle?.World ?? (File.Exists(_worldSavePath)
+            ? WorldSaveFile.Load(_worldSavePath, _world)
+            : null);
         var initialWorldTime = Math.Max(0d, _initialTimeOfDayHours) * 3600d;
-        var rpgSave = File.Exists(_rpgSavePath)
+        var rpgSave = loadedBundle?.Rpg ?? (File.Exists(_rpgSavePath)
             ? SaveState.Read(_rpgSavePath)
-            : RpgSliceGameplayIntegration.CreateInitialSave(initialWorldTime, _rpgContent);
+            : RpgSliceGameplayIntegration.CreateInitialSave(initialWorldTime, _rpgContent));
         if (_rpgIntegrationSmokeRequested)
         {
             if (loadedSave is not null)
@@ -237,7 +242,7 @@ public sealed class RpgSliceGame : EngineHost
             _world, _physics, _collisionGate, _terrainSource, _terrainSettings, _worldPersistence,
             _staticAssets);
         _rpgGameplay = new RpgSliceGameplayIntegration(_world, _cellStreamer,
-            _worldPersistence, _physics, rpgSave, _worldClock, _rpgSavePath,
+            _worldPersistence, _physics, rpgSave, _worldClock,
             _rpgContent, _rpgIntegrationSmokeRequested);
         if (_questSmokeRequested) _questSmoke = new RpgSliceQuestSmoke();
         _collisionGate.CollisionRequired += _cellStreamer.Request;
@@ -400,7 +405,7 @@ public sealed class RpgSliceGame : EngineHost
                 }
                 else if (_questSmokeRequested && _rpgGameplay is not null
                     && _questSmoke!.SaveKeyIssued && _worldPersistence.PendingSaveCount == 0
-                    && File.Exists(_worldSavePath) && File.Exists(_rpgSavePath))
+                    && File.Exists(_gameSaveBundlePath))
                 {
                     VerifyQuestSmokeAfterRestart();
                     _smokeRan = true;
@@ -458,8 +463,13 @@ public sealed class RpgSliceGame : EngineHost
         if (!_timePaused) _worldClock = _worldClock.Advance(elapsedSeconds * 60d);
         if (_actions.ConsumePressed("Save"))
         {
-            _rpgGameplay?.WriteSave(_worldClock);
-            _worldPersistence.RequestSave(_worldSavePath, CapturePlayerLocation);
+            _worldPersistence.RequestSave(_gameSaveBundlePath, CapturePlayerLocation, snapshot =>
+            {
+                if (_rpgGameplay is null)
+                    throw new InvalidOperationException("RPG state is not ready to save.");
+                RpgSliceSaveBundle.SaveAtomic(_gameSaveBundlePath, snapshot,
+                    _rpgGameplay.CaptureSave(_worldClock));
+            });
             _saveFeedback = "Save queued";
             _saveFeedbackSeconds = 2f;
         }
@@ -556,11 +566,11 @@ public sealed class RpgSliceGame : EngineHost
         _worldPersistence.ProcessStableBoundary(_travel is not null);
         while (_worldPersistence.TryDequeueSaveResult(out var saveResult))
         {
-            _saveFeedback = saveResult.Failure is null ? "World saved" : $"Save failed: {saveResult.Failure.Message}";
+            _saveFeedback = saveResult.Failure is null ? "Game saved" : $"Save failed: {saveResult.Failure.Message}";
             _saveFeedbackSeconds = 3f;
             Console.WriteLine(saveResult.Failure is null
-                ? $"RpgSlice: world saved to {saveResult.Path}"
-                : $"RpgSlice: world save failed: {saveResult.Failure}");
+                ? $"RpgSlice: game saved to {saveResult.Path}"
+                : $"RpgSlice: game save failed: {saveResult.Failure}");
         }
         if (_benchmark is { IsMeasuring: true } benchmark && !benchmark.IsComplete)
         {
@@ -1049,7 +1059,7 @@ public sealed class RpgSliceGame : EngineHost
 
     private void RunPersistenceSmoke()
     {
-        if (File.Exists(_worldSavePath))
+        if (File.Exists(_worldSavePath) || File.Exists(_rpgSavePath) || File.Exists(_gameSaveBundlePath))
             throw new InvalidOperationException("Persistence smoke requires a fresh save path.");
 
         try
@@ -1125,16 +1135,6 @@ public sealed class RpgSliceGame : EngineHost
             var destinationSpawn = WorldTravelValidator.ResolveDestination(_world,
                 new Dictionary<Guid, SceneGraph> { [entryDoor.Door.DestinationCellId] = interiorScene }, entryDoor.Door);
             var playerLocation = new WorldPlayerLocation(destinationSpawn.CellId, destinationSpawn.Position, destinationSpawn.Facing);
-
-            // Action 6: Save and Restart
-            _worldPersistence.RequestSave(_worldSavePath, () => playerLocation);
-            if (!_worldPersistence.ProcessStableBoundary(travelInProgress: false))
-                throw new InvalidOperationException("Persistence smoke save was not processed at the stable boundary.");
-            if (!_worldPersistence.TryDequeueSaveResult(out var writeResult))
-                throw new InvalidOperationException("Persistence smoke did not receive a save result.");
-            if (writeResult.Failure is not null)
-                throw new InvalidOperationException($"Persistence smoke could not save: {writeResult.Failure}");
-
             var rpgSave = new SaveState
             {
                 Player = new PlayerRecord { Bag = playerBag },
@@ -1143,13 +1143,24 @@ public sealed class RpgSliceGame : EngineHost
                 ActorStates = actorStates,
                 ItemDefs = itemCatalogue
             };
-            rpgSave.Write(_rpgSavePath);
+
+            // Action 6: Save and Restart
+            _worldPersistence.RequestSave(_gameSaveBundlePath, () => playerLocation, snapshot =>
+                RpgSliceSaveBundle.SaveAtomic(_gameSaveBundlePath, snapshot, rpgSave));
+            if (!_worldPersistence.ProcessStableBoundary(travelInProgress: false))
+                throw new InvalidOperationException("Persistence smoke save was not processed at the stable boundary.");
+            if (!_worldPersistence.TryDequeueSaveResult(out var writeResult))
+                throw new InvalidOperationException("Persistence smoke did not receive a save result.");
+            if (writeResult.Failure is not null)
+                throw new InvalidOperationException($"Persistence smoke could not save: {writeResult.Failure}");
 
             // Restart verification
-            var snapshot = WorldSaveFile.Load(_worldSavePath, _world);
+            var bundle = RpgSliceSaveBundle.Load(_gameSaveBundlePath);
+            var snapshot = bundle.World;
+            snapshot.ValidateAgainstWorld(_world);
             if (snapshot.PlayerLocation.CellId != destinationSpawn.CellId)
                 throw new InvalidOperationException("Queued persistence smoke save did not capture the committed interior location.");
-            var restartedRpg = SaveState.FromJson(File.ReadAllText(_rpgSavePath));
+            var restartedRpg = bundle.Rpg;
             var restarted = new WorldPersistenceSession(_world, snapshot);
 
             using var verificationPhysics = new PhysicsWorld();
@@ -1244,6 +1255,8 @@ public sealed class RpgSliceGame : EngineHost
                 File.Delete(_worldSavePath);
             if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath))
                 File.Delete(_rpgSavePath);
+            if (_deleteSmokeSaveOnExit && File.Exists(_gameSaveBundlePath))
+                File.Delete(_gameSaveBundlePath);
         }
     }
 
@@ -1256,10 +1269,11 @@ public sealed class RpgSliceGame : EngineHost
         var satchelSceneObjectId = Guid.Parse("d71f9da0-e2e9-4aae-bf2f-d70a06b07a07");
         try
         {
-            if (!File.Exists(_worldSavePath) || !File.Exists(_rpgSavePath))
-                throw new InvalidOperationException("Quest smoke did not write both world and RPG saves through F5.");
+            if (!File.Exists(_gameSaveBundlePath))
+                throw new InvalidOperationException("Quest smoke did not write the world and RPG save bundle through F5.");
 
-            var savedRpg = SaveState.Read(_rpgSavePath);
+            var bundle = RpgSliceSaveBundle.Load(_gameSaveBundlePath);
+            var savedRpg = bundle.Rpg;
             var quest = _rpgContent.Quests.Get(questId)
                 ?? throw new InvalidDataException($"Quest smoke cannot find '{questId}' in loaded content.");
             var apple = new ContentId<ItemContentKind>(appleId);
@@ -1278,7 +1292,8 @@ public sealed class RpgSliceGame : EngineHost
                 throw new InvalidDataException("Quest save references did not validate: "
                     + string.Join(" ", saveDiagnostics));
 
-            var worldSnapshot = WorldSaveFile.Load(_worldSavePath, _world);
+            var worldSnapshot = bundle.World;
+            worldSnapshot.ValidateAgainstWorld(_world);
             if (!worldSnapshot.Changes.Any(change => change.InstanceId.Value == satchelInstanceId && change.Deleted))
                 throw new InvalidOperationException("The collected satchel has no persistent world deletion tombstone.");
             var restarted = new WorldPersistenceSession(_world, worldSnapshot);
@@ -1298,6 +1313,7 @@ public sealed class RpgSliceGame : EngineHost
         {
             if (_deleteSmokeSaveOnExit && File.Exists(_worldSavePath)) File.Delete(_worldSavePath);
             if (_deleteSmokeSaveOnExit && File.Exists(_rpgSavePath)) File.Delete(_rpgSavePath);
+            if (_deleteSmokeSaveOnExit && File.Exists(_gameSaveBundlePath)) File.Delete(_gameSaveBundlePath);
         }
     }
 

@@ -912,9 +912,11 @@ stepper so restored collider state is applied before physics colliders are creat
 Use `SetTransform`, `SetEnabled`, and `Spawn` to update both the active scene and its persistent
 stores. `Capture` creates an immutable snapshot. For interactive saves, `RequestSave` queues a
 player-location callback and `ProcessStableBoundary` captures it after any travel transaction has
-finished. Drain completion or failure through `TryDequeueSaveResult`. All session operations belong
-on the thread that constructed the session; stable-boundary processing currently writes the file
-synchronously on that thread.
+finished. A custom persistence callback can receive the same stable world snapshot to store it
+together with game-specific state; use one atomic file when both parts must stay consistent. Drain
+completion or failure through `TryDequeueSaveResult`. All session operations belong on the thread
+that constructed the session; stable-boundary processing currently writes the file synchronously
+on that thread.
 
 ```csharp
 var save = File.Exists(savePath) ? WorldSaveFile.Load(savePath, world) : null;

@@ -117,10 +117,16 @@ public sealed class WorldPersistenceSession
 
     /// <summary>Queues capture so a save requested during travel observes one stable location.</summary>
     public Guid RequestSave(string path, Func<WorldPlayerLocation> capturePlayerLocation)
+        => RequestSave(path, capturePlayerLocation, snapshot => WorldSaveFile.SaveAtomic(path, snapshot));
+
+    /// <summary>Queues custom persistence so related data can be saved with the stable world snapshot.</summary>
+    public Guid RequestSave(string path, Func<WorldPlayerLocation> capturePlayerLocation,
+        Action<WorldSaveSnapshot> persist)
     {
         EnsureOwnerThread();
         ArgumentNullException.ThrowIfNull(capturePlayerLocation);
-        return _saveRequests.Enqueue(path, () => Capture(capturePlayerLocation()));
+        ArgumentNullException.ThrowIfNull(persist);
+        return _saveRequests.Enqueue(path, () => Capture(capturePlayerLocation()), persist);
     }
 
     public bool ProcessStableBoundary(bool travelInProgress)

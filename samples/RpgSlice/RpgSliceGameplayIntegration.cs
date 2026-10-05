@@ -46,7 +46,6 @@ internal sealed class RpgSliceGameplayIntegration
     private readonly PhysicsWorld _physics;
     private readonly RpgContentSet _content;
     private readonly bool _smokeRequested;
-    private readonly string _savePath;
     private NpcDailySchedule? _workerSchedule;
     private readonly MeleeAttackProfile _playerAttack = new(2.2, 12, 0.7);
     private readonly MeleeAttackProfile _enemyAttack = new(1.7, 4, 1.4);
@@ -93,7 +92,7 @@ internal sealed class RpgSliceGameplayIntegration
 
     public RpgSliceGameplayIntegration(WorldManifest world, RpgSliceCellStreamer streamer,
         WorldPersistenceSession persistence, PhysicsWorld physics, SaveState save, WorldClock clock,
-        string savePath, RpgContentSet content, bool smokeRequested)
+        RpgContentSet content, bool smokeRequested)
     {
         _world = world ?? throw new ArgumentNullException(nameof(world));
         _streamer = streamer ?? throw new ArgumentNullException(nameof(streamer));
@@ -102,7 +101,6 @@ internal sealed class RpgSliceGameplayIntegration
         _content = content ?? throw new ArgumentNullException(nameof(content));
         _save = save ?? throw new ArgumentNullException(nameof(save));
         _clock = clock ?? throw new ArgumentNullException(nameof(clock));
-        _savePath = Path.GetFullPath(savePath);
         _smokeRequested = smokeRequested;
         _playerDefinition = GetActor(PlayerActorId);
         _workerDefinition = GetActor(WorkerActorId);
@@ -203,11 +201,7 @@ internal sealed class RpgSliceGameplayIntegration
         return _clock;
     }
 
-    public void WriteSave(WorldClock clock)
-    {
-        _save = _save with { WorldTimeSeconds = clock.TotalSeconds };
-        _save.Write(_savePath);
-    }
+    public SaveState CaptureSave(WorldClock clock) => _save with { WorldTimeSeconds = clock.TotalSeconds };
 
     public bool TryTradeAt(Guid playerCellId, Vector3 playerPosition, bool sell, out string message)
     {

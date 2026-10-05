@@ -206,13 +206,25 @@ public static class WorldSaveFile
         AtomicFile.Write(path, stream => JsonSerializer.Serialize(stream, document, JsonOptions));
     }
 
+    public static string SerializeToJson(WorldSaveSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        return JsonSerializer.Serialize(ToDocument(snapshot), JsonOptions);
+    }
+
     public static WorldSaveSnapshot Load(string path)
     {
         if (string.IsNullOrWhiteSpace(path)) throw new ArgumentException("A world-save path is required.", nameof(path));
+        return LoadFromJson(File.ReadAllText(path));
+    }
+
+    public static WorldSaveSnapshot LoadFromJson(string json)
+    {
+        ArgumentNullException.ThrowIfNull(json);
         WorldSaveDocument document;
         try
         {
-            document = JsonSerializer.Deserialize<WorldSaveDocument>(File.ReadAllText(path), JsonOptions)
+            document = JsonSerializer.Deserialize<WorldSaveDocument>(json, JsonOptions)
                 ?? throw new InvalidDataException("World-save JSON is empty.");
         }
         catch (JsonException exception)

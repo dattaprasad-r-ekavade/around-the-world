@@ -48,6 +48,8 @@
              Link="RpgSliceTransitionSoak.cs" />
     <Compile Include="..\..\samples\RpgSlice\RpgSliceLifecycleCheck.cs"
              Link="RpgSliceLifecycleCheck.cs" />
+    <Compile Include="..\..\samples\RpgSlice\RpgSliceSaveBundle.cs"
+             Link="RpgSliceSaveBundle.cs" />
   </ItemGroup>
 
 </Project>
