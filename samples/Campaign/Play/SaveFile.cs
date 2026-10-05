@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
+using Ember.IO;
 using Ember.Rpg;
 
 namespace Campaign;
@@ -117,7 +118,7 @@ public static class SaveFile
     public static string Path => System.IO.Path.Combine(AppContext.BaseDirectory, "campaign.save.json");
 
     public static void Write(SaveData data) =>
-        File.WriteAllText(Path, JsonSerializer.Serialize(data, Json));
+        AtomicFile.Write(Path, stream => JsonSerializer.Serialize(stream, data, Json));
 
     public static SaveData? Read()
     {
