@@ -105,6 +105,7 @@ internal sealed class MinimalGame : EngineHost
     private AlphaTestEffect? _maskedStaticEffect;
     private int _controlSmokeFrame;
     private string _actionStatus = "Walk into marked triggers to collect items or reach goals.";
+    private string _sceneEntryDescription = string.Empty;
 
     public MinimalGame(string[] args)
         : base(args, logicalWidth: 1280, logicalHeight: 720, title: "Minimal Ember Game")
@@ -118,7 +119,11 @@ internal sealed class MinimalGame : EngineHost
     protected override void LoadContent()
     {
         _project = EngineProjectFile.Load(_projectPath);
-        var authoredScene = SceneFile.Load(_project.ResolveStartupScenePath());
+        var initialScenePath = EngineProjectWorkspace.ResolveInitialScenePath(_project);
+        _sceneEntryDescription = _project.StartupScenePath is { } startupScene
+            ? $"Startup scene: {startupScene}"
+            : $"World cell: {Path.GetRelativePath(_project.RootDirectory, initialScenePath)}";
+        var authoredScene = SceneFile.Load(initialScenePath);
         _playSession = new ScenePlaySession(authoredScene);
         _playSession.AuthoredActionExecuted += OnAuthoredActionExecuted;
         _sceneGraph = _playSession.RuntimeScene;
@@ -159,7 +164,7 @@ internal sealed class MinimalGame : EngineHost
                 : Vector3.Transform(Vector3.Zero, _sceneGraph.GetWorldMatrix(firstObject.Id));
             _camera.Reset(target, distance: 6f, yaw: 0.55f, pitch: -0.24f);
         }
-        Console.WriteLine($"Loaded startup scene '{_project.StartupScenePath}' with {_sceneGraph.Objects.Count} objects and {_characterInstances.Count} animated character(s).");
+        Console.WriteLine($"Loaded {_sceneEntryDescription} with {_sceneGraph.Objects.Count} objects and {_characterInstances.Count} animated character(s).");
         foreach (var fault in _faults) Console.WriteLine($"ember project: {fault}");
     }
 
@@ -258,7 +263,7 @@ internal sealed class MinimalGame : EngineHost
         _ui.Begin();
         _ui.Panel(new Rectangle(20, 20, 720, 132), new Color(12, 16, 24, 220), new Color(94, 120, 148));
         _ui.Text("MINIMAL EMBER GAME", new Vector2(38, 34), 19, Color.White);
-        _ui.TextFit($"Startup scene: {_project.StartupScenePath} | {_sceneGraph.Objects.Count} objects",
+        _ui.TextFit($"{_sceneEntryDescription} | {_sceneGraph.Objects.Count} objects",
             new Vector2(38, 65), 684f, 1f, new Color(197, 207, 220));
         var settings = _sceneGraph.PlaySettings;
         var controls = _playerController is null
