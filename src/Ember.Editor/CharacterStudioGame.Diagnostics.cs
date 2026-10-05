@@ -11,6 +11,7 @@ using Ember.Authoring;
 using Ember.Assets;
 using Ember.Audio;
 using Ember;
+using Ember.IO;
 using Ember.Input;
 using Ember.Project;
 using Ember.Physics;
@@ -277,8 +278,9 @@ public sealed partial class CharacterStudioGame
         report.AppendLine();
         report.AppendLine(passed ? "**PASS** - play/stop and repeated scene reload completed with stable owned preview resources."
             : "**FAIL** - one or more play/stop or scene reload checks failed.");
-        File.WriteAllText(state.JsonPath, JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }), Encoding.UTF8);
-        File.WriteAllText(state.MarkdownPath, report.ToString(), Encoding.UTF8);
+        WriteTextAtomic(state.JsonPath,
+            JsonSerializer.Serialize(payload, new JsonSerializerOptions { WriteIndented = true }));
+        WriteTextAtomic(state.MarkdownPath, report.ToString());
         Console.WriteLine(report.ToString());
         Console.WriteLine($"CharacterStudio lifecycle report saved to {state.MarkdownPath}");
         Console.WriteLine($"CharacterStudio lifecycle samples saved to {state.JsonPath}");
@@ -424,8 +426,8 @@ public sealed partial class CharacterStudioGame
         var height = GraphicsDevice.Viewport.Height;
         try
         {
-            File.WriteAllText(_referenceJsonPath!, session.BuildRawData(adapter, width, height, passed), Encoding.UTF8);
-            File.WriteAllText(_referenceMarkdownPath!, session.BuildReport(adapter, width, height, passed), Encoding.UTF8);
+            WriteTextAtomic(_referenceJsonPath!, session.BuildRawData(adapter, width, height, passed));
+            WriteTextAtomic(_referenceMarkdownPath!, session.BuildReport(adapter, width, height, passed));
             Console.WriteLine(session.BuildReport(adapter, width, height, passed));
             Console.WriteLine($"CharacterStudio reference report saved to {_referenceMarkdownPath}");
             Console.WriteLine($"CharacterStudio reference samples saved to {_referenceJsonPath}");
@@ -439,6 +441,16 @@ public sealed partial class CharacterStudioGame
         Environment.ExitCode = passed ? 0 : 1;
         _referenceSession = null;
         Exit();
+    }
+
+    private static void WriteTextAtomic(string path, string content)
+    {
+        AtomicFile.Write(path, stream =>
+        {
+            using var writer = new StreamWriter(stream, Encoding.UTF8, bufferSize: 1024, leaveOpen: true);
+            writer.Write(content);
+            writer.Flush();
+        });
     }
 
 }

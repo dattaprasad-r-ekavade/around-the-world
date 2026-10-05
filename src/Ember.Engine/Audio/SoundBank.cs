@@ -3,6 +3,7 @@ using Microsoft.Xna.Framework.Audio;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using Ember.IO;
 
 namespace Ember.Audio;
 
@@ -185,7 +186,8 @@ public sealed class SoundBank : IDisposable
             var pcm = build(variant).ToPcm();
             var path = Path.Combine(directory, $"{id.ToString().ToLowerInvariant()}{variant}.wav");
 
-            File.WriteAllBytes(path, Wav(pcm));
+            var wav = Wav(pcm);
+            AtomicFile.Write(path, stream => stream.Write(wav, 0, wav.Length));
             written++;
         }
 

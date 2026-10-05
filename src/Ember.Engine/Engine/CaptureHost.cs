@@ -1,7 +1,7 @@
 ﻿using Microsoft.Xna.Framework;
 using Microsoft.Xna.Framework.Graphics;
 using System;
-using System.IO;
+using Ember.IO;
 
 namespace Ember;
 
@@ -147,10 +147,7 @@ public sealed class CaptureHost : IDisposable
         texture.SetData(pixels);
 
         var fullPath = System.IO.Path.GetFullPath(path);
-        Directory.CreateDirectory(System.IO.Path.GetDirectoryName(fullPath)!);
-
-        using (var stream = File.Create(fullPath))
-            texture.SaveAsPng(stream, captureWidth, captureHeight);
+        AtomicFile.Write(fullPath, stream => texture.SaveAsPng(stream, captureWidth, captureHeight));
 
         Console.WriteLine($"Saved {captureWidth}x{captureHeight} screenshot to {fullPath}");
     }
