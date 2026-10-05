@@ -102,6 +102,8 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
 
     private FirstCreationLesson? _firstCreationLesson;
     private string? _lessonProjectOpenCheck;
+    private string? _restartLessonAfterRewind;
+    private string? _lessonCheckpointStatus;
     private readonly int _logicalWidth;
     private readonly int _logicalHeight;
     private string _sequenceExportDirectory = Path.Combine(Environment.CurrentDirectory, "SequenceFrames");
@@ -459,6 +461,13 @@ internal sealed partial class CharacterStudioEditorUi : IDisposable
         {
             BeginFirstCreationLesson(scene, createdProjectPath);
             _startLessonAfterProjectCreate = false;
+        }
+
+        if (_restartLessonAfterRewind is { } lessonId
+            && _getCurrentProjectPath() is { } rewoundProjectPath)
+        {
+            _restartLessonAfterRewind = null;
+            BeginLesson(scene, rewoundProjectPath, lessonId);
         }
 
         if (_lessonProjectOpenCheck is { } reopenedProjectPath)

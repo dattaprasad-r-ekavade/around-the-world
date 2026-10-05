@@ -13,6 +13,32 @@ namespace Ember.Engine.Tests;
 public sealed class MissionProjectCheckpointStoreTests
 {
     [Fact]
+    public void GetOrCaptureKeepsTheOriginalMissionStartingPoint()
+    {
+        var temporaryRoot = CreateTemporaryDirectory();
+        try
+        {
+            var project = EngineProjectWorkspace.CreateEmpty(Path.Combine(temporaryRoot, "Project"));
+            var checkpointPath = Path.Combine(temporaryRoot, "Checkpoints", "first-creation.zip");
+            var first = MissionProjectCheckpointStore.GetOrCapture(project, "first-creation", checkpointPath);
+            var scenePath = project.ResolveStartupScenePath();
+            var startingScene = File.ReadAllBytes(scenePath);
+            File.WriteAllText(scenePath, "changed after entering mission");
+
+            var second = MissionProjectCheckpointStore.GetOrCapture(project, "first-creation", checkpointPath);
+            var rewind = MissionProjectCheckpointStore.Restore(project, "first-creation", checkpointPath);
+
+            Assert.Equal(first.CheckpointId, second.CheckpointId);
+            Assert.Equal(first.CheckpointId, rewind.CheckpointId);
+            Assert.Equal(startingScene, File.ReadAllBytes(scenePath));
+        }
+        finally
+        {
+            Directory.Delete(temporaryRoot, recursive: true);
+        }
+    }
+
+    [Fact]
     public void RewindRestoresAuthoredFilesAndPreservesLearningProgressAndGitMetadata()
     {
         var temporaryRoot = CreateTemporaryDirectory();

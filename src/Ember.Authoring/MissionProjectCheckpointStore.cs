@@ -53,6 +53,30 @@ public static class MissionProjectCheckpointStore
             missionId + ".checkpoint.zip");
     }
 
+    /// <summary>Returns the first checkpoint captured for a mission, creating it when absent.</summary>
+    public static MissionProjectCheckpoint GetOrCapture(EngineProjectFile project, string missionId,
+        string checkpointPath, DateTimeOffset? capturedUtc = null)
+    {
+        ArgumentNullException.ThrowIfNull(project);
+        ValidateMissionId(missionId);
+        ArgumentException.ThrowIfNullOrWhiteSpace(checkpointPath);
+
+        var projectRoot = NormalizeRoot(project.RootDirectory);
+        var fullCheckpointPath = Path.GetFullPath(checkpointPath);
+        EnsureOutsideProject(projectRoot, fullCheckpointPath);
+        if (Directory.Exists(fullCheckpointPath))
+            throw new IOException($"Mission checkpoint path is a directory: '{fullCheckpointPath}'.");
+        if (!File.Exists(fullCheckpointPath))
+            return Capture(project, missionId, fullCheckpointPath, capturedUtc);
+
+        using var checkpoint = OpenValidatedCheckpoint(fullCheckpointPath, projectRoot, missionId);
+        var document = checkpoint.Document;
+        var files = document.Files ?? throw new InvalidDataException("Mission checkpoint file list is missing.");
+        var totalBytes = files.Aggregate(0L, (total, file) => checked(total + file.Length));
+        return new MissionProjectCheckpoint(document.CheckpointId, document.MissionId,
+            fullCheckpointPath, document.CapturedUtc, files.Count, totalBytes);
+    }
+
     /// <summary>Writes an immutable checkpoint archive, replacing an older checkpoint only on success.</summary>
     public static MissionProjectCheckpoint Capture(EngineProjectFile project, string missionId,
         string checkpointPath, DateTimeOffset? capturedUtc = null)

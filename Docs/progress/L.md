@@ -58,5 +58,23 @@ yet, so this is the storage/service slice of L.6.
 | Checkpoint capture/restore, corruption, identity and failure-path tests | NOT RUN — per the owner's instruction; run later |
 | Visible Rewind action in the lesson/mission flow | NOT IMPLEMENTED — later L.6 integration step |
 
-L.6 remains In progress until the service is built, its CPU coverage is run, and the existing
-mission flow exposes Rewind with visible success/failure feedback.
+L.6 remains In progress until the service and first-capture behavior tests are run and the visible
+Rewind action is walked through with success and failure cases.
+
+## L.6 mission rewind flow — 5 October 2026
+
+The existing lesson guide now creates a mission checkpoint the first time a lesson starts and keeps
+that original baseline when the learner replays it. Its Rewind to mission start action rejects Play,
+restores through the staged checkpoint service, marks the intentionally discarded scene edits clean,
+reloads the project and restarts the same lesson. The guide reports restore failures and retained
+recovery copies. Starting a mission with unsaved scene edits is blocked with a save instruction. A
+focused CPU test covers first-capture idempotence and restoration; the test has only been compiled.
+
+| Check | Result |
+| --- | --- |
+| `dotnet build Ember.sln --configuration Release --no-restore --nologo` | PASS — all solution projects, including the new checkpoint test, compiled with 0 warnings and 0 errors |
+| Checkpoint store and lesson replay CPU tests | NOT RUN — per the owner's instruction |
+| Visible lesson Rewind success, Play rejection, corrupt archive and retained progress checks | NOT RUN — the owner could not operate CharacterStudio |
+
+Still open: run the CPU tests and visible checks above. L.6 remains In progress; this source change
+does not claim rewind was exercised in the editor.

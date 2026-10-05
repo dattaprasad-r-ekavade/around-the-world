@@ -427,10 +427,62 @@ internal sealed partial class CharacterStudioEditorUi
         {
             ExecuteLessonAction(lesson, completionAction.Id, scene);
         }
+
+        if (ImGui.SmallButton($"Rewind to mission start##mission-rewind-{lesson.Definition.Id}"))
+            RewindMissionProject(lesson, scene);
+        if (!string.IsNullOrWhiteSpace(_owner._lessonCheckpointStatus))
+            ImGui.TextWrapped(_owner._lessonCheckpointStatus);
+
         if (lesson.IsComplete)
         {
             ImGui.SameLine();
             if (ImGui.SmallButton("Hide guide")) _owner._showFirstCreationLesson = false;
+        }
+    }
+
+    private void RewindMissionProject(FirstCreationLesson lesson, SceneGraph scene)
+    {
+        if (_owner._isPlaying())
+        {
+            _owner._lessonCheckpointStatus = "Stop Play before rewinding this mission.";
+            return;
+        }
+        if (!CharacterStudioEditorUi.IsSamePath(lesson.ProjectFilePath, _owner._getCurrentProjectPath()))
+        {
+            _owner._lessonCheckpointStatus = "Open this mission's project before rewinding it.";
+            return;
+        }
+
+        MissionProjectRewindResult rewind;
+        try
+        {
+            _owner.CompletePendingEdit(scene);
+            var project = EngineProjectFile.Load(lesson.ProjectFilePath);
+            var checkpointPath = MissionProjectCheckpointStore.GetDefaultCheckpointPath(
+                project, lesson.Definition.Id);
+            rewind = MissionProjectCheckpointStore.Restore(project, lesson.Definition.Id, checkpointPath);
+        }
+        catch (Exception exception)
+        {
+            _owner._lessonCheckpointStatus = $"Could not rewind the mission: {exception.Message}";
+            return;
+        }
+
+        // Opening a project normally saves a dirty scene first; rewind intentionally discards it.
+        _owner._history.MarkSaved();
+        _owner._lessonProjectOpenCheck = null;
+        try
+        {
+            _owner._projectWorkspaceStatus = _owner._openProject(lesson.ProjectFilePath);
+            _owner._restartLessonAfterRewind = lesson.Definition.Id;
+            _owner._lessonCheckpointStatus = rewind.RetainedBackupPath is { } backupPath
+                ? $"Mission rewound. A recovery copy was retained at {backupPath}."
+                : "Mission rewound to its starting project files.";
+        }
+        catch (Exception exception)
+        {
+            _owner._lessonCheckpointStatus =
+                $"Mission files were restored, but the editor could not reopen the project. Use Open project to reload it: {exception.Message}";
         }
     }
 

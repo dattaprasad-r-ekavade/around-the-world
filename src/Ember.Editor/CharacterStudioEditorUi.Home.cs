@@ -303,13 +303,31 @@ internal sealed partial class CharacterStudioEditorUi
                         $"{definition.Title} will be available after the {definition.RequiredFeature} feature gate passes.";
                     return;
                 }
+
+                if (!CharacterStudioEditorUi.IsSamePath(projectFilePath, _owner._getCurrentProjectPath()))
+                {
+                    _owner._projectWorkspaceStatus = "Open this project before starting the mission.";
+                    return;
+                }
+                if (_owner._history.IsDirty)
+                {
+                    _owner._projectWorkspaceStatus = "Save the current scene before starting this mission checkpoint.";
+                    return;
+                }
+
+                var project = EngineProjectFile.Load(projectFilePath);
+                var checkpointPath = MissionProjectCheckpointStore.GetDefaultCheckpointPath(project, definition.Id);
+                var checkpoint = MissionProjectCheckpointStore.GetOrCapture(project, definition.Id, checkpointPath);
                 _owner._firstCreationLesson = new FirstCreationLesson(scene, projectFilePath, definition);
+                _owner._lessonCheckpointStatus =
+                    $"Mission start is saved for rewind ({checkpoint.FileCount} project files).";
             }
             catch (Exception exception) when (exception is InvalidDataException or IOException
-                or ArgumentException or InvalidOperationException)
+                or ArgumentException or InvalidOperationException or UnauthorizedAccessException
+                or System.Security.SecurityException)
             {
-                _owner._projectWorkspaceStatus = $"Could not load lesson data: {exception.Message}";
-                _owner._showFirstCreationLesson = false;
+                _owner._lessonCheckpointStatus = $"Could not prepare the mission checkpoint: {exception.Message}";
+                _owner._projectWorkspaceStatus = _owner._lessonCheckpointStatus;
                 return;
             }
             _owner._showFirstCreationLesson = true;
