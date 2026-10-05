@@ -1143,7 +1143,7 @@ public sealed class RpgSliceGame : EngineHost
                 ActorStates = actorStates,
                 ItemDefs = itemCatalogue
             };
-            File.WriteAllText(_rpgSavePath, rpgSave.ToJson());
+            rpgSave.Write(_rpgSavePath);
 
             // Restart verification
             var snapshot = WorldSaveFile.Load(_worldSavePath, _world);
